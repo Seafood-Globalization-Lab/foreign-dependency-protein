@@ -1,0 +1,39 @@
+---
+title: "00_Preprocess_Data"
+author: "Connor Quiroz"
+date: "2025-03-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(cowplot)
+library(arrow)
+library(countrycode)
+library(exploreARTIS)
+```
+
+```{r read in data}
+years <- 1996:2019
+consumption_full <- data.frame()
+
+# Use a loop to read the files and bind them together
+for (i in years) {
+  # Generate the filename
+  file_name <- paste0("../data/full consumption/consumption/consumption_midpoint_HS96_", as.character(i), ".csv")
+  # Read the CSV file
+  yearly_data <- read_csv(file_name)
+  consumption_full <- bind_rows(consumption_full, yearly_data)
+}
+
+# Save to .parquet file
+write_parquet(consumption_full, "../output/consumption_full.parquet")
+
+# Read in FAO consumer data
+fao_food <- read_csv("../data/FoodBalanceSheets_E_All_Data/FoodBalanceSheets_E_All_Data.csv")
+
+# Save to R object
+write_parquet(fao_food, "../output/fao_food.parquet")
+```
+

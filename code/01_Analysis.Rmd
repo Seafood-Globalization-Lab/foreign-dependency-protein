@@ -1,0 +1,101 @@
+---
+title: "01_Analysis"
+author: "Connor Quiroz"
+date: "2025-03-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r read in data created from 00_Preprocess_Data}
+# Read in consumption data
+consumption_full <- read_parquet("../output/consumption_full.parquet")
+
+# Read in FAO food data
+fao_food <- read_parquet("../output/fao_food.parquet")
+```
+
+
+```{r}
+# Convert FAO data to long format
+fao_food_long <- fao_food %>%
+  pivot_longer(cols = c("Y2010", "Y2011", "Y2012", "Y2013", "Y2014", 
+               "Y2015", "Y2016", "Y2017", "Y2018", "Y2019"), names_to = "year") %>%
+  mutate(year = str_replace(year, "Y", ""))
+
+# Extract FAO animal protein totals
+aquatic_animal_proteins <- fao_food_long %>%
+  filter(Element == "Protein supply quantity (t)",
+         Item %in% c("Aquatic Animals, Others", "Cephalopods",
+                     "Crustaceans", "Demersal Fish", "Fish, Seafood",
+                     "Freshwater Fish", "Marine Fish, Other", "Meat, Aquatic Mammals",
+                     "Molluscs, Other"),) %>%
+  mutate(iso3c = countrycode(Area, origin = 'country.name', destination = 'iso3c')) %>%
+  relocate(iso3c, .before = "Area") %>%
+  group_by(iso3c, year) %>%
+  summarize(a_a_protein = sum(value, na.rm = TRUE)) %>%
+  ungroup()
+
+# Calculate the total animal protein in FAO FBS
+total_protein <- fao_food_long %>%
+  filter(Element == "Protein supply quantity (t)",
+         Item == "Animal Products") %>%
+  mutate(iso3c = countrycode(Area, origin = 'country.name', destination = 'iso3c')) %>%
+  relocate(iso3c, .before = "Area") %>%
+  group_by(iso3c, year) %>%
+  summarize(t_p = sum(value, na.rm = TRUE)) %>%
+  ungroup()
+
+# Produce proportions aquatic animal protein of total conusmed protein
+fao_prop_imports <- left_join(aquatic_animal_proteins, total_protein) %>%
+  group_by(iso3c, year) %>%
+  summarize(prop_aquatic_animal = a_a_protein / t_p) %>%
+  mutate(year = as.numeric(year))
+
+# Calculate proportion of consumed materials from different habitats and methods
+habitat_method_props <- consumption_full %>%
+  group_by(year, consumer_iso3c, habitat, method, consumption_source) %>%
+  summarize(total_group_catch = sum(consumption_live_t)) %>%
+  filter(!habitat == "unknown" | 
+         !method == "unknown") %>%
+  group_by(year, consumer_iso3c) %>%
+  mutate(total_catch = sum(total_group_catch)) %>%
+  group_by(year, consumer_iso3c, habitat, method, consumption_source) %>%
+  summarize(prop_consumption = total_group_catch / total_catch) %>%
+  ungroup()
+
+# Join artis and fao food balance sheet data (combines habitat/method props to prop animal protein imports byt fao)
+artis_fao_fbb <- left_join(habitat_method_props, fao_prop_imports, by = c("consumer_iso3c" = "iso3c", "year")) %>%
+  filter(year >= 2010)
+
+# How important is marine capture on countries' animal sourced protein supply?
+supply_importance <- artis_fao_fbb %>%
+  group_by(year, consumer_iso3c, habitat, method, consumption_source) %>%
+  mutate(importance_on_protein_cons = prop_consumption * prop_aquatic_animal) %>%
+  add_region("consumer_iso3c", region.col.name = "region") %>%
+  filter(!is.na(region)) %>%
+  ungroup()
+
+# Get ARTIS countries
+countries <- supply_importance %>% 
+  distinct(consumer_iso3c) %>%
+  pull(consumer_iso3c)
+
+# Number of ARTIS countries not include in FAO data (7 countries)
+artis_not_in_fao <- anti_join(supply_importance, fao_prop_imports %>%
+              filter(iso3c %in% countries), by = c("consumer_iso3c" = "iso3c", "year")) %>%
+  ungroup() %>%
+  distinct(consumer_iso3c) %>%
+  pull(consumer_iso3c)
+
+# Remove NA prop values from supply importance
+supply_importance <- supply_importance %>%
+  filter(!is.na(prop_aquatic_animal)) %>%
+  relocate(region, .after = "consumer_iso3c")
+
+# Save to parquet
+write_parquet(supply_importance, "../output/supply_importance.parquet")
+```
+

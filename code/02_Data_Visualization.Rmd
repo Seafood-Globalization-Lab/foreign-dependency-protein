@@ -1,0 +1,91 @@
+---
+title: "02_Data_Visualization"
+author: "Connor Quiroz"
+date: "2025-03-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggsankey)
+```
+
+```{r read in data created from 01_Analysis}
+supply_importance <- read_parquet("../output/supply_importance.parquet")
+```
+
+```{r create graphs}
+# try and make a sankey plot to go with this (LOTS of categorical variables)
+supply_importance %>%
+  group_by(year, region, method, habitat, consumption_source) %>%
+  summarize(mean_val = mean(importance_on_protein_cons)) %>%
+  ggplot(aes(x = mean_val, y = region, fill = consumption_source)) +
+  geom_col(position = "fill") +
+  facet_wrap(habitat ~ method) +
+  theme_cowplot(10)
+
+supply_importance %>%
+  ggplot(aes(x = factor(year), y = log(importance_on_protein_cons), fill = region)) +
+  geom_boxplot()
+
+supply_importance %>%
+  filter(consumer_iso3c == "USA") %>%
+  ggplot(aes(x = year, y = importance_on_protein_cons, color = consumption_source)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(habitat ~ method) +
+    theme_minimal_hgrid()
+
+
+# Look at change of importance on protein consumption by source, across time
+supply_importance %>%
+  group_by(year, region, consumption_source) %>%
+  summarize(mean_importance = mean(importance_on_protein_cons)) %>%
+  ggplot(aes(x = year, y = mean_importance, color = consumption_source)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~ region) +
+  theme_minimal_hgrid(10) +
+  theme(legend.position="bottom")
+
+# Prop aquatic animal
+supply_importance %>%
+  group_by(year, region, consumption_source) %>%
+  summarize(mean_importance = mean(prop_aquatic_animal)) %>%
+  ggplot(aes(x = year, y = mean_importance, color = consumption_source)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~ region) +
+  theme_minimal_hgrid(10)
+
+supply_importance %>%
+  group_by(year, habitat, method, consumption_source) %>%
+  summarize(mean_prop_consumption = mean(prop_consumption)) %>%
+  ggplot(aes(x = year, y = mean_prop_consumption, color = consumption_source)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(habitat ~ method) +
+  theme_minimal_hgrid(10)
+
+
+
+supply_importance %>%
+  make_long(region, habitat, method, consumption_source) %>%
+  ggplot(aes(x = x,
+         node = node,
+         next_x = next_x,
+         next_node = next_node,
+         fill = factor(node),
+         label = node)) +
+  geom_sankey(node.color = "black", flow.alpha = 0.5) +
+  scale_fill_viridis_d(option = "plasma") +
+  geom_sankey_label(size = 3, color = "black", fill = "white") +
+  guides(fill = "none") +
+    theme(axis.ticks = element_blank(),
+          axis.text.y = element_blank()) +
+    theme_bw()
+
+```
+
+
+
