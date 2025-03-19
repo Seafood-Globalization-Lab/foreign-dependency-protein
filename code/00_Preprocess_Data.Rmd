@@ -15,17 +15,34 @@ library(exploreARTIS)
 ```
 
 ```{r read in data}
-years <- 1996:2019
+# Specify the folder path
+folder_path <- "../data/full consumption/consumption/"
+
+# List all CSV files in the folder
+csv_files <- list.files(path = folder_path, pattern = "*.csv", full.names = TRUE)
+
+# Create empty data frame
 consumption_full <- data.frame()
 
 # Use a loop to read the files and bind them together
-for (i in years) {
-  # Generate the filename
-  file_name <- paste0("../data/full consumption/consumption/consumption_midpoint_HS96_", as.character(i), ".csv")
+#Takes a long time to run
+for (i in csv_files) {
   # Read the CSV file
-  yearly_data <- read_csv(file_name)
+  yearly_data <- read_csv(i)
   consumption_full <- bind_rows(consumption_full, yearly_data)
 }
+
+consumption_full <- consumption_full %>%
+  filter(
+    # Use HS96 from 1996-2003 (inclusive)
+    ((hs_version == "HS96") & (year <= 2003)) |
+      # Use HS02 from 2004-2009 (inclusive)
+      ((hs_version == "HS02") & (year >= 2004 & year <= 2009)) |
+      # Use HS07 from 2010-2012 (inclusive)
+      ((hs_version == "HS07") & (year >= 2010 & year <= 2012)) |
+      # Use HS12 from 2013-2019 (inclusive)
+      ((hs_version == "HS12") & (year >= 2013 & year <= 2020))
+  ) 
 
 # Save to .parquet file
 write_parquet(consumption_full, "../output/consumption_full.parquet")

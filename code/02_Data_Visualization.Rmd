@@ -7,6 +7,11 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(cowplot)
+library(arrow)
+library(countrycode)
+library(exploreARTIS)
 library(ggsankey)
 ```
 
@@ -41,12 +46,15 @@ supply_importance %>%
 supply_importance %>%
   group_by(year, region, consumption_source) %>%
   summarize(mean_importance = mean(importance_on_protein_cons)) %>%
+  mutate(mean_importance = 100 * mean_importance) %>%
   ggplot(aes(x = year, y = mean_importance, color = consumption_source)) +
   geom_point() +
   geom_line() +
   facet_wrap(~ region) +
-  theme_minimal_hgrid(10) +
-  theme(legend.position="bottom")
+  theme_cowplot(10) +
+  theme(legend.position="bottom") +
+  labs(color = "Consumption source", x = "", y = "Mean % importance on protein supply")
+  
 
 # Prop aquatic animal
 supply_importance %>%
@@ -84,8 +92,93 @@ supply_importance %>%
     theme(axis.ticks = element_blank(),
           axis.text.y = element_blank()) +
     theme_bw()
+```
+
+```{r}
+prod_eur_cons_eur <- consumption_full %>%
+  exploreARTIS::add_region(col = "consumer_iso3c", region.col.name = "consumer_region") %>%
+  exploreARTIS::add_region(col = "source_country_iso3c", region.col.name = "producer_region") %>%
+  relocate(consumer_region, .before = "source_country_iso3c") %>%
+  relocate(producer_region, .after = consumer_region) %>%
+  group_by(consumer_iso3c, year) %>%
+  filter(consumer_region == "Europe",
+         producer_region == "Europe") %>%
+  summarize(sum_weight = sum(consumption_live_t, na.rm = TRUE))
+  
+eur_total_cons <- consumption_full %>%
+  exploreARTIS::add_region(col = "consumer_iso3c", region.col.name = "consumer_region") %>%
+  exploreARTIS::add_region(col = "source_country_iso3c", region.col.name = "producer_region") %>%
+  relocate(consumer_region, .before = "source_country_iso3c") %>%
+  relocate(producer_region, .after = consumer_region) %>%
+  group_by(consumer_iso3c, year) %>%
+  filter(consumer_region == "Europe") %>%
+  summarize(total_cons = sum(consumption_live_t, na.rm = TRUE))
+
+
+prop_europe_prod_cons <- left_join(prod_eur_cons_eur, eur_total_cons) %>%
+  group_by(consumer_iso3c, year) %>%
+  summarize(prop_cons = sum_weight / total_cons)
+
+# Look at average change in foreign dependency from 2015-2019
+foreign_dependency_slopes <- prop_europe_prod_cons %>%
+  split(.$consumer_iso3c) %>% 
+  map(~lm(prop_cons~year, data = .x)) %>% 
+  map_df(broom::tidy, .id = 'consumer_iso3c') %>%
+  filter(term == 'year') %>%
+  select(consumer_iso3c, "slope" = "estimate") %>%
+  mutate(fill_color = case_when(
+    slope > 0 ~ "1",
+    slope < 0 ~ "0",
+    TRUE ~ NA
+  )) %>%
+  add_region(col = "consumer_iso3c", region.col.name = "region")
+
+foreign_dependency_slopes %>%
+  filter(!is.na(region)) %>%
+  ggplot(aes(x = reorder(consumer_iso3c, -slope), 
+             y = slope, fill = fill_color)) +
+  geom_col() +
+  theme_minimal_hgrid() +
+  theme(axis.text.x = element_blank()) +
+  labs(x = "Consuming country", y = "Slope between foreign\ndependency and time", fill = "+/- slope") +
+  scale_fill_manual(values = c("red", "blue"))
+
+# Get greatest increases --> greatest decreases in fd by eez
+fd_ordered <- foreign_dependency_slopes %>%
+  arrange(-slope) %>%
+  pull(consumer_iso3c)
+
+# Create new directory for foreign dependencies
+if (!dir.exists("../images/europe pc ordered/")) {
+  dir.create("../images/europe pc ordered/")
+}
+
+for (i in fd_ordered) {
+  
+  # Create image
+  img <- prop_europe_prod_cons %>%
+    filter(consumer_iso3c == i) %>%
+    ggplot(aes(x = year, y = prop_cons)) +
+    geom_line() +
+    geom_point() +
+    theme_minimal_hgrid() +
+    labs(x = "", y = "Proportion consumption\nproduced + consumed in Europe", title = i) +
+    theme(plot.title = element_text(hjust = 0.5))
+  
+  # Save image
+  ggsave(paste0("../images/europe pc ordered/", which(i == fd_ordered), ".jpg"), plot = img, device = "jpeg", height = 4, width = 6, units = "in")
+}
 
 ```
 
-
+```{r}
+# Prop consumption that was produced + consumed in Europe
+prop_europe_prod_cons %>%
+  filter(year == 2019) %>%
+  ggplot(aes(x = fct_reorder(consumer_iso3c, -prop_cons), prop_cons)) +
+  theme_cowplot() +
+  geom_col() +
+  theme(axis.text.x = element_blank()) +
+  labs(x = "Europe country", y = "Proportion consumption\nproduced + consumed in Europe")
+```
 

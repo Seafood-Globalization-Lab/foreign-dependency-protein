@@ -7,6 +7,11 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(cowplot)
+library(arrow)
+library(countrycode)
+library(exploreARTIS)
 ```
 
 ```{r read in data created from 00_Preprocess_Data}
@@ -97,5 +102,19 @@ supply_importance <- supply_importance %>%
 
 # Save to parquet
 write_parquet(supply_importance, "../output/supply_importance.parquet")
+```
+
+```{r}
+# add some tests to make sure ti 
+
+# error is only associated with trade (i.e., foreign) also whne source ocuntry is listed as unknown
+# make 
+# 5 different hs versions associated with a year
+# Select one hs version and one year, or leave hs version as a grouping variable
+
+supply_importance %>%
+  group_by(consumer_iso3c, year) %>%
+  summarize(total = sum(prop_consumption)) %>%
+  filter(total > 1.0001)
 ```
 
