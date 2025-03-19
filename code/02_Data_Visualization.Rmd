@@ -20,28 +20,6 @@ supply_importance <- read_parquet("../output/supply_importance.parquet")
 ```
 
 ```{r create graphs}
-# try and make a sankey plot to go with this (LOTS of categorical variables)
-supply_importance %>%
-  group_by(year, region, method, habitat, consumption_source) %>%
-  summarize(mean_val = mean(importance_on_protein_cons)) %>%
-  ggplot(aes(x = mean_val, y = region, fill = consumption_source)) +
-  geom_col(position = "fill") +
-  facet_wrap(habitat ~ method) +
-  theme_cowplot(10)
-
-supply_importance %>%
-  ggplot(aes(x = factor(year), y = log(importance_on_protein_cons), fill = region)) +
-  geom_boxplot()
-
-supply_importance %>%
-  filter(consumer_iso3c == "USA") %>%
-  ggplot(aes(x = year, y = importance_on_protein_cons, color = consumption_source)) +
-  geom_point() +
-  geom_line() +
-  facet_wrap(habitat ~ method) +
-    theme_minimal_hgrid()
-
-
 # Look at change of importance on protein consumption by source, across time
 supply_importance %>%
   group_by(year, region, consumption_source) %>%
@@ -53,48 +31,40 @@ supply_importance %>%
   facet_wrap(~ region) +
   theme_cowplot(10) +
   theme(legend.position="bottom") +
-  labs(color = "Consumption source", x = "", y = "Mean % importance on protein supply")
-  
+  labs(color = "Consumption source", x = "", y = "Mean % importance on protein supply") +
+  scale_x_continuous(breaks = seq(1995, 2020, by = 10))
 
-# Prop aquatic animal
-supply_importance %>%
-  group_by(year, region, consumption_source) %>%
-  summarize(mean_importance = mean(prop_aquatic_animal)) %>%
-  ggplot(aes(x = year, y = mean_importance, color = consumption_source)) +
-  geom_point() +
-  geom_line() +
-  facet_wrap(~ region) +
-  theme_minimal_hgrid(10)
-
-supply_importance %>%
+# Global sourcing importance, by habitat, by method, by source
+(sourcing_importance_global <- supply_importance %>%
   group_by(year, habitat, method, consumption_source) %>%
   summarize(mean_prop_consumption = mean(prop_consumption)) %>%
+    mutate(mean_prop_consumption = 100 * mean_prop_consumption) %>%
   ggplot(aes(x = year, y = mean_prop_consumption, color = consumption_source)) +
-  geom_point() +
+  geom_point(size = 0.4) +
   geom_line() +
-  facet_wrap(habitat ~ method) +
-  theme_minimal_hgrid(10)
+  facet_grid(habitat ~ method, scales = "free_x", space = "free_x") +
+  theme_cowplot(12) +
+  theme(legend.position = "bottom",legend.justification = "center") +
+  labs(x = "", y = "Importance on consumption", color = "Consumption source") +
+    scale_x_continuous(breaks = seq(1995, 2020, by = 10)))
 
-
-
-supply_importance %>%
-  make_long(region, habitat, method, consumption_source) %>%
-  ggplot(aes(x = x,
-         node = node,
-         next_x = next_x,
-         next_node = next_node,
-         fill = factor(node),
-         label = node)) +
-  geom_sankey(node.color = "black", flow.alpha = 0.5) +
-  scale_fill_viridis_d(option = "plasma") +
-  geom_sankey_label(size = 3, color = "black", fill = "white") +
-  guides(fill = "none") +
-    theme(axis.ticks = element_blank(),
-          axis.text.y = element_blank()) +
-    theme_bw()
+# Continental importance by method
+(sourcing_importance_continental <- supply_importance %>%
+  group_by(year, habitat, method, region) %>%
+  summarize(mean_prop_consumption = mean(prop_consumption)) %>%
+    mutate(mean_prop_consumption = 100 * mean_prop_consumption) %>%
+  ggplot(aes(x = year, y = mean_prop_consumption, color = region)) +
+  geom_point(size = 0.4) +
+  geom_line() +
+  facet_grid(habitat ~ method, scales = "free_x", space = "free_x") +
+  theme_cowplot(12) +
+  scale_color_manual(values = artis_palette(6)) +
+  scale_x_continuous(breaks = seq(1995, 2020, by = 10)) +
+  labs(x = "", y = "% importance on consumed protein", color = "Region"))
 ```
 
-```{r}
+```{r look at dependency on europe production & consumption}
+# Total Europe consumption that comes from Europe
 prod_eur_cons_eur <- consumption_full %>%
   exploreARTIS::add_region(col = "consumer_iso3c", region.col.name = "consumer_region") %>%
   exploreARTIS::add_region(col = "source_country_iso3c", region.col.name = "producer_region") %>%
@@ -105,6 +75,7 @@ prod_eur_cons_eur <- consumption_full %>%
          producer_region == "Europe") %>%
   summarize(sum_weight = sum(consumption_live_t, na.rm = TRUE))
   
+# Europe total consumption
 eur_total_cons <- consumption_full %>%
   exploreARTIS::add_region(col = "consumer_iso3c", region.col.name = "consumer_region") %>%
   exploreARTIS::add_region(col = "source_country_iso3c", region.col.name = "producer_region") %>%
@@ -114,7 +85,7 @@ eur_total_cons <- consumption_full %>%
   filter(consumer_region == "Europe") %>%
   summarize(total_cons = sum(consumption_live_t, na.rm = TRUE))
 
-
+# Proportion of Europe consumption that is produced in Europe
 prop_europe_prod_cons <- left_join(prod_eur_cons_eur, eur_total_cons) %>%
   group_by(consumer_iso3c, year) %>%
   summarize(prop_cons = sum_weight / total_cons)
@@ -133,6 +104,7 @@ foreign_dependency_slopes <- prop_europe_prod_cons %>%
   )) %>%
   add_region(col = "consumer_iso3c", region.col.name = "region")
 
+# Plot out slopes in a barplot
 foreign_dependency_slopes %>%
   filter(!is.na(region)) %>%
   ggplot(aes(x = reorder(consumer_iso3c, -slope), 
@@ -141,7 +113,8 @@ foreign_dependency_slopes %>%
   theme_minimal_hgrid() +
   theme(axis.text.x = element_blank()) +
   labs(x = "Consuming country", y = "Slope between foreign\ndependency and time", fill = "+/- slope") +
-  scale_fill_manual(values = c("red", "blue"))
+  scale_fill_manual(values = c("red", "blue")) +
+  ylim(-0.03, 0.03)
 
 # Get greatest increases --> greatest decreases in fd by eez
 fd_ordered <- foreign_dependency_slopes %>%
@@ -169,9 +142,6 @@ for (i in fd_ordered) {
   ggsave(paste0("../images/europe pc ordered/", which(i == fd_ordered), ".jpg"), plot = img, device = "jpeg", height = 4, width = 6, units = "in")
 }
 
-```
-
-```{r}
 # Prop consumption that was produced + consumed in Europe
 prop_europe_prod_cons %>%
   filter(year == 2019) %>%
@@ -180,5 +150,13 @@ prop_europe_prod_cons %>%
   geom_col() +
   theme(axis.text.x = element_blank()) +
   labs(x = "Europe country", y = "Proportion consumption\nproduced + consumed in Europe")
+```
+
+
+
+```{r}
+ggsave("../images/sourcing_importance_global.jpg", sourcing_importance_global, device = "jpeg", width = 5, height = 3, units = "in")
+
+ggsave("../images/sourcing_importance_continental.jpg", sourcing_importance_continental, device = "jpeg", width = 5, height = 3, units = "in")
 ```
 

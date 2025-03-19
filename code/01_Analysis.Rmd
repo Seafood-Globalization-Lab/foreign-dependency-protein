@@ -20,19 +20,26 @@ consumption_full <- read_parquet("../output/consumption_full.parquet")
 
 # Read in FAO food data
 fao_food <- read_parquet("../output/fao_food.parquet")
+
+# Read in historical FAO food data
+fao_historical <- read_parquet("../output/fao_historical.parquet")
+
+# Get years for each FAO dataset
+fao_years <- paste0("Y", as.character(2010:2019))
+historical_years <- paste0("Y", as.character(1996:2013))
 ```
 
-
-```{r}
-# Convert FAO data to long format
-fao_food_long <- fao_food %>%
-  pivot_longer(cols = c("Y2010", "Y2011", "Y2012", "Y2013", "Y2014", 
-               "Y2015", "Y2016", "Y2017", "Y2018", "Y2019"), names_to = "year") %>%
+```{r function for preprocessing FAO data}
+fao_preprocess <- function(data = data, colnames = "", element = "") {
+  # Convert FAO data to long format
+fao_food_long <- data %>%
+  pivot_longer(cols = colnames, names_to = "year") %>%
   mutate(year = str_replace(year, "Y", ""))
+
 
 # Extract FAO animal protein totals
 aquatic_animal_proteins <- fao_food_long %>%
-  filter(Element == "Protein supply quantity (t)",
+  filter(Element == element,
          Item %in% c("Aquatic Animals, Others", "Cephalopods",
                      "Crustaceans", "Demersal Fish", "Fish, Seafood",
                      "Freshwater Fish", "Marine Fish, Other", "Meat, Aquatic Mammals",
@@ -45,7 +52,7 @@ aquatic_animal_proteins <- fao_food_long %>%
 
 # Calculate the total animal protein in FAO FBS
 total_protein <- fao_food_long %>%
-  filter(Element == "Protein supply quantity (t)",
+  filter(Element == element,
          Item == "Animal Products") %>%
   mutate(iso3c = countrycode(Area, origin = 'country.name', destination = 'iso3c')) %>%
   relocate(iso3c, .before = "Area") %>%
@@ -59,6 +66,48 @@ fao_prop_imports <- left_join(aquatic_animal_proteins, total_protein) %>%
   summarize(prop_aquatic_animal = a_a_protein / t_p) %>%
   mutate(year = as.numeric(year))
 
+return(fao_prop_imports)
+}
+```
+
+# Ensure FAO Data can be stiched together
+
+Old FAO and New FAO Food Balance Sheets data overlap in years 2010-2013. Since both datasets use different methods between calculating protein supply quantity, we want to make sure these methods do not produce significantly different results - we will perform t-tests on overlapping years to compare the values. If they are not significantly different across years, then we will stitch the years together
+
+```{r compare old vs new FAO FBS data}
+# Get 1996-2019 FAO data
+historical_fao_props <- fao_preprocess(data = fao_historical, 
+                                         colnames = historical_years,
+                                         element = "Protein supply quantity (g/capita/day)")
+
+# Get 2010-2019 FAO data
+fao_prop_imports <- fao_preprocess(data = fao_food, 
+                                   colnames = fao_years,
+                                   element = "Protein supply quantity (t)")
+
+# Check 2010: p value = 0.37
+t.test(historical_fao_props %>% filter(year == 2010) %>% pull(prop_aquatic_animal),
+       fao_prop_imports %>% filter(year == 2010) %>% pull(prop_aquatic_animal))
+
+# Check 2011: p-value = 0.37
+t.test(historical_fao_props %>% filter(year == 2011) %>% pull(prop_aquatic_animal),
+       fao_prop_imports %>% filter(year == 2011) %>% pull(prop_aquatic_animal))
+
+# Check 2012: p-value = 0.37
+t.test(historical_fao_props %>% filter(year == 2012) %>% pull(prop_aquatic_animal),
+       fao_prop_imports %>% filter(year == 2012) %>% pull(prop_aquatic_animal))
+
+# Check 2013: p-value = 0.43
+t.test(historical_fao_props %>% filter(year == 2013) %>% pull(prop_aquatic_animal),
+       fao_prop_imports %>% filter(year == 2013) %>% pull(prop_aquatic_animal))
+
+
+# All overlapping years were not significantly different. We can merge safely merge datasets
+fao_prop_imports <- bind_rows(historical_fao_props %>% filter(year < 2010), fao_prop_imports)
+```
+
+
+```{r calculate importance on protein consumption (ARTIS + FAO)}
 # Calculate proportion of consumed materials from different habitats and methods
 habitat_method_props <- consumption_full %>%
   group_by(year, consumer_iso3c, habitat, method, consumption_source) %>%
@@ -72,8 +121,7 @@ habitat_method_props <- consumption_full %>%
   ungroup()
 
 # Join artis and fao food balance sheet data (combines habitat/method props to prop animal protein imports byt fao)
-artis_fao_fbb <- left_join(habitat_method_props, fao_prop_imports, by = c("consumer_iso3c" = "iso3c", "year")) %>%
-  filter(year >= 2010)
+artis_fao_fbb <- left_join(habitat_method_props, fao_prop_imports, by = c("consumer_iso3c" = "iso3c", "year"))
 
 # How important is marine capture on countries' animal sourced protein supply?
 supply_importance <- artis_fao_fbb %>%
@@ -83,38 +131,35 @@ supply_importance <- artis_fao_fbb %>%
   filter(!is.na(region)) %>%
   ungroup()
 
-# Get ARTIS countries
-countries <- supply_importance %>% 
-  distinct(consumer_iso3c) %>%
-  pull(consumer_iso3c)
-
-# Number of ARTIS countries not include in FAO data (7 countries)
-artis_not_in_fao <- anti_join(supply_importance, fao_prop_imports %>%
-              filter(iso3c %in% countries), by = c("consumer_iso3c" = "iso3c", "year")) %>%
-  ungroup() %>%
-  distinct(consumer_iso3c) %>%
-  pull(consumer_iso3c)
-
 # Remove NA prop values from supply importance
 supply_importance <- supply_importance %>%
   filter(!is.na(prop_aquatic_animal)) %>%
   relocate(region, .after = "consumer_iso3c")
 
-# Save to parquet
-write_parquet(supply_importance, "../output/supply_importance.parquet")
+# Clean up some names (i.e., capitalize data entries)
+supply_importance <- supply_importance %>%
+  mutate(consumption_source = str_to_title(consumption_source),
+         habitat = str_to_title(habitat),
+         method = str_to_title(method))
 ```
 
-```{r}
-# add some tests to make sure ti 
+```{r tests to ensure dataset works as is}
+# Make sure all items add to 1
+supply_importance %>%
+  group_by(consumer_iso3c, year) %>%
+  summarize(total = sum(prop_consumption))
 
-# error is only associated with trade (i.e., foreign) also whne source ocuntry is listed as unknown
-# make 
-# 5 different hs versions associated with a year
-# Select one hs version and one year, or leave hs version as a grouping variable
-
+# Make sure everything sums to only 1 within year / consuming country
 supply_importance %>%
   group_by(consumer_iso3c, year) %>%
   summarize(total = sum(prop_consumption)) %>%
-  filter(total > 1.0001)
+  ungroup() %>%
+  filter(total > 1.001)
+```
+
+```{r save new dataframe}
+# Everything works as it it's supposed to
+# Save to parquet
+write_parquet(supply_importance, "../output/supply_importance.parquet")
 ```
 
