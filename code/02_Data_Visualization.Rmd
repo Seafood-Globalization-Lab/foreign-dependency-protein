@@ -21,18 +21,19 @@ supply_importance <- read_parquet("../output/supply_importance.parquet")
 
 ```{r create graphs}
 # Look at change of importance on protein consumption by source, across time
-supply_importance %>%
+(f_d_protein <- supply_importance %>%
   group_by(year, region, consumption_source) %>%
   summarize(mean_importance = mean(importance_on_protein_cons)) %>%
   mutate(mean_importance = 100 * mean_importance) %>%
   ggplot(aes(x = year, y = mean_importance, color = consumption_source)) +
-  geom_point() +
+  geom_point(size = 0.4) +
   geom_line() +
   facet_wrap(~ region) +
   theme_cowplot(10) +
-  theme(legend.position="bottom") +
-  labs(color = "Consumption source", x = "", y = "Mean % importance on protein supply") +
-  scale_x_continuous(breaks = seq(1995, 2020, by = 10))
+  theme(legend.position="bottom",
+        legend.justification = "center") +
+  labs(color = "Consumption source", x = "", y = "% importance on protein consumption") +
+  scale_x_continuous(breaks = seq(1995, 2020, by = 10)))
 
 # Global sourcing importance, by habitat, by method, by source
 (sourcing_importance_global <- supply_importance %>%
@@ -43,9 +44,9 @@ supply_importance %>%
   geom_point(size = 0.4) +
   geom_line() +
   facet_grid(habitat ~ method, scales = "free_x", space = "free_x") +
-  theme_cowplot(12) +
-  theme(legend.position = "bottom",legend.justification = "center") +
-  labs(x = "", y = "Importance on consumption", color = "Consumption source") +
+  theme_cowplot(10) +
+  theme(legend.position = "bottom", legend.justification = "center") +
+  labs(x = "", y = "% importance on consumed protein", color = "Consumption source") +
     scale_x_continuous(breaks = seq(1995, 2020, by = 10)))
 
 # Continental importance by method
@@ -57,7 +58,7 @@ supply_importance %>%
   geom_point(size = 0.4) +
   geom_line() +
   facet_grid(habitat ~ method, scales = "free_x", space = "free_x") +
-  theme_cowplot(12) +
+  theme_cowplot(10) +
   scale_color_manual(values = artis_palette(6)) +
   scale_x_continuous(breaks = seq(1995, 2020, by = 10)) +
   labs(x = "", y = "% importance on consumed protein", color = "Region"))
@@ -154,9 +155,11 @@ prop_europe_prod_cons %>%
 
 
 
-```{r}
+```{r save plots}
 ggsave("../images/sourcing_importance_global.jpg", sourcing_importance_global, device = "jpeg", width = 5, height = 3, units = "in")
 
 ggsave("../images/sourcing_importance_continental.jpg", sourcing_importance_continental, device = "jpeg", width = 5, height = 3, units = "in")
+
+ggsave("../images/f_d_protein.jpg", f_d_protein, device = "jpeg", width = 5, height = 3, units = "in")
 ```
 

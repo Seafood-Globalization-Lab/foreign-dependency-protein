@@ -46,7 +46,9 @@ consumption_full <- consumption_full %>%
 
 # Save to .parquet file
 write_parquet(consumption_full, "../output/consumption_full.parquet")
+```
 
+```{r convert FAO data to .parquet}
 # Read in FAO consumer data
 fao_food <- read_csv("../data/FoodBalanceSheets_E_All_Data/FoodBalanceSheets_E_All_Data.csv")
 
