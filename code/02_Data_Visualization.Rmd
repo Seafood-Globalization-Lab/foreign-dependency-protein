@@ -16,14 +16,16 @@ library(ggsankey)
 ```
 
 ```{r read in data created from 01_Analysis}
-supply_importance <- read_parquet("../output/supply_importance.parquet")
+supply_importance <- read_csv("../output/supply_importance.parquet")
 ```
 
 ```{r create graphs}
 # Look at change of importance on protein consumption by source, across time
+
+# Try to do weighted mean instead
 (f_d_protein <- supply_importance %>%
   group_by(year, region, consumption_source) %>%
-  summarize(mean_importance = mean(importance_on_protein_cons)) %>%
+  summarize(mean_importance = mean(aa_reliance_pct)) %>%
   mutate(mean_importance = 100 * mean_importance) %>%
   ggplot(aes(x = year, y = mean_importance, color = consumption_source)) +
   geom_point(size = 0.4) +
@@ -46,7 +48,7 @@ supply_importance <- read_parquet("../output/supply_importance.parquet")
   facet_grid(habitat ~ method, scales = "free_x", space = "free_x") +
   theme_cowplot(10) +
   theme(legend.position = "bottom", legend.justification = "center") +
-  labs(x = "", y = "% importance on consumed protein", color = "Consumption source") +
+  labs(x = "", y = "Mean % of consumption\n(across all countries)", color = "Consumption source") +
     scale_x_continuous(breaks = seq(1995, 2020, by = 10)))
 
 # Continental importance by method
@@ -61,7 +63,31 @@ supply_importance <- read_parquet("../output/supply_importance.parquet")
   theme_cowplot(10) +
   scale_color_manual(values = artis_palette(6)) +
   scale_x_continuous(breaks = seq(1995, 2020, by = 10)) +
-  labs(x = "", y = "% importance on consumed protein", color = "Region"))
+  labs(x = "", y = "Mean % of consumption\n(across countries in a region)", color = "Region"))
+
+supply_importance %>%
+  group_by(consumer_iso3c, year, region) %>%
+  summarize(sum = sum(aa_reliance_pct)) %>%
+  group_by(year, region) %>%
+  summarize(mean_importance = 100 * mean(sum)) %>%
+  ggplot(aes(x = year, y = mean_importance, color = region)) +
+  geom_point() +
+  geom_line() +
+  theme_cowplot() +
+  scale_color_manual(values = artis_palette(6)) +
+  labs(x = "", y = "Mean % contribution aquatic animal\nhas to protein consumption")
+
+
+supply_importance %>%
+  group_by(consumer_iso3c, year) %>%
+  summarize(sum = sum(aa_reliance_pct)) %>%
+  group_by(year) %>%
+  summarize(mean_importance = 100 * mean(sum)) %>%
+  ggplot(aes(x = year, y = mean_importance)) +
+  geom_point() +
+  geom_line() +
+  theme_cowplot() +
+  labs(x = "", y = "Mean % contribution aquatic animal\nhas to protein consumption")
 ```
 
 ```{r look at dependency on europe production & consumption}
@@ -153,6 +179,93 @@ prop_europe_prod_cons %>%
   labs(x = "Europe country", y = "Proportion consumption\nproduced + consumed in Europe")
 ```
 
+```{r}
+# Calcualte total foreign weight consumption
+domestic_consumption_weights <- consumption_full %>%
+  group_by(consumer_iso3c, year) %>%
+  filter(consumer_iso3c == source_country_iso3c) %>%
+  summarize(domestic_weight = sum(consumption_live_t)) %>%
+  arrange(consumer_iso3c)
+
+# Calculate total foreign weight consumption
+foreign_consumption_weights <- consumption_full %>%
+  group_by(consumer_iso3c, year) %>%
+  filter(consumer_iso3c != source_country_iso3c) %>%
+  summarize(foreign_weight = sum(consumption_live_t)) %>%
+  arrange(consumer_iso3c)
+
+# Calculate trade dependency
+consumer_foreign_dependencies <- foreign_consumption_weights %>%
+  filter(consumer_iso3c %in% domestic_consumption_weights$consumer_iso3c) %>%
+  left_join(domestic_consumption_weights) %>%
+  group_by(consumer_iso3c, year) %>%
+  summarize(foreign_dependency = round(foreign_weight /
+                                       (foreign_weight +
+                                          domestic_weight), 3)) %>%
+  exploreARTIS::add_region("consumer_iso3c", region.col.name = "region")
+
+# Look at average change in foreign dependency from 2015-2019
+foreign_dependency_slopes <- consumer_foreign_dependencies %>%
+  split(.$consumer_iso3c) %>% 
+  map(~lm(foreign_dependency~year, data = .x)) %>% 
+  map_df(broom::tidy, .id = 'consumer_iso3c') %>%
+  filter(term == 'year') %>%
+  select(consumer_iso3c, "slope" = "estimate") %>%
+  mutate(fill_color = case_when(
+    slope > 0 ~ "1",
+    slope < 0 ~ "0",
+    TRUE ~ NA
+  )) %>%
+  add_region(col = "consumer_iso3c", region.col.name = "region")
+
+
+foreign_dependency_slopes %>%
+  filter(!is.na(region)) %>%
+  ggplot(aes(x = reorder(consumer_iso3c, -slope), 
+             y = slope, fill = region)) +
+  geom_col() +
+  theme_minimal_hgrid() +
+  theme(axis.text.x = element_blank()) +
+  labs(x = "Consuming country", y = "Slope between foreign\ndependency and time", fill = "Region") +
+  scale_fill_manual(values = artis_palette(7)) +
+  ylim(-0.05, 0.05)
+
+foreign_dependency_slopes %>%
+  filter(!is.na(region)) %>%
+  ggplot(aes(x = region, y = slope, fill = region)) +
+  geom_violin(alpha = 0.5) +
+  geom_point() +
+  scale_fill_manual(values = artis_palette(7)) +
+  theme_minimal_hgrid(12) +
+  labs(x = "Consuming country", y = "Slope between foreign\ndependency and time") +
+  guides(fill = "none")
+
+# Get greatest increases --> greatest decreases in fd by eez
+fd_ordered <- foreign_dependency_slopes %>%
+  arrange(-slope) %>%
+  pull(consumer_iso3c)
+
+# Create new directory for foreign dependencies
+if (!dir.exists("../images/foreign dependency ordered/")) {
+  dir.create("../images/foreign dependency ordered/")
+}
+
+for (i in fd_ordered) {
+  
+  # Create image
+  img <- consumer_foreign_dependencies %>%
+    filter(consumer_iso3c == i) %>%
+    ggplot(aes(x = year, y = foreign_dependency)) +
+    geom_line() +
+    geom_point() +
+    theme_minimal_hgrid() +
+    labs(x = "", y = "Prop foreign dependency", title = i) +
+    theme(plot.title = element_text(hjust = 0.5))
+  
+  # Save image
+  ggsave(paste0("../images/foreign dependency ordered/", which(i == fd_ordered), ".jpg"), plot = img, device = "jpeg", height = 4, width = 6, units = "in")
+}
+```
 
 
 ```{r save plots}
@@ -162,4 +275,3 @@ ggsave("../images/sourcing_importance_continental.jpg", sourcing_importance_cont
 
 ggsave("../images/f_d_protein.jpg", f_d_protein, device = "jpeg", width = 5, height = 3, units = "in")
 ```
-

@@ -61,4 +61,3 @@ fao_historical <- read_csv("../data/FoodBalanceSheetsHistoric_E_All_Data/FoodBal
 # Save to .parquet
 write_parquet(fao_historical, "../output/fao_historical.parquet")
 ```
-
