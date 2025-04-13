@@ -6,7 +6,7 @@ This is a repository for my first chapter, where I am analyzing trends in foreig
 
 # Outputs
 
-The final data in the output folder **supply_importance_wide.csv** and **supply_importance_long.csv**, has percentage contributions that aquatic animals have towards (1) protein consumption and (2) overall food consumption. We define aquatic animals as any animal that resides in an aquatic habitat that is not a marine mammal (e.g., cephalopods, crustaceans, fish). The data leverages both the Aquatic Resource Trade in Species database (Gephart et al. 2024) and Food and Agricultural Organization Food Balance Sheets (FBS; FAO 2023; FAO 2013). With the ARTIS database, we can derive the % consumption contributing different methods (i.e, capture, aquaculture) and habitats (i.e., inland, marine) by country. With the FBS, we can derive the % proportion that aquatic animals represent a country's consumed animal protein and overall food supply. Multiplying these proportions together can produce the % contribution that aquatic animals contribute by method and by habitat towards protein and food consumption (See 01_Analysis.Rmd for calculations).
+The final data in the output folder **`supply_importance_wide.csv`** and **`supply_importance_long.csv`**, has percentage contributions that aquatic animals have towards (1) protein consumption and (2) overall food consumption. We define aquatic animals as any animal that resides in an aquatic habitat that is not a marine mammal (e.g., cephalopods, crustaceans, fish). The data leverages both the Aquatic Resource Trade in Species database (Gephart et al. 2024) and Food and Agricultural Organization Food Balance Sheets (FBS; FAO 2023; FAO 2013). With the ARTIS database, we can derive the % consumption contributing different methods (i.e, capture, aquaculture) and habitats (i.e., inland, marine) by country. With the FBS, we can derive the % proportion that aquatic animals represent a country's consumed animal protein and overall food supply. Multiplying these proportions together can produce the % contribution that aquatic animals contribute by method and by habitat towards protein and food consumption (See `01_Analysis.Rmd` for calculations).
 
 ## Column names
 
@@ -31,6 +31,8 @@ The final data in the output folder **supply_importance_wide.csv** and **supply_
 | prop_consumption_x_fao_protein_supply_g_capita_day | \% consumption (by method/habitat/consumption source category) that is devoted to the total aquatic animal (aa) protein supply |
 
 : Columns 1-7 were ARTIS derived, 8-13 were FAO FBS derived, and 14-17 were ARTIS-FAO joined derived. Any derived variable (e.g., columns 6-17) are measured for a given country for a given year (also grouped by method, habitat, and consumption_source).
+
+The **`supply_importance_long.csv`** version consolidates columns 8-17 consolidates the different elements (i.e, food supply, protein supply) into the Element variable grouping.
 
 # References
 
