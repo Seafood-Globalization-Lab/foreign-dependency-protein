@@ -59,6 +59,8 @@ fao_food %>%
   filter(Item %in% c("Animal Products"),
          Element == "Protein supply quantity (g/capita/day)") %>%
   summarize(sum = sum(Y2019, na.rm = TRUE))
+
+fao_food %>% distinct(Element)
 ```
 # FAO "Animal Products" consist of: 
 
@@ -72,7 +74,8 @@ fao_preprocess <- function(data = data, colnames = "", element = "") {
     # Convert year column to numeric after removing "Y" prefix
     mutate(year = as.numeric(str_replace(year, "Y", ""))) %>%
     # Remove years prior to 1996 (if applicable)
-    filter(Element == element, year >=1996) %>%
+    filter(Element == "Protein supply quantity (g/capita/day)" |
+             Element == "Food supply (kcal/capita/day)", year >=1996) %>%
     # Add iso3c column
     mutate(iso3c = countrycode(Area, origin = 'country.name', destination = 'iso3c')) %>%
     relocate(iso3c, .before = "Area") 
@@ -84,22 +87,22 @@ aquatic_animal_proteins <- fao_food_long %>%
                      "Crustaceans", "Demersal Fish",
                      "Freshwater Fish", "Marine Fish, Other",
                      "Molluscs, Other", "Pelagic Fish")) %>%
-  group_by(iso3c, year) %>%
-  summarize(a_a_protein = sum(value, na.rm = TRUE)) %>%
+  group_by(iso3c, year, Element) %>%
+  summarize(aquatic_animal_amount = sum(value, na.rm = TRUE)) %>%
   ungroup()
 
 # Calculate the total animal protein in FAO FBS
 total_protein <- fao_food_long %>%
   filter(Item %in% c("Animal Products")) %>%
-  group_by(iso3c, year) %>%
-  summarize(t_p = sum(value, na.rm = TRUE)) %>%
+  group_by(iso3c, year, Element) %>%
+  summarize(total_animal_amount = sum(value, na.rm = TRUE)) %>%
   ungroup()
 
 # Produce proportions aquatic animal protein of total consumed protein
 fao_prop_imports <- aquatic_animal_proteins %>% 
   left_join(total_protein) %>%
-  group_by(iso3c, year) %>%
-  mutate(prop_aquatic_animal = a_a_protein / (t_p))
+  group_by(iso3c, year, Element) %>%
+  mutate(prop_aquatic_animal = aquatic_animal_amount / (total_animal_amount))
 
 return(fao_prop_imports)
 }
@@ -148,10 +151,10 @@ fao_compare_df %>%
   geom_point() +
   geom_smooth(method = "lm") +
   theme_minimal() +
-  facet_wrap(~year)
+  facet_grid(Element.x~year)
 
 fao_compare_df %>%
-  group_by(year) %>%
+  group_by(year, Element.x) %>%
   summarise(corr = cor(prop_aquatic_animal_historic, prop_aquatic_animal_new,
                        use = "complete.obs"))
 
@@ -182,7 +185,7 @@ artis_fao_fbb <- habitat_method_props %>%
 # Disaggregate percent animal source protein from aquatic foods by source
 supply_importance <- artis_fao_fbb %>%
   mutate(aa_reliance_pct = prop_consumption * prop_aquatic_animal, 
-         fao_supply_protein_g_pc = prop_consumption * a_a_protein) %>%
+         fao_supply_protein_g_pc = prop_consumption * aquatic_animal_amount) %>%
   add_region("consumer_iso3c", region.col.name = "region") %>%
   filter(!is.na(region)) %>%
   ungroup()
@@ -192,32 +195,58 @@ supply_importance <- supply_importance %>%
   filter(!is.na(prop_aquatic_animal)) %>%
   relocate(region, .after = "consumer_iso3c")
 
+# Convert to wide format
+supply_importance_wide <- supply_importance %>%
+  pivot_wider(values_from = c("aquatic_animal_amount", "total_animal_amount", "prop_aquatic_animal", "aa_reliance_pct", "fao_supply_protein_g_pc"),
+                              names_from = "Element") %>%
+  rename(aa_food_supply_kcal_capita_day = 
+           "aquatic_animal_amount_Food supply (kcal/capita/day)",
+         aa_protein_supply_g_capita_day =
+           "aquatic_animal_amount_Protein supply quantity (g/capita/day)",
+         animal_food_supply_kcal_capita_day =
+           "total_animal_amount_Food supply (kcal/capita/day)",
+         animal_protein_supply_g_capita_day =
+           "total_animal_amount_Protein supply quantity (g/capita/day)",
+         prop_aa_food_supply = 
+           "prop_aquatic_animal_Food supply (kcal/capita/day)",
+         prop_aa_protein_supply = 
+           "prop_aquatic_animal_Protein supply quantity (g/capita/day)",
+         prop_aa_contribution_to_animal_protein =
+           "aa_reliance_pct_Protein supply quantity (g/capita/day)",
+         prop_aa_contribution_to_animal_daily_calories =
+           "aa_reliance_pct_Food supply (kcal/capita/day)",
+         prop_consumption_x_fao_food_supply_kcal_capita_day =
+           "fao_supply_protein_g_pc_Food supply (kcal/capita/day)",
+         prop_consumption_x_fao_protein_supply_g_capita_day = 
+           "fao_supply_protein_g_pc_Protein supply quantity (g/capita/day)"
+         )
+
+# Rename supply_importance to long dataset (for final output)
+supply_importance_long <- supply_importance
 ```
 
 ```{r tests to ensure dataset works as is}
 # Make sure all items add to 1
-supply_importance %>%
-  group_by(consumer_iso3c, year) %>%
+supply_importance_long %>%
+  group_by(consumer_iso3c, year, Element) %>%
   summarize(total = sum(prop_consumption))
 
 # Make sure everything sums to only 1 within year / consuming country
-supply_importance %>%
-  group_by(consumer_iso3c, year) %>%
+supply_importance_long %>%
+  group_by(consumer_iso3c, year, Element) %>%
   summarize(total = sum(prop_consumption)) %>%
   ungroup() %>%
   filter(total > 1.001)
-
-supply_importance %>%
-  group_by(consumer_iso3c, year) %>%
-  summarize(total = sum(prop_consumption))
 
 # Look at number of countries in calculation
 supply_importance %>% filter(year == 2019) %>% distinct(consumer_iso3c)
 ```
 
 ```{r save new dataframe}
-# Everything works as it it's supposed to
-# Save to parquet
-write_csv(supply_importance, "../output/supply_importance.csv")
+# Save wide format to .parquet
+write_csv(supply_importance_wide, "../output/supply_importance_wide.csv")
+
+# Save long format to .parquet
+write_csv(supply_importance_long, "../output/supply_importance_long.csv")
 ```
 

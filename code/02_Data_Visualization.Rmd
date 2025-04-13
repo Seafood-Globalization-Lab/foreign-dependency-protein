@@ -16,14 +16,16 @@ library(ggsankey)
 ```
 
 ```{r read in data created from 01_Analysis}
-supply_importance <- read_csv("../output/supply_importance.parquet")
+# Make sure to rename variables and that code still runs
+supply_importance_long <- read_csv("../output/supply_importance_long.csv")
 ```
 
 ```{r create graphs}
 # Look at change of importance on protein consumption by source, across time
 
 # Try to do weighted mean instead
-(f_d_protein <- supply_importance %>%
+(f_d_protein <- supply_importance_long %>%
+   filter(Element == "Protein supply quantity (g/capita/day)") %>%
   group_by(year, region, consumption_source) %>%
   summarize(mean_importance = mean(aa_reliance_pct)) %>%
   mutate(mean_importance = 100 * mean_importance) %>%
@@ -38,7 +40,8 @@ supply_importance <- read_csv("../output/supply_importance.parquet")
   scale_x_continuous(breaks = seq(1995, 2020, by = 10)))
 
 # Global sourcing importance, by habitat, by method, by source
-(sourcing_importance_global <- supply_importance %>%
+(sourcing_importance_global <- supply_importance_long %>%
+   filter(Element == "Protein supply quantity (g/capita/day)") %>%
   group_by(year, habitat, method, consumption_source) %>%
   summarize(mean_prop_consumption = mean(prop_consumption)) %>%
     mutate(mean_prop_consumption = 100 * mean_prop_consumption) %>%
@@ -52,10 +55,11 @@ supply_importance <- read_csv("../output/supply_importance.parquet")
     scale_x_continuous(breaks = seq(1995, 2020, by = 10)))
 
 # Continental importance by method
-(sourcing_importance_continental <- supply_importance %>%
+(sourcing_importance_continental <- supply_importance_long %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
   group_by(year, habitat, method, region) %>%
   summarize(mean_prop_consumption = mean(prop_consumption)) %>%
-    mutate(mean_prop_consumption = 100 * mean_prop_consumption) %>%
+  mutate(mean_prop_consumption = 100 * mean_prop_consumption) %>%
   ggplot(aes(x = year, y = mean_prop_consumption, color = region)) +
   geom_point(size = 0.4) +
   geom_line() +
@@ -65,7 +69,9 @@ supply_importance <- read_csv("../output/supply_importance.parquet")
   scale_x_continuous(breaks = seq(1995, 2020, by = 10)) +
   labs(x = "", y = "Mean % of consumption\n(across countries in a region)", color = "Region"))
 
-supply_importance %>%
+# Annual mean aquatic animal % contribution to protein supply by continent
+supply_importance_long %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
   group_by(consumer_iso3c, year, region) %>%
   summarize(sum = sum(aa_reliance_pct)) %>%
   group_by(year, region) %>%
@@ -77,8 +83,9 @@ supply_importance %>%
   scale_color_manual(values = artis_palette(6)) +
   labs(x = "", y = "Mean % contribution aquatic animal\nhas to protein consumption")
 
-
-supply_importance %>%
+# Annual mean aquatic animal % contribution to protein supply globally
+supply_importance_long %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
   group_by(consumer_iso3c, year) %>%
   summarize(sum = sum(aa_reliance_pct)) %>%
   group_by(year) %>%
@@ -88,6 +95,20 @@ supply_importance %>%
   geom_line() +
   theme_cowplot() +
   labs(x = "", y = "Mean % contribution aquatic animal\nhas to protein consumption")
+
+# Looking at pct consumption x element variable (food / protein supply) by region
+supply_importance_long %>%
+  group_by(region, year, Element) %>%
+  summarize(aa_reliance_pct = mean(aa_reliance_pct)) %>%
+  ggplot(aes(x = year, y = aa_reliance_pct, color = region)) +
+  geom_point() +
+  geom_line() +
+  theme_cowplot() +
+  facet_grid(rows = vars(Element),
+             labeller = labeller(Element = function(x) str_wrap(x, width = 15))) +
+  scale_color_manual(values = artis_palette(6)) +
+  labs(x = "", color = "Region", y = "Aquati animal % contirbution") +
+  theme(strip.text = element_text(size = 8))
 ```
 
 ```{r look at dependency on europe production & consumption}
