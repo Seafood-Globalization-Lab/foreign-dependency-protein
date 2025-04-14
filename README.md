@@ -32,7 +32,7 @@ The final data in the output folder **`supply_importance_wide.csv`** and **`supp
 
 : Columns 1-7 were ARTIS derived, 8-13 were FAO FBS derived, and 14-17 were ARTIS-FAO joined derived. Any derived variable (e.g., columns 6-17) are measured for a given country for a given year (also grouped by method, habitat, and consumption_source).
 
-The **`supply_importance_long.csv`** version consolidates columns 8-17 consolidates the different elements (i.e, food supply, protein supply) into the Element variable grouping.
+The **`supply_importance_long.csv`** version consolidates columns 8-17 consolidates the different elements (i.e, food supply, protein supply) into the `Element` variable grouping.
 
 # References
 
