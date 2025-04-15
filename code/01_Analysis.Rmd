@@ -53,14 +53,6 @@ fao_food %>%
                      "Molluscs, Other", "Pelagic Fish"),
          Element == "Protein supply quantity (g/capita/day)") %>%
   summarize(a_a_protein = sum(Y2019, na.rm = TRUE))
-
-# Sum of animal products: 8079
-fao_food %>%
-  filter(Item %in% c("Animal Products"),
-         Element == "Protein supply quantity (g/capita/day)") %>%
-  summarize(sum = sum(Y2019, na.rm = TRUE))
-
-fao_food %>% distinct(Element)
 ```
 # FAO "Animal Products" consist of: 
 
@@ -164,6 +156,32 @@ fao_prop_imports <- historical_fao_props %>%
   bind_rows(fao_prop_imports)
 ```
 
+```{r make adjustments to FAO dataset (DO NOT RUN for final data output)}
+# Create a comparison dataset looking at FAO data differences
+fao_dataset_comparison <- fao_prop_imports %>%
+  mutate(new_historical = case_when(
+    year < 2010 ~ "historical",
+    year >= 2010 ~ "new"
+  )) 
+
+# Calculate difference between new and old dataset
+diffs <- fao_dataset_comparison %>%
+  filter(year %in% c(2009, 2010),
+         str_detect(Element, "Protein")) %>%
+  group_by(iso3c) %>%
+  summarise(diff = prop_aquatic_animal[year == 2010] - prop_aquatic_animal[year == 2009])
+
+# Transform historical dataset by the difference between 2009 and 2010 (new FAO FBS)
+fao_dataset_comparison <- left_join(fao_dataset_comparison, diffs, by = "iso3c") %>%
+  mutate(prop_aquatic_animal = case_when(
+    new_historical == "historical" ~ prop_aquatic_animal + diff,
+    TRUE ~ prop_aquatic_animal
+  ))
+
+# Temporarily change to new fao_prop_imports so we can see how it adjusts results
+fao_prop_imports <- fao_dataset_comparison 
+```
+
 
 ```{r calculate importance on protein consumption (ARTIS + FAO)}
 # Calculate proportion of consumed materials from different habitats and methods
@@ -222,7 +240,8 @@ supply_importance_wide <- supply_importance %>%
          )
 
 # Rename supply_importance to long dataset (for final output)
-supply_importance_long <- supply_importance
+supply_importance_long <- supply_importance %>%
+  rename(prop_consumption_x_fao_aa_element_amount = "fao_supply_protein_g_pc")
 ```
 
 ```{r tests to ensure dataset works as is}

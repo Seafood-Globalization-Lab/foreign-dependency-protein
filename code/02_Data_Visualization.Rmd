@@ -26,8 +26,10 @@ supply_importance_long <- read_csv("../output/supply_importance_long.csv")
 # Try to do weighted mean instead
 (f_d_protein <- supply_importance_long %>%
    filter(Element == "Protein supply quantity (g/capita/day)") %>%
-  group_by(year, region, consumption_source) %>%
-  summarize(mean_importance = mean(aa_reliance_pct)) %>%
+   group_by(consumer_iso3c) %>%
+   filter(n_distinct(year) > 1) %>% # Filter out countries with only 1 year of data
+   group_by(year, region, consumption_source) %>%
+  summarize(mean_importance = mean(aa_reliance_pct, na.rm = TRUE)) %>%
   mutate(mean_importance = 100 * mean_importance) %>%
   ggplot(aes(x = year, y = mean_importance, color = consumption_source)) +
   geom_point(size = 0.4) +
@@ -98,6 +100,8 @@ supply_importance_long %>%
 
 # Looking at pct consumption x element variable (food / protein supply) by region
 supply_importance_long %>%
+  group_by(consumer_iso3c) %>%
+  filter(n_distinct(year) > 1) %>% # Filter out countries with only 1 year of data
   group_by(region, year, Element) %>%
   summarize(aa_reliance_pct = mean(aa_reliance_pct)) %>%
   ggplot(aes(x = year, y = aa_reliance_pct, color = region)) +
@@ -110,6 +114,130 @@ supply_importance_long %>%
   labs(x = "", color = "Region", y = "Aquati animal % contirbution") +
   theme(strip.text = element_text(size = 8))
 ```
+
+```{r look at how aa reliance changes over time}
+# Look at slopes between aa_reliancec and year
+aa_reliance_slopes <- supply_importance_long %>%
+  group_by(consumer_iso3c, year) %>%
+  summarize(aa_reliance_pct = mean(aa_reliance_pct)) %>%
+  split(.$consumer_iso3c) %>% 
+  map(~lm(aa_reliance_pct~year, data = .x)) %>% 
+  map_df(broom::tidy, .id = 'consumer_iso3c') %>%
+  filter(term == 'year') %>%
+  select(consumer_iso3c, "slope" = "estimate") %>%
+  mutate(fill_color = case_when(
+    slope > 0 ~ "1",
+    slope < 0 ~ "0",
+    TRUE ~ NA
+  )) %>%
+  add_region(col = "consumer_iso3c", region.col.name = "region")
+
+aa_reliance_slopes %>%
+  filter(!is.na(region)) %>%
+  ggplot(aes(x = reorder(consumer_iso3c, -slope), 
+             y = slope, fill = region)) +
+  geom_col() +
+  theme_minimal_hgrid() +
+  theme(axis.text.x = element_blank()) +
+  labs(x = "Consuming country", y = "Slope between aa reliance and time", fill = "Region") +
+  scale_fill_manual(values = artis_palette(7)) +
+  ylim(-0.005, 0.005)
+
+# Violin plot by region of foreign dependency slopes
+aa_reliance_slopes %>%
+  filter(!is.na(region)) %>%
+  ggplot(aes(x = region, y = slope, fill = region)) +
+  geom_violin(alpha = 0.5) +
+  geom_point() +
+  scale_fill_manual(values = artis_palette(7)) +
+  theme_minimal_hgrid(12) +
+  labs(x = "Consuming country", y = "Slope between aa reliance and time") +
+  guides(fill = "none")
+
+
+# Look at individual countries' trends in aa contribution to protein
+# Get list of countries
+countries <- aa_reliance_slopes %>%
+  arrange(-slope) %>%
+  distinct(consumer_iso3c) %>%
+  pull(consumer_iso3c)
+
+# Create new directory for foreign dependencies
+if (!dir.exists("../images/aa_reliance_trends/")) {
+  dir.create("../images/aa_reliance_trends/")
+}
+
+for (i in countries) {
+  
+  # Generate data
+  data <- supply_importance_long %>%
+  # filter(consumer_iso3c == i, region == "Oceania") %>%
+    filter(consumer_iso3c == i) %>%
+    filter(str_detect(Element, "Protein")) %>%
+    group_by(year, consumer_iso3c)
+  
+  # Create image
+  
+  if (nrow(data) > 0) { # Check to see if filtered data has available observations
+    img <- data  %>%
+      group_by(year, consumer_iso3c) %>%
+  ggplot(aes(x = year, y = aa_reliance_pct, color = consumption_source)) +
+  geom_line() +
+  geom_point() +
+  facet_grid(habitat ~ method, scales = "free_x", space = "free_x") +
+    theme_cowplot() +
+    labs(x = "", y = "AA contribution to protein consumption", title = i, color = "Consumption source") +
+    theme(plot.title = element_text(hjust = 0.5),
+          axis.text.x = element_text(size = 7, angle = 45)) +
+    geom_vline(xintercept = 2009, linetype = "dashed", color = "red")
+  
+  # Save image
+  ggsave(paste0("../images/aa_reliance_trends/", which(i == countries), ".jpg"), plot = img, device = "jpeg", height = 4, width = 6, units = "in")
+  }
+  
+}
+```
+
+
+```{r look at fao dataset discrepencies}
+# Get list of FAO countries
+countries <- fao_dataset_comparison %>%
+  ungroup() %>%
+  distinct(iso3c) %>%
+  pull(iso3c)
+
+# Create new directory for foreign dependencies
+if (!dir.exists("../images/fao_dataset_comparison/")) {
+  dir.create("../images/fao_dataset_comparison/")
+}
+
+for (i in countries) {
+  
+  # Generate data
+  data <- fao_dataset_comparison %>%
+    filter(iso3c == i) %>%
+    filter(str_detect(Element, "Protein")) %>%
+    group_by(year, iso3c)
+  
+  # Create image
+  
+  if (nrow(data) > 0) { # Check to see if filtered data has available observations
+    img <- data %>%
+  ggplot(aes(x = year, y = prop_aquatic_animal, color = new_historical)) +
+  geom_line() +
+  geom_point() +
+  theme_cowplot() +
+  scale_color_manual(values = c("#FF0000", "#0000FF")) +
+  labs(x = "", y = "Prop aquatic animal protein", color = "FAO FBS dataset", title = i) +
+    theme(plot.title = element_text(hjust = 0.5))
+  
+  # Save image
+  ggsave(paste0("../images/fao_dataset_comparison/", i, ".jpg"), plot = img, device = "jpeg", height = 4, width = 6, units = "in")
+  }
+  
+}
+```
+
 
 ```{r look at dependency on europe production & consumption}
 # Total Europe consumption that comes from Europe
@@ -175,7 +303,6 @@ if (!dir.exists("../images/europe pc ordered/")) {
 }
 
 for (i in fd_ordered) {
-  
   # Create image
   img <- prop_europe_prod_cons %>%
     filter(consumer_iso3c == i) %>%
@@ -239,7 +366,7 @@ foreign_dependency_slopes <- consumer_foreign_dependencies %>%
   )) %>%
   add_region(col = "consumer_iso3c", region.col.name = "region")
 
-
+# Create barplot of foreign dependency slopes in europe over time
 foreign_dependency_slopes %>%
   filter(!is.na(region)) %>%
   ggplot(aes(x = reorder(consumer_iso3c, -slope), 
@@ -251,6 +378,7 @@ foreign_dependency_slopes %>%
   scale_fill_manual(values = artis_palette(7)) +
   ylim(-0.05, 0.05)
 
+# Violin plot by region of foreign dependency slopes
 foreign_dependency_slopes %>%
   filter(!is.na(region)) %>%
   ggplot(aes(x = region, y = slope, fill = region)) +
