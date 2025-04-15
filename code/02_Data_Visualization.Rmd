@@ -201,7 +201,7 @@ for (i in countries) {
 
 ```{r look at fao dataset discrepencies}
 # Get list of FAO countries
-countries <- fao_dataset_comparison %>%
+countries <- fao_imputed %>%
   ungroup() %>%
   distinct(iso3c) %>%
   pull(iso3c)
@@ -214,7 +214,7 @@ if (!dir.exists("../images/fao_dataset_comparison/")) {
 for (i in countries) {
   
   # Generate data
-  data <- fao_dataset_comparison %>%
+  data <- fao_imputed %>%
     filter(iso3c == i) %>%
     filter(str_detect(Element, "Protein")) %>%
     group_by(year, iso3c)
@@ -222,12 +222,12 @@ for (i in countries) {
   # Create image
   
   if (nrow(data) > 0) { # Check to see if filtered data has available observations
-    img <- data %>%
+  img <- data %>%
   ggplot(aes(x = year, y = prop_aquatic_animal, color = new_historical)) +
   geom_line() +
   geom_point() +
   theme_cowplot() +
-  scale_color_manual(values = c("#FF0000", "#0000FF")) +
+  scale_color_manual(values = c("#4254b8", "#EE5A54", "#52BEDB")) +
   labs(x = "", y = "Prop aquatic animal protein", color = "FAO FBS dataset", title = i) +
     theme(plot.title = element_text(hjust = 0.5))
   
