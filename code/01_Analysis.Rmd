@@ -260,7 +260,8 @@ supply_importance_wide <- supply_importance %>%
 
 # Rename supply_importance to long dataset (for final output)
 supply_importance_long <- supply_importance %>%
-  rename(prop_consumption_x_fao_aa_element_amount = "fao_supply_protein_g_pc")
+  rename(prop_consumption_x_fao_aa_element_amount = "fao_supply_protein_g_pc",
+         element = "Element")
 ```
 
 ```{r tests to ensure dataset works as is}
@@ -287,4 +288,3 @@ write_csv(supply_importance_wide, "../output/supply_importance_wide.csv")
 # Save long format to .parquet
 write_csv(supply_importance_long, "../output/supply_importance_long.csv")
 ```
-
