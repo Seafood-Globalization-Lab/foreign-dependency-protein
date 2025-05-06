@@ -42,7 +42,7 @@ supply_importance_long <- read_csv("../output/supply_importance_long.csv")
   scale_x_continuous(breaks = seq(1995, 2020, by = 10)))
 
 # Global sourcing importance, by habitat, by method, by source
-(sourcing_importance_global <- supply_importance_long %>%
+(sourcing_importance_global_protein <- supply_importance_long %>%
    filter(Element == "Protein supply quantity (g/capita/day)") %>%
   group_by(year, habitat, method, consumption_source) %>%
   summarize(mean_prop_consumption = mean(prop_consumption)) %>%
@@ -196,6 +196,9 @@ for (i in countries) {
   }
   
 }
+
+aa_reliance_slopes %>%
+  arrange(-slope)
 ```
 
 
@@ -414,6 +417,124 @@ for (i in fd_ordered) {
   # Save image
   ggsave(paste0("../images/foreign dependency ordered/", which(i == fd_ordered), ".jpg"), plot = img, device = "jpeg", height = 4, width = 6, units = "in")
 }
+```
+
+```{r}
+library(ggplot2)
+library(cowplot)
+library(dplyr)
+
+# STEP 1: Create a dedicated plot just to extract the legend
+legend_source_plot <- supply_importance_long %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  group_by(year, habitat, method, consumption_source) %>%
+  summarize(mean_prop_consumption = mean(aa_reliance_pct), .groups = "drop") %>%
+  mutate(mean_prop_consumption = 100 * mean_prop_consumption) %>%
+  ggplot(aes(x = year, y = mean_prop_consumption, color = consumption_source)) +
+  geom_point(size = 0.4) +
+  geom_line() +
+  facet_grid(habitat ~ method, scales = "free_x", space = "free_x") +
+  theme_cowplot(10) +
+  theme(legend.position = "bottom", legend.justification = "center") +
+  labs(x = "", y = "", color = "Consumption source") +
+  scale_x_continuous(breaks = seq(1995, 2020, by = 10)) +
+                       scale_color_manual(values = artis_palette(3))
+
+# STEP 2: Extract the legend using get_plot_component()
+legend <- get_plot_component(legend_source_plot, "guide-box-bottom", return_all = TRUE)
+
+# STEP 3: Create main plots with legend turned off
+plot_protein <- legend_source_plot +
+  labs(tag = "A", y = "Global % Contribution") +
+  theme(legend.position = "none") +
+  scale_y_continuous(limits = c(0, 12), breaks = seq(0, 12, by = 4))+
+  theme(
+    strip.background.y = element_blank(),
+    strip.text.y = element_blank()
+  )
+  
+
+plot_food <- supply_importance_long %>%
+  filter(Element == "Food supply (kcal/capita/day)") %>%
+  group_by(year, habitat, method, consumption_source) %>%
+  summarize(mean_prop_consumption = mean(aa_reliance_pct), .groups = "drop") %>%
+  mutate(mean_prop_consumption = 100 * mean_prop_consumption) %>%
+  ggplot(aes(x = year, y = mean_prop_consumption, color = consumption_source)) +
+  geom_point(size = 0.4) +
+  geom_line() +
+  facet_grid(habitat ~ method, scales = "free_x", space = "free_x") +
+  theme_cowplot(10) +
+  labs(tag = "B", x = "", y = "") +
+  scale_x_continuous(breaks = seq(1995, 2020, by = 10)) +
+  theme(legend.position = "none") +
+                       scale_color_manual(values = artis_palette(3)) +
+  scale_y_continuous(limits = c(0, 12), breaks = seq(0, 12, by = 4))
+
+# STEP 4: Combine A and B
+plots_combined <- plot_grid(plot_protein, plot_food, align = "v")
+
+# STEP 5: Add the shared legend underneath
+fig_one <- plot_grid(
+  plots_combined,
+  legend,
+  ncol = 1,
+  rel_heights = c(1, 0.1)
+)
+
+# Display the result
+print(fig_one)
+
+
+ggsave("../images/fig_one.jpg", fig_one, device = "jpeg", units = "in", width = 6, height = 4)
+```
+
+```{r figure 2}
+legend_source_plot <- aa_reliance_slopes %>%
+  filter(!is.na(region)) %>%
+  ggplot(aes(x = reorder(consumer_iso3c, -slope), 
+             y = slope, fill = region)) +
+  geom_col() +
+  theme_minimal_hgrid() +
+  theme(axis.text.x = element_blank()) +
+  labs(x = "", y = "Slope between aa reliance and time", fill = "Region") +
+  scale_fill_manual(values = artis_palette(7)) +
+  ylim(-0.0036, 0.0036) +
+  theme(axis.ticks.x = element_blank()) +
+  theme(legend.position = "bottom",
+        legend.justification = "center")
+
+legend <- get_plot_component(legend_source_plot, "guide-box-bottom", return_all = TRUE)
+
+
+one <- legend_source_plot +
+  labs(tag = "A", y = "Global % Contribution") +
+  theme(legend.position = "none")
+
+# Violin plot by region of foreign dependency slopes
+two <- aa_reliance_slopes %>%
+  filter(!is.na(region)) %>%
+  ggplot(aes(x = region, y = slope, fill = region)) +
+  geom_violin(alpha = 0.5) +
+  geom_point(alpha = 0.1, size = 0.75) +
+  scale_fill_manual(values = artis_palette(7)) +
+  theme_minimal_hgrid(12) +
+  labs(tag = "B", x = "", y = "") +
+  guides(fill = "none") +
+  theme(axis.text = element_blank(),
+        axis.ticks.x = element_blank()) +
+  ylim(-0.0036, 0.0036)
+
+
+plots_combined <- plot_grid(one, two)
+
+(fig_two <- plot_grid(plots_combined,
+                   legend,
+                   rel_heights = c(1, 0.15),
+                   ncol = 1))
+
+ggsave("../images/fig_two.jpg", fig_two, device = "jpeg", units = "in", width = 6, height = 4)
+
+aa_reliance_slopes %>% arrange(-slope)
 ```
 
 

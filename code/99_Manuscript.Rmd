@@ -1,8 +1,17 @@
 ---
-title: "MS"
-author: "Connor Quiroz"
-date: "2025-05-03"
-output: html_document
+title: "International protein reliance by seafood consumption sourcing"
+subtitle: "School of Aquatic and Fishery Sciences, Box 355020, University of Washington, Seattle, WA, 98195-5020"
+author: "Connor Quiroz and Jessica A. Gephart"
+output:
+  pdf_document:
+    latex_engine: xelatex
+mainfont: "Times New Roman"
+fontsize: 11pt
+header-includes:
+  - \usepackage{indentfirst}
+  - \setlength{\parindent}{0.2in}
+  - \usepackage{lineno}
+  - \linenumbers
 ---
 
 ```{r setup, include=FALSE}
@@ -13,7 +22,22 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Methods
 
+To derive seafood supply and protein importance by sourcing, we leveraged the new ARTIS database (Gephart et al. 2024) the Food and Agriculture Organization Food Balance Sheets (FAO-FBS; FAO 2013; FAO 2022). The ARTIS database has seafood consumption quantities by habitat (i.e., inland; marine), by method (i.e., capture; aquaculture), and by the producer source (i.e., foreign; domestic) while the FAO has food supply and protein amounts across all food sources (e.g., seafood, agriculture, grains, plants) by country and by year. We can use these FBS variables to derive the proportion that seafood contributes to: (1) total protein consumption and (2) total food supply quantity (grams) by dividing the seafood protein/food supply quantity by the total amount found across all food groups for a particular year and country. This, however, only captures countrywide seafood contributions, and not the importance by sourcing.
+
+One caveat with the FBS is that they revised their methods for calculating protein and food supply quantities in 2013, leading to slightly different calculations between the two datasets (FAO 2013; FAO 2022). There are overlapping years from 2010-2013 since they began using the new method in 2010 and did not stop using the historical method until 2013. To ensure these calculations may not have a substantial impact on seafood importance by source, we compared protein and food supply quantities across countries for these given years between these two datasets. We found no significant differences between the method calculations and proceeded with joining the data to ARTIS.
+
+Similar to the proportioning calculations done with the FBS, we used ARTIS to calculate the proportion that seafood consumption for a given year and country contributes to domestic/foreign consumption, inland/marine sourcing, and capture/aquaculture methods. There were 8 total categories which consumption can be disaggregated into (i.e., 2 x 2 x 2 combinations), so adding across all these categories in a country and year will sum the seafood consumption contribution to 100%. We joined ARTIS to the FAO-FBS by consuming country and by year and multiplied the ARTIS sourcing percent contribution to seafood consumption by the FBS seafood percent contribution to protein supply and the percent contribution to protein supply to get the overall sourcing contribution. These calculations provide the proportion that seafood domestic/foreign sourcing, habitat, and method of capture contributes to: (1) daily total protein consumption (grams per capita per day); and (2) daily total food consumption (calories per capita per day).
+
+
 # Results
+
+Our data captures the trends in international protein and food supply importances by consuming sources from 1996-2019. Globally, ~15% of seafood contributes to consumed animal proteins. Presently, Oceania has had the highest reliance on seafood, followed by Africa, Asia, North America, Europe, and South America. Marine capture has been the highest contributor to protein supply and food supply (Figure 1) followed by domestic inland capture. Aquaculture has not contributed to as much daily protein and food consumption as capture fisheries has, but has been steadily increasing, particularly in inland farms. The importance of foreign dependency has steadily increased while the importance of domestic production has steadily declined for marine capture seafood.
+
+Aquatic animal reliance has been an important contributor to overall food consumption. Across 184 consuming countries, 106 have had an increase in aquatic animal protein reliance. Europe had the highest increase in aquatic animal protein reliance followed by the United States, with Africa having the highest decrease (Figure 2). At the same time, foreign dependency has also increased, with the highest increases also in Europe. We thought Europe’s increase in foreign dependency could have resulted in their reliance from other adjacent countries in Europe, but it foreign sources came from outside Europe.
+
+![Annual global percent contribution to daily protein intake in grams (1A) and daily food intake in calories per capita (1B). This data derives these estimates from joining ARTIS data to the FAO-FBS.](../images/fig_one.jpg){width=6in}
+
+![Change in aquatic animal reliance from 1996-2019. These slopes were calculated by obtaining the change in aquatic animal reliance for a country from 1996-2019. Positive slopes indicate that a country has increased its seafood consumption sourcing from foreign countries, and negative slopes indicating a shift toward an increased domestic consumption. Plot 2A shows the highest to lowest aquatic animal reliance slopes, centered around 0 (i.e., no change). Plot 2B highlights continential distributions of changes in foreign aquatic animal reliance.](../images/fig_two.jpg){width=6in}
 
 # Discussion
 
