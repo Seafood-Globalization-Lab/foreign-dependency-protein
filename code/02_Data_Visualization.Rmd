@@ -510,7 +510,7 @@ one <- legend_source_plot +
   labs(tag = "A", y = "Global % Contribution") +
   theme(legend.position = "none")
 
-# Violin plot by region of foreign dependency slopes
+# Violin plot by region of aa reliance slopes
 two <- aa_reliance_slopes %>%
   filter(!is.na(region)) %>%
   ggplot(aes(x = region, y = slope, fill = region)) +
