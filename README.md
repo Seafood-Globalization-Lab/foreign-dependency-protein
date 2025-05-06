@@ -20,9 +20,9 @@ The final data in the output folder **`supply_importance_wide.csv`** and **`supp
 | consumption_source | The source of production (domestic, foreign) |
 | prop_consumption | The proportion of seafood consumption by habitat, method, and consumption source. Adding across these three categories within a country and year will sum to 1 |
 | aa_food_supply_kcal_capita_day | Total aquatic animal food supply in calories, per capita, per day |
-| aa_protein_supply_g_capita_day | Total aquatic animal protein supply in calories per capita per day |
+| aa_protein_supply_g_capita_day | Total aquatic animal protein supply in grams per capita per day |
 | animal_food_supply_kcal_capita_day | Total animal food supply in calories, per capita, per day |
-| animal_protein_supply_g_capita_day | Total animal protein supply in calories per capita per day |
+| animal_protein_supply_g_capita_day | Total animal protein supply in grams per capita per day |
 | prop_aa_food_supply | Proportion that aquatic animals contribute to food supply |
 | prop_aa_protein_supply | Proportion that aquatic animals contribute to protein supply |
 | prop_aa_contribution_to_animal_daily_calories | proportion contribution that aquatic animals contribute to consumed animal foods |
