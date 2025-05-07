@@ -1,7 +1,7 @@
 ---
-title: "International protein reliance by seafood consumption sourcing"
-subtitle: "School of Aquatic and Fishery Sciences, Box 355020, University of Washington, Seattle, WA, 98195-5020"
-author: "Connor Quiroz and Jessica A. Gephart"
+title: ""
+author: ""
+date: ""
 output:
   pdf_document:
     latex_engine: xelatex
@@ -12,13 +12,34 @@ header-includes:
   - \setlength{\parindent}{0.2in}
   - \usepackage{lineno}
   - \linenumbers
+  - \usepackage{float}
+bibliography: "../data/Chapter1.bib"
+csl: "../data/ecology.csl"
 ---
+
+\begin{center}
+{\LARGE International protein reliance by seafood consumption sourcing}
+
+\vspace{1em}
+
+{\large Connor Quiroz and Jessica A. Gephart}
+
+{\normalsize School of Aquatic and Fishery Sciences, Box 355020\\
+University of Washington, Seattle, WA, 98195-5020}
+\end{center}
+
+\vspace{2em}
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
 # Introduction
+
+* Need for data: There is an understanding on the national level contributions of seafood toward protein and food supply, but what about the souring contributions (i.e., domestic/foreign consumption, habitat, method)? There is a need to understand how different seafood consumption sourcing methods to overall protein and food consumption - highlighting more specific importance within each nation as well as their strengths, and where they may want to improve on. FAO-FBS currently has this data.
+* ARTIS, which compiles international trade flow data for over 1200 species, ... , and identifies seafood sourcing down to domestic/foreign consumption, the originating habitat, and the method of production. This can be joined to FBS to allow for more specific seafood contributions on international protein and food supplies
+* How do international trends in seafood consumption sourcing change with respect to governments' changing social-environmental atmospheres? This is currently unknown.
+* This data can set up future studies to 1. Run risk assessments on these data to understand how at risk are countries to changing social-environmental conditions with respect to their own seafood consumption portfolios
 
 # Methods
 
@@ -35,10 +56,27 @@ Our data captures the trends in international protein and food supply importance
 
 Aquatic animal reliance has been an important contributor to overall food consumption. Across 184 consuming countries, 106 have had an increase in aquatic animal protein reliance. Europe had the highest increase in aquatic animal protein reliance followed by the United States, with Africa having the highest decrease (Figure 2). At the same time, foreign dependency has also increased, with the highest increases also in Europe. We thought Europe’s increase in foreign dependency could have resulted in their reliance from other adjacent countries in Europe, but it foreign sources came from outside Europe.
 
-![Annual global percent contribution to daily protein intake in grams (1A) and daily food intake in calories per capita (1B). This data derives these estimates from joining ARTIS data to the FAO-FBS.](../images/fig_one.jpg){width=6in}
+\begin{figure}[H]
+\centering
+\includegraphics[width=6in]{../images/fig_one.jpg}
+\caption{Annual global percent contribution to daily protein intake in grams (1A) and daily food intake in calories per capita (1B). This data derives these estimates from joining ARTIS data to the FAO-FBS.}
+\end{figure}
 
-![Change in aquatic animal reliance from 1996-2019. These slopes were calculated by obtaining the change in aquatic animal reliance for a country from 1996-2019. Positive slopes indicate that a country has increased its seafood consumption sourcing from foreign countries, and negative slopes indicating a shift toward an increased domestic consumption. Plot 2A shows the highest to lowest aquatic animal reliance slopes, centered around 0 (i.e., no change). Plot 2B highlights continential distributions of changes in foreign aquatic animal reliance.](../images/fig_two.jpg){width=6in}
+\begin{figure}[H]
+\centering
+\includegraphics[width=6in]{../images/fig_two.jpg}
+\caption{Change in aquatic animal reliance from 1996-2019. These slopes were calculated by obtaining the change in aquatic animal reliance for a country from 1996-2019. Positive slopes indicate that a country has increased its seafood consumption sourcing from foreign countries, and negative slopes indicating a shift toward an increased domestic consumption. Plot 2A shows the highest to lowest aquatic animal reliance slopes, centered around 0 (i.e., no change). Plot 2B highlights continential distributions of changes in foreign aquatic animal reliance.}
+\end{figure}
+
+
 
 # Discussion
+
+* Applications of this data - gives us high resolution sourcing contributions to daily protein and food intake (fishery managers, food systems scientists)
+* Explain differences in FBS datasets and whether they potentially alter interpretations of results (they potentially could and is nuanced)
+* Future directions: Look more into fixing differences between FBS datasets - this process will take careful curating. Look at other contributions to other nutritional components (e.g., fat supply quantity)
+* Sets up future studies to study the risk of countries that may be more foreign dependent on seafood for their protein supplies.
+[@gephart_globalization_2024]
+
 
 # References
