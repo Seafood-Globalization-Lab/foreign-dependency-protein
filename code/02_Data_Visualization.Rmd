@@ -13,7 +13,40 @@ library(arrow)
 library(countrycode)
 library(exploreARTIS)
 library(ggsankey)
+
+# Map creation
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(sf)
 ```
+
+```{r}
+# Ocean polygon
+ocean <- st_polygon(list(cbind(c(seq(-180, 179, len = 100), rep(180, 100), 
+                        seq(179, -180, len = 100), rep(-180, 100)),
+                      c(rep(-90, 100), seq(-89, 89, len = 100),
+                        rep(90, 100), seq(89, -90, len = 100))))) |>
+  st_sfc(crs = "WGS84") |>
+  st_as_sf()
+
+create_map <- function(data, join_by = "consumer_iso3c", fill = "prop_missing") {
+  world_map <- ne_countries(scale = "medium", returnclass = "sf")
+
+world_map <- world_map %>%
+  left_join(data, by = c("iso_a3" = join_by))
+  
+  world_map %>%
+ggplot() +
+  geom_sf(data = ocean, fill = "#8080ff80") +
+  geom_sf(aes(fill = !!sym(fill)), color = "black") + 
+  scale_fill_viridis_c(option = "plasma") +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  coord_sf(crs = "+proj=robin")
+}
+```
+
+
 
 ```{r read in data created from 01_Analysis}
 # Make sure to rename variables and that code still runs
@@ -535,6 +568,23 @@ plots_combined <- plot_grid(one, two)
 ggsave("../images/fig_two.jpg", fig_two, device = "jpeg", units = "in", width = 6, height = 4)
 
 aa_reliance_slopes %>% arrange(-slope)
+```
+
+
+```{r}
+supply_importance_long %>%
+  group_by(consumer_iso3c, year, Element) %>%
+  filter(Element == "Protein supply quantity (g/capita/day)", 
+         year == 2019) %>%
+  summarize(aa_reliance = sum(aa_reliance_pct)) %>%
+  create_map(fill = "aa_reliance")
+
+supply_importance_long %>%
+  group_by(consumer_iso3c, year, Element) %>%
+  filter(Element == "Food supply (kcal/capita/day)", 
+         year == 2019) %>%
+  summarize(aa_reliance = sum(aa_reliance_pct)) %>%
+  create_map(fill = "aa_reliance")
 ```
 
 
