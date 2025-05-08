@@ -46,7 +46,7 @@ Food-based dietary guidelines can improve nutritional consumption, but these pol
 Food consumption databases can help build out food-based dietary guidelines.
 These databases, including the Food and Agriculture Organization Food Balance Sheets (FAO-FBS) and the Data Food Networking Databank, provide national level dietary estimates for what we eat (e.g., protein, caloric, fat intake), and have had global effort for being built out the past decades [@szucs_short_2013].
 They however, do not contain information on the food sourcing (e.g., method of capture, production origin) [@elmadfa_importance_2010; @gephart_environmental_2021].
-Seafood, which contributes to 15% of globally consumed animal protein [@fao_state_2024], has broad measurements in the FAO-FBS onits apparent consumption, but not disaggregated by source, which is important for constructing representative food-based dietary guidelines.
+Seafood, which contributes to 15% of globally consumed animal protein [@fao_state_2024], has broad measurements in the FAO-FBS on its apparent consumption, but not disaggregated by source, which is important for constructing representative food-based dietary guidelines.
 
 
 
