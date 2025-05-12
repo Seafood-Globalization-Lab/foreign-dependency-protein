@@ -157,48 +157,48 @@ fao_prop_imports <- historical_fao_props %>%
 ```
 
 ```{r make adjustments to FAO dataset (DO NOT RUN for final data output)}
-# Create a comparison dataset looking at FAO data differences
-fao_dataset_comparison <- fao_prop_imports %>%
-  mutate(new_historical = case_when(
-    year < 2010 ~ "historical",
-    year >= 2010 ~ "new"
-  ))
-
-# Calculate difference between new and old dataset
-diffs <- fao_dataset_comparison %>%
-  filter(year %in% c(2009, 2010),
-         str_detect(Element, "Protein")) %>%
-  group_by(iso3c) %>%
-  summarise(diff = prop_aquatic_animal[year == 2010] - prop_aquatic_animal[year == 2009])
-
-# Transform historical dataset by the difference between 2009 and 2010 (new FAO FBS)
-adjusted_values <- left_join(fao_dataset_comparison, diffs, by = "iso3c") %>%
-  filter(str_detect(Element, "Protein")) %>%
-  mutate(prop_aquatic_animal = case_when(
-    new_historical == "historical" ~ prop_aquatic_animal + diff,
-    TRUE ~ prop_aquatic_animal
-  )) %>%
-    mutate(new_historical = case_when(
-      new_historical == "historical" ~ "adjusted",
-      TRUE ~ new_historical
-    )) %>%
-  filter(new_historical == "adjusted") %>%
-  select(iso3c, year, prop_aquatic_animal, new_historical)
-
-# Combine historical, new, and adjusted values
-fao_imputed <- bind_rows(fao_dataset_comparison, adjusted_values)
-
-
-# Output dataset that would be used to replace historical FAO values with adjusted
-fao_dataset_comparison <- left_join(fao_dataset_comparison, diffs, by = "iso3c") %>%
-  mutate(prop_aquatic_animal = case_when(
-    new_historical == "historical" & 
-    str_detect(Element, "Protein") ~ prop_aquatic_animal + diff,
-    TRUE ~ prop_aquatic_animal
-  )) 
-
-# Temporarily change to new fao_prop_imports so we can see how it adjusts results
-fao_prop_imports <- fao_dataset_comparison 
+# # Create a comparison dataset looking at FAO data differences
+# fao_dataset_comparison <- fao_prop_imports %>%
+#   mutate(new_historical = case_when(
+#     year < 2010 ~ "historical",
+#     year >= 2010 ~ "new"
+#   ))
+# 
+# # Calculate difference between new and old dataset
+# diffs <- fao_dataset_comparison %>%
+#   filter(year %in% c(2009, 2010),
+#          str_detect(Element, "Protein")) %>%
+#   group_by(iso3c) %>%
+#   summarise(diff = prop_aquatic_animal[year == 2010] - prop_aquatic_animal[year == 2009])
+# 
+# # Transform historical dataset by the difference between 2009 and 2010 (new FAO FBS)
+# adjusted_values <- left_join(fao_dataset_comparison, diffs, by = "iso3c") %>%
+#   filter(str_detect(Element, "Protein")) %>%
+#   mutate(prop_aquatic_animal = case_when(
+#     new_historical == "historical" ~ prop_aquatic_animal + diff,
+#     TRUE ~ prop_aquatic_animal
+#   )) %>%
+#     mutate(new_historical = case_when(
+#       new_historical == "historical" ~ "adjusted",
+#       TRUE ~ new_historical
+#     )) %>%
+#   filter(new_historical == "adjusted") %>%
+#   select(iso3c, year, prop_aquatic_animal, new_historical)
+# 
+# # Combine historical, new, and adjusted values
+# fao_imputed <- bind_rows(fao_dataset_comparison, adjusted_values)
+# 
+# 
+# # Output dataset that would be used to replace historical FAO values with adjusted
+# fao_dataset_comparison <- left_join(fao_dataset_comparison, diffs, by = "iso3c") %>%
+#   mutate(prop_aquatic_animal = case_when(
+#     new_historical == "historical" & 
+#     str_detect(Element, "Protein") ~ prop_aquatic_animal + diff,
+#     TRUE ~ prop_aquatic_animal
+#   )) 
+# 
+# # Temporarily change to new fao_prop_imports so we can see how it adjusts results
+# fao_prop_imports <- fao_dataset_comparison 
 ```
 
 
@@ -267,12 +267,12 @@ supply_importance_long <- supply_importance %>%
 ```{r tests to ensure dataset works as is}
 # Make sure all items add to 1
 supply_importance_long %>%
-  group_by(consumer_iso3c, year, Element) %>%
+  group_by(consumer_iso3c, year, element) %>%
   summarize(total = sum(prop_consumption))
 
 # Make sure everything sums to only 1 within year / consuming country
 supply_importance_long %>%
-  group_by(consumer_iso3c, year, Element) %>%
+  group_by(consumer_iso3c, year, element) %>%
   summarize(total = sum(prop_consumption)) %>%
   ungroup() %>%
   filter(total > 1.001)

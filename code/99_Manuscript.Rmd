@@ -43,17 +43,23 @@ It can also be used to develop and monitor food-based dietary guidelines [@cafie
 Since the COVID-19 pandemic, global food insecurity has been on the rise, primarily due to reduced income, disproportionately affecting Africa and Asia and an estimated 691–783 million globally [@kuchechuk_global_2022; @iannotti_evidence_2024].
 Food-based dietary guidelines can improve nutritional consumption, but these policies may not be representative of the latest national level consumption patterns [@iannotti_evidence_2024; @herforth_global_2019].
 
-Food consumption databases can help build out food-based dietary guidelines.
+Food consumption databases can help build out food-based dietary guidelines. 
 These databases, including the Food and Agriculture Organization Food Balance Sheets (FAO-FBS) and the Data Food Networking Databank, provide national level dietary estimates for what we eat (e.g., protein, caloric, fat intake), and have had global effort for being built out the past decades [@szucs_short_2013].
-They however, do not contain information on the food sourcing (e.g., method of capture, production origin) [@elmadfa_importance_2010; @gephart_environmental_2021].
-Seafood, which contributes to 15% of globally consumed animal protein [@fao_state_2024], has broad measurements in the FAO-FBS on its apparent consumption, but not disaggregated by source, which is important for constructing representative food-based dietary guidelines.
+FAO-FBS, however, does not contain information on the food sourcing (e.g., method of capture, production origin), which is important for constructing representative food-based dietary guidelines [@elmadfa_importance_2010; @gephart_environmental_2021]. Seafood, more specifically aquatic animals (AA), which contributes to 15% of globally consumed animal protein [@fao_state_2024], has broad measurements in the FAO-FBS onits apparent consumption, has also not been disaggregated by source. 
+As shifting climates can reduce macro and micronutrients found in seafood and access to seafood may be increasingly constrained by supply disruptions, it is critical to identify AA’s nutritional contributions toward international food security by source [@shalders_nutritional_2022; @farmery_food_2022].
+
+What is the AA contribution towards total daily consumed animal protein and consumed animal calories nationally?
+We will address this research question by leveraging the FAO-FBS as well as the new Aquatic Resource Trade in Species (ARTIS). 
+ARTIS has disaggregated global trade data by country of harvest, production method, and species, resulting in estimated consumption for over 2400 species, 193 countries, and 35 million bilateral trade records going back to 1996 [@gephart_globalization_2024]. 
+By combining holistic FAO-FBS estimates to ARTIS’ sourcing data, we can estimate how much AAs contribute to nationally consumed animal protein and calories.
+This data will allow for trade analysis on how seafood consumption sourcing change with respect to governments' changing social-environmental-governmental conditions as well as risk assessments on countries’ reliance on seafood. 
 
 
 
-* Need for data: There is an understanding on the national level contributions of seafood toward protein and food supply, but what about the souring contributions (i.e., domestic/foreign consumption, habitat, method)? There is a need to understand how different seafood consumption sourcing methods to overall protein and food consumption - highlighting more specific importance within each nation as well as their strengths, and where they may want to improve on. FAO-FBS currently has this data.
-* ARTIS, which compiles international trade flow data for over 1200 species, ... , and identifies seafood sourcing down to domestic/foreign consumption, the originating habitat, and the method of production. This can be joined to FBS to allow for more specific seafood contributions on international protein and food supplies
-* How do international trends in seafood consumption sourcing change with respect to governments' changing social-environmental atmospheres? This is currently unknown.
-* This data can set up future studies to 1. Run risk assessments on these data to understand how at risk are countries to changing social-environmental conditions with respect to their own seafood consumption portfolios
+<!-- * Need for data: There is an understanding on the national level contributions of seafood toward protein and food supply, but what about the souring contributions (i.e., domestic/foreign consumption, habitat, method)? There is a need to understand how different seafood consumption sourcing methods to overall protein and food consumption - highlighting more specific importance within each nation as well as their strengths, and where they may want to improve on. FAO-FBS currently has this data. -->
+<!-- * ARTIS, which compiles international trade flow data for over 1200 species, ... , and identifies seafood sourcing down to domestic/foreign consumption, the originating habitat, and the method of production. This can be joined to FBS to allow for more specific seafood contributions on international protein and food supplies -->
+<!-- * How do international trends in seafood consumption sourcing change with respect to governments' changing social-environmental atmospheres? This is currently unknown. -->
+<!-- * This data can set up future studies to 1. Run risk assessments on these data to understand how at risk are countries to changing social-environmental conditions with respect to their own seafood consumption portfolios -->
 
 # Methods
 
@@ -76,13 +82,26 @@ These calculations provide the proportion that seafood domestic/foreign sourcing
 # Results
 
 Our data captures the trends in international protein and food supply importance by consuming sources from 1996-2019.
-Globally, ~15% of seafood contributes to consumed animal proteins.
+Globally, ~15% of seafood contributes to consumed animal proteins while AAs contribute ~9% to global daily caloric intake (Figure 1).
+Globally, aquatic animal contribution has declined, but overall contribution to the calories which we consume has increased.
 Presently, Oceania has had the highest reliance on seafood, followed by Africa, Asia, North America, Europe, and South America.
 Marine capture has been the highest contributor to protein supply and food supply (Figure 1) followed by domestic inland capture.
 Aquaculture has not contributed to as much daily protein and food consumption as capture fisheries has, but has been steadily increasing, particularly in inland farms.
 The importance of foreign dependency has steadily increased while the importance of domestic production has steadily declined for marine capture seafood.
 
-Aquatic animal reliance has been an important contributor to overall food consumption. Across 184 consuming countries, 106 have had an increase in aquatic animal protein reliance. Europe had the highest increase in aquatic animal protein reliance followed by the United States, with Africa having the highest decrease (Figure 2). At the same time, foreign dependency has also increased, with the highest increases also in Europe. We thought Europe’s increase in foreign dependency could have resulted in their reliance from other adjacent countries in Europe, but it foreign sources came from outside Europe.
+Aquatic animal reliance has been an important contributor to overall food consumption. Across 184 consuming countries, 106 have had an increase in aquatic animal protein reliance. Europe had the highest increase in aquatic animal protein reliance followed by the United States, with Africa having the highest decrease (Figure 2). At the same time, foreign dependency has also increased, with the highest increases also in Europe. We thought Europe’s increase in foreign dependency could have resulted in their reliance from other adjacent countries in Europe, but it foreign sources came from outside Europe. (Figure 3)
+
+<!-- \begin{figure}[H] -->
+<!-- \centering -->
+<!-- \includegraphics[width=6in]{../images/fig_three.jpg} -->
+<!-- \caption{Global aquatic animal contribution to daily animal protein intake (A) and daily animal caloric intake (B). Ex: 15% would indicate that AAs contribute 15% toward the total consumed animal protein per day for a given year.} -->
+<!-- \end{figure} -->
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=6in]{../images/fig_three.jpg}
+\caption{Global aquatic animal contribution to daily animal protein intake (A) and daily animal caloric intake (B). Ex: 15 percent would indicate that AAs contribute 15 percent toward the total consumed animal protein per day for a given year.}
+\end{figure}
 
 \begin{figure}[H]
 \centering
@@ -99,6 +118,14 @@ Aquatic animal reliance has been an important contributor to overall food consum
 
 
 # Discussion
+
+Aquatic animal reliance has been an important contributor to overall food consumption.
+This new dataset provides high resolution estimates into international AA contribution by sourcing, which is important for informing food-based dietary guidelines.
+Our data shows that global AA contribution to protein and caloric consumption has increased over the past couple decades.
+While there has been a global decrease in the mean percent reliance towards protein consumption (Figure 1), this reliance when measured within individual countries, has collectively increased with the highest increases in Europe and North America (Figure 3).
+We believe this suggests that seafood is becoming increasingly important, particularly sourced from marine capture fisheries.
+Aquaculture production is on the rise as well as foreignly sourced AAs.
+While foreign imports can increase food availability and diversity [@subramaniam_2023], we believe that a heavy reliance on foreign sourcing may leave countries vulnerable to climatically induced food shortages.
 
 * Applications of this data - gives us high resolution sourcing contributions to daily protein and food intake (fishery managers, food systems scientists) - cite @vonderschmidt_analysis_2024
 * Explain differences in FBS datasets and whether they potentially alter interpretations of results (they potentially could and is nuanced)
