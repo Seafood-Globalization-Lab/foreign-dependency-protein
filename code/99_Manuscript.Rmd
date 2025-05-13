@@ -89,7 +89,7 @@ Marine capture has been the highest contributor to protein supply and food suppl
 Aquaculture has not contributed to as much daily protein and food consumption as capture fisheries has, but has been steadily increasing, particularly in inland farms.
 The importance of foreign dependency has steadily increased while the importance of domestic production has steadily declined for marine capture seafood.
 
-Aquatic animal reliance has been an important contributor to overall food consumption. Across 184 consuming countries, 106 have had an increase in aquatic animal protein reliance. Europe had the highest increase in aquatic animal protein reliance followed by the United States, with Africa having the highest decrease (Figure 2). At the same time, foreign dependency has also increased, with the highest increases also in Europe. We thought Europe’s increase in foreign dependency could have resulted in their reliance from other adjacent countries in Europe, but it foreign sources came from outside Europe. (Figure 3)
+Aquatic animal reliance has been an important contributor to overall food consumption. Across 184 consuming countries, 106 have had an increase in aquatic animal protein reliance. Europe had the highest increase in aquatic animal protein reliance followed by the United States, with Africa having the highest decrease (Figure 2). At the same time, foreign dependency has also increased, with the highest increases also in Europe. We thought Europe’s increase in foreign dependency could have resulted in their reliance from other adjacent countries in Europe, but it foreign sources came from outside Europe. (Figure 3).
 
 <!-- \begin{figure}[H] -->
 <!-- \centering -->
@@ -125,12 +125,18 @@ Our data shows that global AA contribution to protein and caloric consumption ha
 While there has been a global decrease in the mean percent reliance towards protein consumption (Figure 1), this reliance when measured within individual countries, has collectively increased with the highest increases in Europe and North America (Figure 3).
 We believe this suggests that seafood is becoming increasingly important, particularly sourced from marine capture fisheries.
 Aquaculture production is on the rise as well as foreignly sourced AAs.
-While foreign imports can increase food availability and diversity [@subramaniam_2023], we believe that a heavy reliance on foreign sourcing may leave countries vulnerable to climatically induced food shortages.
+While foreign imports can increase food availability and diversity [@subramaniam_imports_2024], we believe that a heavy reliance on foreign sourcing may leave countries vulnerable to climatically induced food shortages.
 
-* Applications of this data - gives us high resolution sourcing contributions to daily protein and food intake (fishery managers, food systems scientists) - cite @vonderschmidt_analysis_2024
-* Explain differences in FBS datasets and whether they potentially alter interpretations of results (they potentially could and is nuanced)
-* Future directions: Look more into fixing differences between FBS datasets - this process will take careful curating. Look at other contributions to other nutritional components (e.g., fat supply quantity)
-* Sets up future studies to study the risk of countries that may be more foreign dependent on seafood for their protein supplies.
+The accuracy of this dataset also needs to be considered.
+While the ARTIS database leverages different Harmonized system versions to layer and provide the most accurate seafood consumption data [@gephart_globalization_2024], the FAO-FBS was split into different datasets with old methodologies ending in 2013 and new one starting in 2010. 
+There are currently no harmonization methods for merging historical and new FAO-FBS. 
+Differences in historical vs new values can be explained as transnational shifts, but these differences can be nuanced when looking across countries and may need careful curation if focusing on a specific country [@vonderschmidt_analysis_2024]. 
+Averaging over multiple years with FAO-FBS fata can produce more reliable trends - this could be a technique used to interpret our FAO-FBS-ARTIS joined data [@thar_review_2020]. 
+
+<!-- * Applications of this data - gives us high resolution sourcing contributions to daily protein and food intake (fishery managers, food systems scientists) - cite @vonderschmidt_analysis_2024 -->
+<!-- * Explain differences in FBS datasets and whether they potentially alter interpretations of results (they potentially could and is nuanced) -->
+<!-- * Future directions: Look more into fixing differences between FBS datasets - this process will take careful curating. Look at other contributions to other nutritional components (e.g., fat supply quantity) -->
+<!-- * Sets up future studies to study the risk of countries that may be more foreign dependent on seafood for their protein supplies. -->
 
 # References
 
