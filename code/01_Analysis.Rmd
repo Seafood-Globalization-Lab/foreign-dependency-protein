@@ -173,12 +173,9 @@ fao_prop_imports <- historical_fao_props %>%
 habitat_method_props <- consumption_full %>%
   group_by(year, consumer_iso3c, habitat, method, consumption_source) %>%
   summarize(total_group_catch = sum(consumption_live_t)) %>%
-  filter(!habitat == "unknown" |
-         !method == "unknown") %>%
   group_by(year, consumer_iso3c) %>%
   mutate(total_catch = sum(total_group_catch)) %>%
-  group_by(year, consumer_iso3c, habitat, method, consumption_source) %>%
-  summarize(prop_consumption = total_group_catch / total_catch) %>%
+  mutate(prop_consumption = total_group_catch / total_catch) %>%
   ungroup()
 
 # Join artis and fao food balance sheet data (combines habitat/method props to prop animal protein from fao)
