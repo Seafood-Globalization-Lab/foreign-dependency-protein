@@ -166,11 +166,6 @@ fao_prop_imports <- historical_fao_props %>%
   # filter(year < 2010) %>%
   bind_rows(new_fao_props) %>%
   select(-dataset)
-
-# DELETE
-fao_prop_imports %>%
-  filteR()
-
 ```
 
 
