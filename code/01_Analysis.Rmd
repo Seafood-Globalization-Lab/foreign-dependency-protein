@@ -29,7 +29,7 @@ fao_historical <- read_parquet("../output/fao_historical.parquet") %>%
   filter(`Area Code` < 1000)
 
 # Get years for each FAO dataset
-fao_years <- paste0("Y", as.character(2010:2019))
+fao_years <- paste0("Y", as.character(2010:2022))
 historical_years <- paste0("Y", as.character(1961:2013))
 
 # Potentially add in "Food supply quantity (kg/capita/yr)" Element
@@ -73,29 +73,30 @@ fao_preprocess <- function(data = data, colnames = "", element = "") {
     mutate(iso3c = countrycode(Area, origin = 'country.name', destination = 'iso3c')) %>%
     relocate(iso3c, .before = "Area") %>%
     filter(!is.na(value), # Temporary hotfix
-           !is.na(iso3c))
+           !is.na(iso3c)) 
 
+fao_historical %>% distinct(Item)
 # Extract FAO animal protein totals
 aquatic_animal_proteins <- fao_food_long %>%
   filter(Item %in% c("Cephalopods",
                      "Crustaceans", "Demersal Fish",
                      "Freshwater Fish", "Marine Fish, Other",
                      "Molluscs, Other", "Pelagic Fish")) %>%
-  group_by(iso3c, year, Element, Unit) %>%
+  group_by(iso3c, year, Element) %>%
   summarize(aquatic_animal_amount = sum(value, na.rm = TRUE)) %>%
   ungroup()
 
 # Calculate the total animal protein in FAO FBS
 total_protein <- fao_food_long %>%
   filter(Item %in% c("Animal Products")) %>%
-  group_by(iso3c, year, Element, Unit) %>%
+  group_by(iso3c, year, Element) %>%
   summarize(total_animal_amount = sum(value, na.rm = TRUE)) %>%
   ungroup()
 
 # Produce proportions aquatic animal protein of total consumed protein
 fao_prop_imports <- aquatic_animal_proteins %>% 
   left_join(total_protein) %>%
-  group_by(iso3c, year, Element, Unit) %>%
+  group_by(iso3c, year, Element) %>%
   mutate(prop_aquatic_animal = aquatic_animal_amount / (total_animal_amount))
 
 return(fao_prop_imports)
@@ -114,7 +115,7 @@ historical_fao_props <- fao_preprocess(data = fao_historical,
 
 # Get 2010-2019 FAO data
 # ne 
-fao_prop_imports <- fao_preprocess(data = fao_food, 
+new_fao_props <- fao_preprocess(data = fao_food, 
                                    colnames = fao_years,
                                    element = "Protein supply quantity (g/capita/day)") %>%
   
@@ -122,23 +123,23 @@ fao_prop_imports <- fao_preprocess(data = fao_food,
 
 # Check 2010: p value = 0.51
 t.test(historical_fao_props %>% filter(year == 2010) %>% pull(prop_aquatic_animal),
-       fao_prop_imports %>% filter(year == 2010) %>% pull(prop_aquatic_animal))
+       new_fao_props %>% filter(year == 2010) %>% pull(prop_aquatic_animal))
 
 # Check 2011: p-value = 0.53
 t.test(historical_fao_props %>% filter(year == 2011) %>% pull(prop_aquatic_animal),
-       fao_prop_imports %>% filter(year == 2011) %>% pull(prop_aquatic_animal))
+       new_fao_props %>% filter(year == 2011) %>% pull(prop_aquatic_animal))
 
 # Check 2012: p-value = 0.55
 t.test(historical_fao_props %>% filter(year == 2012) %>% pull(prop_aquatic_animal),
-       fao_prop_imports %>% filter(year == 2012) %>% pull(prop_aquatic_animal))
+       new_fao_props %>% filter(year == 2012) %>% pull(prop_aquatic_animal))
 
 # Check 2013: p-value = 0.60
 t.test(historical_fao_props %>% filter(year == 2013) %>% pull(prop_aquatic_animal),
-       fao_prop_imports %>% filter(year == 2013) %>% pull(prop_aquatic_animal))
+       new_fao_props %>% filter(year == 2013) %>% pull(prop_aquatic_animal))
 
 fao_compare_df <- historical_fao_props %>%
   rename("prop_aquatic_animal_historic" = "prop_aquatic_animal") %>%
-  inner_join(fao_prop_imports %>% 
+  inner_join(new_fao_props %>% 
                rename("prop_aquatic_animal_new" = "prop_aquatic_animal"),
              by = c("iso3c", "year"))
 
@@ -162,8 +163,8 @@ read_parquet("../output/fao_food.parquet") %>%
 ```{r merge datasets}
 # All overlapping years were not significantly different. We can merge safely merge datasets
 fao_prop_imports <- historical_fao_props %>% 
-  filter(year < 2010) %>% 
-  bind_rows(fao_prop_imports) %>%
+  # filter(year < 2010) %>%
+  bind_rows(new_fao_props) %>%
   select(-dataset)
 ```
 
@@ -192,7 +193,7 @@ supply_importance <- artis_fao_fbb %>%
 
 # Remove NA prop values from supply importance
 supply_importance <- supply_importance %>%
-  filter(!is.na(prop_aquatic_animal)) %>%
+  # filter(!is.na(prop_aquatic_animal)) %>%
   relocate(region, .after = "consumer_iso3c")
 
 # Convert to wide format
