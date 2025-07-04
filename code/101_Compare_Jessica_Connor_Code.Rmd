@@ -80,14 +80,22 @@ historical_fao_props %>%
   filter(total_animal_amount != total_animal_protein)
 
 # I'm pretty certain how we're calculating the total animal protein and aquatic animal protein is the same, the only difference is how China is processed. Down in the below graphics I find differences in our values. I suspect this is due to the different preprocessing techniques that we use for ARTIS.
+
+fao_aquatic_source %>% 
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  arrange(iso3c, year)
+
+supply_importance_long %>%
+  filter(element == "Protein supply quantity (g/capita/day)") %>%
+  arrange(iso3c, year)
 ```
 
 
 ```{r data viz}
 fao_aquatic_source %>%
-  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  filter(Element == "Proportion animal source protein from aquatic") %>%
   group_by(year, habitat, method, consumption_source) %>%
-  summarize(mean_prop_consumption = mean(aquatic_source_prop), .groups = "drop") %>%
+  summarize(mean_prop_consumption = mean(value), .groups = "drop") %>%
   filter(habitat != "unknown",
          method != "unknown") %>%
   mutate(mean_prop_consumption = 100 * mean_prop_consumption) %>%
@@ -95,13 +103,14 @@ fao_aquatic_source %>%
   geom_line(size = 1.3) +
   facet_grid(habitat ~ method, scales = "free_x", space = "free_x") +
   theme_cowplot(10) +
-  labs(x = "", y = "", color = "Consumption source")
+  labs(x = "", y = "", color = "Consumption source") +
   theme(legend.position = "bottom", legend.justification = "center")
 
 supply_importance_long %>%
   filter(element == "Protein supply quantity (g/capita/day)") %>%
   group_by(year, habitat, method, consumption_source) %>%
-  summarize(mean_prop_consumption = mean(aa_reliance_pct), .groups = "drop") %>%
+  summarize(mean_prop_consumption = mean(aa_reliance_pct
+), .groups = "drop") %>%
   filter(habitat != "unknown",
          method != "unknown") %>%
   mutate(mean_prop_consumption = 100 * mean_prop_consumption) %>%
@@ -141,13 +150,300 @@ setdiff({fao_aquatic_source %>%
 ```
 
 ```{r trying stuff}
-{fao_prop_imports %>% filter(Element == "Protein supply quantity (g/capita/day)")}$total_animal_amount,
+setdiff({fao_prop_imports %>% filter(Element == "Protein supply quantity (g/capita/day)")}$prop_aquatic_animal,
 {fao_new_raw %>%
   # Filter to the total animal product protein supply
   filter(Item == "Animal Products", 
          Element == "Protein supply quantity (g/capita/day)") %>%
   select("year", "iso3c", "data_source", "total_animal_protein" = "value") %>%
-  arrange(iso3c)}$total_animal_protein %>%
-  filter()
+  arrange(iso3c)}$total_animal_protein)
+
+
+fao_new_prop_aquatic
+
+# Jessica's data  has 587 more rows than 
+anti_join(fao_new_prop_aquatic, fao_prop_imports %>% filter(Element == "Protein supply quantity (g/capita/day)"), by = c("year", "iso3c", "value" = "prop_aquatic_animal"))
+
+
+anti_join(new_fao_props %>% filter(Element == "Protein supply quantity (g/capita/day)"), fao_new_prop_aquatic, by = c("year", "iso3c", "prop_aquatic_animal" = "value"))
+
+fao_new_prop_aquatic %>% distinct(year)
+
+
+anti_join(fao_new_prop_aquatic, new_fao_props %>% filter(Element == "Protein supply quantity (g/capita/day)"), by = c("year", "iso3c", "value" = "prop_aquatic_animal"))
+
+  fao_aquatic_source %>%
+    filter(Element == "Protein supply quantity (g/capita/day)") %>%
+    count(iso3c)
+  
+  supply_importance_long %>%
+    filter(element == "Protein supply quantity (g/capita/day)") %>%
+    count(iso3c)
+```
+
+```{r compare intermediate step between joining fao to artis}
+fao_aquatic %>% filter(Element == "Protein supply quantity (g/capita/day)")
+
+fao_prop_imports %>% filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  ungroup()
+```
+
+
+```{r}
+fao_aquatic_source %>%
+  arrange(iso3c) %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  count(iso3c)
+
+supply_importance_long %>%
+  arrange(consumer_iso3c) %>%
+  filter(element == "Protein supply quantity (g/capita/day)") %>%
+  count(consumer_iso3c)
+
+standardize_prod <- c("ASM","GUM","MNP","PRI","VIR",
+                                             "AIA","BMU","IOT","VBG","CYM",
+                                             "GIB","PCN","SHN","TCA","FLK",
+                                             "IMN","PYF","MYT","NCL","SPM",
+                                             "WLF","GUF","GLP","MTQ","MCO",
+                                             "REU","MAF","BLM","ATF","HKG",
+                                             "MAC","ABW","ANT","BES","SXM",
+                                             "CUW","COK","NIU","TKL","NFK",
+                                             "CXR","CCK","GRL","FRO","EAZ")
+
+UNALIGNED_COUNTRIES <- fao_aquatic_source %>%
+    filter(is.na(value)) %>%
+  distinct(iso3c) %>%
+  pull(iso3c)
+
+UNALIGNED_COUNTRIES %in% standardize_prod
+
+fao_aquatic_source %>% filter(is.na(value))
+
+fao_aquatic_source %>% filter(iso3c == "AGO",
+                              year == 2020)
+```
+
+
+```{r}
+fao_aquatic %>%
+  filter(iso3c == "AGO", year == 2021)
+
+fao_aquatic %>%
+  left_join(consumption_props, 
+            by = c("year", "iso3c" = "consumer_iso3c")) %>%
+  filter(iso3c == "AGO", year == 2021)
+```
+
+```{r}
+setdiff({fao_aquatic_source %>%
+  filter(iso3c == "USA") %>%
+  filter(Element == "Protein supply quantity (g/capita/day)",
+         year == 1996)}$value,
+
+{supply_importance_long %>%
+  filter(consumer_iso3c == "USA",
+         element == "Protein supply quantity (g/capita/day)",
+         year == 1996)}$prop_aquatic_animal)
+
+
+{fao_aquatic_source %>%
+  filter(iso3c == "USA") %>%
+  filter(Element == "Protein supply quantity (g/capita/day)",
+         year == 1996)}
+
+{supply_importance_long %>%
+  filter(iso3c == "BRA",
+         element == "Protein supply quantity (g/capita/day)",
+         year == 1996)}
+
+fao_aquatic %>%
+  filter(iso3c == "USA", Element == "Protein supply quantity (g/capita/day)") %>%
+  arrange(year)
+
+
+fao_prop_imports %>% filter(iso3c == "USA",
+                            Element == "Protein supply quantity (g/capita/day)")
+
+{fao_prop_imports %>%
+  filter(iso3c == "BRA",
+         Element == "Protein supply quantity (g/capita/day)")}
+```
+
+```{r}
+# Check differences in proportions - there are no differences in the proportions
+setdiff({fao_aquatic %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  arrange(iso3c, year) %>%
+  select(iso3c, year, value)}$value,
+
+{fao_prop_imports %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  select(iso3c, year, aquatic_animal_amount)}$aquatic_animal_amount)
+
+setdiff({fao_aquatic_source %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  select(iso3c, year, value) %>%
+  arrange(iso3c, year)}$value,
+
+{supply_importance_long %>%
+  filter(element == "Protein supply quantity (g/capita/day)") %>%
+  select(iso3c, year, aquatic_animal_amount) %>%
+  arrange(iso3c, year)}$aquatic_animal_amount)
+
+
+setdiff({fao_aquatic_source %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  select(iso3c, year, value) %>%
+  arrange(iso3c, year)}$value,
+
+{supply_importance_long %>%
+  filter(element == "Protein supply quantity (g/capita/day)") %>%
+  select(iso3c, year, aquatic_animal_amount) %>%
+  arrange(iso3c, year)}$aquatic_animal_amount)
+
+
+
+setdiff({consumption_props %>%
+  select(consumer_iso3c, year, aquatic_source_prop) %>%
+  arrange(consumer_iso3c, year)}$aquatic_source_prop,
+
+{habitat_method_props %>%
+  select(consumer_iso3c, year, prop_consumption) %>%
+  arrange(consumer_iso3c, year)}$prop_consumption)
+
+fao_aquatic_source %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  select(iso3c, year, aquatic_source_prop) %>%
+  arrange(iso3c, year, aquatic_source_prop) %>%
+  relocate(iso3c, .before = "year")
+
+supply_importance_long %>%
+  filter(iso3c == "AFG") %>%
+  filter(element == "Protein supply quantity (g/capita/day)") %>%
+  select(iso3c, year, prop_consumption)
+```
+
+```{r}
+habitat_method_props %>%
+  select(year, consumer_iso3c, prop_consumption) %>%
+  filter(year == 2019,
+         consumer_iso3c == "USA")
+
+consumption_props %>%
+  select(year, consumer_iso3c, aquatic_source_prop) %>%
+  filter(year == 1996,
+         consumer_iso3c == "AFG")
+
+fao_aquatic %>%
+  left_join(consumption_props, 
+            by = c("year", "iso3c" = "consumer_iso3c"),
+            # FIXIT: confirm this should be many-to-many
+            relationship = "many-to-many")  %>%
+  # Disaggregate proportionately to ARTIS consumption sourcing
+  mutate(value = value*aquatic_source_prop)  %>%
+  left_join(population, 
+            by = c("year", "iso3c", "data_source")) %>%
+  filter(iso3c == "AFG",
+         year == 1996,
+         Element == "Protein supply quantity (g/capita/day)"
+         ) %>%
+  select(iso3c, year, value)
+
+supply_importance_long %>% filter(element == "Protein supply quantity (g/capita/day)",
+                                  year == 1996, iso3c == "AFG") %>%
+  select(iso3c, year, aa_reliance_pct)
+
+
+habitat_method_props %>%
+  select(year, consumer_iso3c, prop_consumption) %>%
+  filter(year == 2019,
+         consumer_iso3c == "USA")
+fao_aquatic_source %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  select(iso3c, year, aquatic_source_prop) %>%
+  filter(iso3c == "USA",
+         year == 2019) %>%
+  select(iso3c, year, aquatic_source_prop)
+
+
+hist({fao_aquatic_source %>% filter(Element == "Protein supply quantity (g/capita/day)") %>% filter(iso3c != "CHN")}$aquatic_source_prop)
+hist({supply_importance_long %>% filter(element == "Protein supply quantity (g/capita/day)", iso3c != "CHN")}$aa_reliance_pct)
+```
+```{r}
+# CHECK TWO VARIABLES
+# 1. prop consumption
+setdiff({fao_aquatic_source %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  select(iso3c, year, aquatic_source_prop) %>%
+  arrange(iso3c, year)}$aquatic_source_prop,
+
+{supply_importance_long %>%
+  filter(element == "Protein supply quantity (g/capita/day)") %>%
+  select(iso3c, year, prop_consumption) %>%
+  arrange(iso3c, year)}$prop_consumption)
+
+# 2. prop aquatic animal protein
+{setdiff({fao_aquatic_source %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  select(iso3c, year, value) %>%
+  arrange(iso3c, year)}$value,
+
+{supply_importance_long %>%
+  filter(element == "Protein supply quantity (g/capita/day)") %>%
+  select(iso3c, year, aquatic_animal_amount) %>%
+  arrange(iso3c, year)}$aquatic_animal_amount)}
+
+# Both of these variables are the same: Now check final output variable:
+setdiff({fao_aquatic_source %>%
+  filter(Element == "Proportion animal source protein from aquatic") %>%
+  select(iso3c, year, value2) %>%
+  arrange(iso3c, year)}$value2,
+
+{supply_importance_long %>%
+  filter(element == "Protein supply quantity (g/capita/day)") %>%
+  select(iso3c, year, aa_reliance_pct) %>%
+  arrange(iso3c, year)}$aa_reliance_pct)
+
+fao_prop_imports %>%
+  filter(iso3c == "CHN",
+         Element == "Protein supply quantity (g/capita/day)")
+
+fao_aquatic %>%
+  filter(iso3c == "CHN",
+         Element == "Proportion animal source protein from aquatic") %>%
+  arrange(year)
+
+```
+```{r}
+read_parquet("../output/fao_food.parquet") %>%
+  filter(Area == "China",
+         Element == "Protein supply quantity (g/capita/day)")
+
+fao_food_long %>%
+  filter(str_detect(Area, "China"),
+         Element == "Protein supply quantity (g/capita/day)",
+         Item == "Animal Products")
+
+fao_new_raw %>%
+  filter(str_detect(Area, "China"),
+         Element == "Protein supply quantity (g/capita/day)",
+         Item == "Animal Products")
+```
+```{r}
+fao_old_aquatic %>%
+  filter(iso3c == "CHN",
+         Element == "Protein supply quantity (g/capita/day)")
+
+fao_old_raw %>%
+  filter(iso3c == "CHN",
+         Element == "Protein supply quantity (g/capita/day)",
+         Item == "Animal Products")
+
+fao_new_raw %>% filter(iso3c == "CHN",
+         Element == "Protein supply quantity (g/capita/day)",
+         Item == "Animal Products")
+
+fao_new_raw %>%
+  filter(iso3c == "LUX")
 ```
 
