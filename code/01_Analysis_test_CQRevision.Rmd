@@ -1,0 +1,208 @@
+---
+title: "01_Analysis_test"
+author: "Jessica Gephart"
+date: "2025-06-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(cowplot)
+library(arrow)
+library(countrycode)
+library(exploreARTIS)
+```
+
+This file independently produces the supply sourcing file as a test. 
+
+The desired final file should have the following columns: 
+* consumer_iso3c
+* year
+* population
+* source (foreign/domestic/error, capture/aquaculture/error)
+* supply_percap_kg (from FAO 'Food supply quantity (kg/capita/yr)')
+* 
+
+
+```{r read in data created from 00_Preprocess_Data}
+# Read in consumption data
+consumption_full <- read_parquet("../output/consumption_full.parquet")
+
+# Read in and clean new FAO food balance sheet data
+fao_new_raw <- read_parquet("../output/fao_food.parquet") %>% 
+  # Remove aggregated regions
+  filter(`Area Code` < 1000) %>% 
+  # Remove flag columns
+  select(-ends_with("F"), 
+         -ends_with("N")) %>%
+  pivot_longer(cols = Y2010:Y2022, names_to = "year") %>%
+  # Convert year column to numeric after removing "Y" prefix
+  mutate(year = as.numeric(str_replace(year, "Y", ""))) %>%
+  mutate(data_source = "new FBS") %>% 
+  # Add iso3c column
+  mutate(iso3c = countrycode(Area, origin = 'country.name', destination = 'iso3c')) %>%
+    relocate(iso3c, .before = "Area") %>%
+  # FIXIT: Filter out iso3c NAs for now, but these need corrected with country standardization
+  filter(!is.na(iso3c), 
+         # Remove rows missing values in raw data
+         !is.na(value)) %>%
+  group_by(iso3c, year, Element, Item) %>%
+  mutate(value = sum(value)) %>%
+  filter(Area != "China, mainland") %>%
+  ungroup()
+
+# Read in and clean historical FAO food balance sheet data
+fao_old_raw <- read_parquet("../output/fao_historical.parquet") %>% 
+  # Remove aggregated regions
+  filter(`Area Code` < 1000) %>% 
+  # Remove flag columns
+  select(-ends_with("F")) %>%
+  pivot_longer(cols = Y1961:Y2013, names_to = "year") %>%
+  # Convert year column to numeric after removing "Y" prefix
+  mutate(year = as.numeric(str_replace(year, "Y", ""))) %>%
+  # Only keep years 1996 and after to align with ARTIS
+  filter(year >= 1996) %>%
+  mutate(data_source = "old FBS") %>%
+  # Add iso3c column
+  mutate(iso3c = countrycode(Area, origin = 'country.name', destination = 'iso3c')) %>%
+    relocate(iso3c, .before = "Area") %>%
+  # FIXIT: Filter out iso3c NAs for now, but these need corrected with country standardization
+  filter(!is.na(iso3c), 
+         # Remove rows missing values in raw data
+         !is.na(value)) %>%
+  group_by(iso3c, year, Element, Item) %>%
+  mutate(value = sum(value)) %>%
+  filter(Area != "China, mainland") %>%
+  ungroup()
+```
+
+```{r create select data frames from FBS data}
+# Set elements to keep 
+# NOTE: How reasonable applying the live weight proportions here will 
+# vary by element. Need to consider which to ultimately keep. 
+elements_select <- c("Food supply (kcal/capita/day)", 
+                     "Food supply (kcal)", 
+                     "Protein supply quantity (g/capita/day)",
+                     "Protein supply quantity (t)", 
+                     # FIXIT: check difference between next two elements
+                     "Domestic supply quantity",
+                     "Food",
+                     "Food supply quantity (kg/capita/yr)")
+
+aquatic_animals <- c("Cephalopods",
+                     "Crustaceans", "Demersal Fish",
+                     "Freshwater Fish", "Marine Fish, Other",
+                     "Molluscs, Other", "Pelagic Fish")
+
+# Create data frame of aquatic animal products only for disaggregation by source
+fao_new_aquatic <- fao_new_raw %>%
+  filter(Item %in% aquatic_animals,
+         Element %in% elements_select) %>%
+  group_by(year, iso3c, Element, Unit, data_source) %>%
+  summarise(value = sum(value, na.rm = TRUE)) %>%
+  ungroup()
+
+fao_old_aquatic <- fao_old_raw %>%
+  filter(Item %in% aquatic_animals,
+         Element %in% elements_select) %>%
+  group_by(year, iso3c, Element, Unit, data_source) %>%
+  summarise(value = sum(value, na.rm = TRUE)) %>%
+  ungroup()
+
+population <- fao_old_raw %>%
+  filter(Element == "Total Population - Both sexes") %>%
+  select(year, iso3c, data_source, "population" = "value") %>%
+  bind_rows(fao_new_raw %>%
+  filter(Element == "Total Population - Both sexes") %>%
+  select(year, iso3c, data_source, "population" = "value")) %>%
+  # original unit is 1000 people - convert unit to people
+  mutate(population = 1000*population)
+
+```
+
+```{r clean consumption data}
+consumption_props <- consumption_full %>%
+  group_by(year, consumer_iso3c, consumption_source, habitat, method) %>%
+  summarise(consumption_live_t = sum(consumption_live_t)) %>%
+  group_by(year, consumer_iso3c) %>%
+  mutate(aquatic_source_prop = consumption_live_t/sum(consumption_live_t)) %>%
+  select(-consumption_live_t) %>%
+  ungroup()
+
+# Test that all add back to 1
+test <- consumption_props %>%
+  group_by(year, consumer_iso3c) %>%
+  summarise(test_val = sum(aquatic_source_prop)) %>%
+  filter(abs(test_val-1) > 0.000001) 
+```
+
+```{r calculate percent of protein from aquatic animals}
+fao_new_prop_aquatic <- fao_new_raw %>%
+  # Filter to the total animal product protein supply
+  filter(Item == "Animal Products", 
+         Element == "Protein supply quantity (g/capita/day)") %>%
+  select("year", "iso3c", "data_source", "total_animal_protein" = "value") %>%
+  # Join aquatic animal data and filter to product protein supply
+  full_join(fao_new_aquatic %>%
+              filter(Element == "Protein supply quantity (g/capita/day)") %>%
+              select("year", "iso3c", "data_source", 
+                     "aquatic_animal_protein" = "value"), 
+            by = c("year", "iso3c", "data_source")) %>%
+  mutate(value = aquatic_animal_protein/total_animal_protein,
+         Element = "Proportion animal source protein from aquatic",
+         Unit = "Proportion") %>%
+  select(-total_animal_protein, -aquatic_animal_protein)
+
+fao_old_prop_aquatic <- fao_old_raw %>%
+  # Filter to the total animal product protein supply
+  filter(Item == "Animal Products", 
+         Element == "Protein supply quantity (g/capita/day)") %>%
+  select("year", "iso3c", "data_source", "total_animal_protein" = "value") %>%
+  # Join aquatic animal data and filter to product protein supply
+  full_join(fao_old_aquatic %>%
+              filter(Element == "Protein supply quantity (g/capita/day)") %>%
+              select("year", "iso3c", "data_source", 
+                     "aquatic_animal_protein" = "value"), 
+            by = c("year", "iso3c", "data_source")) %>%
+  mutate(value = aquatic_animal_protein/total_animal_protein,  
+         Element = "Proportion animal source protein from aquatic",
+         Unit = "Proportion") %>%
+  select(-total_animal_protein, -aquatic_animal_protein)
+
+# Add proportion animal source protein from aquatic data to aquatic data frames and join all together
+fao_aquatic <- fao_new_aquatic %>%
+  bind_rows(fao_new_prop_aquatic) %>%
+  bind_rows(fao_old_aquatic) %>%
+  bind_rows(fao_old_prop_aquatic)
+
+rm(list = c("fao_new_prop_aquatic", "fao_old_prop_aquatic"))
+```
+
+```{r disaggregate fbs measures}
+fao_aquatic_source <- fao_aquatic %>%
+  left_join(consumption_props, 
+            by = c("year", "iso3c" = "consumer_iso3c"),
+            # FIXIT: confirm this should be many-to-many
+            relationship = "many-to-many") %>%
+  # Disaggregate proportionately to ARTIS consumption sourcing
+  mutate(value = value*aquatic_source_prop) %>%
+  left_join(population, 
+            by = c("year", "iso3c", "data_source"))
+
+# FIXIT: Test is not currently working - seems to be related to country cleaning (e.g., China duplicates likely due to China vs China, Mainland)
+tmp <- fao_aquatic_source %>% 
+  group_by(year, iso3c, Element, data_source) %>%
+  summarise(test = sum(aquatic_source_prop)) %>%
+  filter(abs(test-1) > 0.0001)
+
+# FIXIT: Test not passing, seemingly only for iso codes not in ARTIS. Check if this passes after new country standardization
+tmp <- fao_aquatic_source %>%
+  filter(is.na(value))
+
+# FIXIT: For now, filter out missing values, but determine handling after confirming source of NAs
+fao_aquatic_source <- fao_aquatic_source %>%
+  filter(!is.na(value))
+```
+
+

@@ -166,6 +166,11 @@ fao_prop_imports <- historical_fao_props %>%
   # filter(year < 2010) %>%
   bind_rows(new_fao_props) %>%
   select(-dataset)
+
+# DELETE
+fao_prop_imports %>%
+  filteR()
+
 ```
 
 
@@ -180,21 +185,22 @@ habitat_method_props <- consumption_full %>%
   ungroup()
 
 # Join artis and fao food balance sheet data (combines habitat/method props to prop animal protein from fao)
-artis_fao_fbb <- habitat_method_props %>% 
-  left_join(fao_prop_imports, by = c("consumer_iso3c" = "iso3c", "year"))
+artis_fao_fbb <- fao_prop_imports %>% 
+  left_join(habitat_method_props, by = c("iso3c" = "consumer_iso3c", "year"))
 
 # Disaggregate percent animal source protein from aquatic foods by source
 supply_importance <- artis_fao_fbb %>%
+  ungroup() %>%
   mutate(aa_reliance_pct = prop_consumption * prop_aquatic_animal, 
          fao_supply_protein_g_pc = prop_consumption * aquatic_animal_amount) %>%
-  add_region("consumer_iso3c", region.col.name = "region") %>%
+  add_region("iso3c", region.col.name = "region") %>%
   filter(!is.na(region)) %>%
   ungroup()
 
 # Remove NA prop values from supply importance
 supply_importance <- supply_importance %>%
   # filter(!is.na(prop_aquatic_animal)) %>%
-  relocate(region, .after = "consumer_iso3c")
+  relocate(region, .after = "iso3c")
 
 # Convert to wide format
 supply_importance_wide <- supply_importance %>%
