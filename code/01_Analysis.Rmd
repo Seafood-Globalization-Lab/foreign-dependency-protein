@@ -232,7 +232,7 @@ supply_importance_long <- supply_importance %>%
 ```{r tests to ensure dataset works as is}
 # Make sure all items add to 1
 supply_importance_long %>%
-  group_by(consumer_iso3c, year, element) %>%
+  group_by(iso3c, year, element) %>%
   summarize(total = sum(prop_consumption))
 
 # Make sure everything sums to only 1 within year / consuming country
