@@ -111,7 +111,8 @@ Old FAO and New FAO Food Balance Sheets data overlap in years 2010-2013. Since b
 # Get 1996-2019 FAO data
 historical_fao_props <- fao_preprocess(data = fao_historical, 
                                          colnames = historical_years,
-                                         element = "Protein supply quantity (g/capita/day)")
+                                         element = "Protein supply quantity (g/capita/day)") %>%
+  mutate(data_source = "old FBS")
 
 # Get 2010-2019 FAO data
 # ne 
@@ -119,7 +120,7 @@ new_fao_props <- fao_preprocess(data = fao_food,
                                    colnames = fao_years,
                                    element = "Protein supply quantity (g/capita/day)") %>%
   
-                            mutate(dataset = "new")
+                            mutate(data_source = "new FBS")
 
 # Check 2010: p value = 0.51
 t.test(historical_fao_props %>% filter(year == 2010) %>% pull(prop_aquatic_animal),
@@ -162,10 +163,10 @@ read_parquet("../output/fao_food.parquet") %>%
 
 ```{r merge datasets}
 # All overlapping years were not significantly different. We can merge safely merge datasets
-fao_prop_imports <- historical_fao_props %>% 
+fao_prop_imports <- historical_fao_props %>%
   # filter(year < 2010) %>%
   bind_rows(new_fao_props) %>%
-  select(-dataset)
+  ungroup()
 ```
 
 
