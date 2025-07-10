@@ -628,6 +628,7 @@ selector = "Protein supply quantity (g/capita/day)"
 
 usa_food_aquaculture <- supply_importance_long %>%
   filter(iso3c == "USA",
+         method == "aquaculture",
          element == selector)
 
 usa_food_aquaculture %>%
@@ -666,16 +667,16 @@ consumption <- consumption %>%
 # Calculate shannon diversity
 diversity <- consumption %>%
   filter(str_detect(sciname, pattern = "\ ")) %>%
-  group_by(year,sciname_hs_modified) %>%
+  group_by(year, consumer_iso3c, sciname_hs_modified, habitat, consumption_source) %>%
   summarize(taxa_total = sum(consumption_live_t)) %>%
-  group_by(year) %>%
+  group_by(year, consumer_iso3c, habitat, consumption_source) %>%
   mutate(genus_total_country = sum(taxa_total)) %>%
   ungroup() %>%
   mutate(pi = taxa_total / genus_total_country, pi_lnpi = pi * log(pi)) %>%
-  group_by(year) %>%
+  group_by(year, consumer_iso3c, habitat, consumption_source) %>%
   summarize(shannon = -sum(pi_lnpi))
 
-aquaculture_shannon <- left_join(usa_food_aquaculture, diversity, by = c("year"))
+aquaculture_shannon <- left_join(usa_food_aquaculture, diversity, by = c("year", "habitat", "consumption_source"))
 
 aquaculture_shannon %>%
   ggplot(aes(x = year, y = aa_reliance_pct, color = consumption_source, alpha = shannon)) +
@@ -695,19 +696,31 @@ aquaculture_shannon %>%
         axis.text.x = element_text(angle = 45))
 
 aquaculture_shannon %>%
-  filter(!(year == 2010 & data_source == "FAO_new")) %>%
-  ggplot(aes(x = year, y = shannon)) +
-  geom_point() +
+  filter(!(year == 2010 & data_source == "new FBS"),
+         !(year == 2011 & data_source == "new FBS"),
+         !(year == 2012 & data_source == "new FBS"),
+         !(year == 2013 & data_source == "new FBS"),
+         !is.na(method)) %>%
+  ggplot(aes(x = year, y = shannon, color = method)) +
+  geom_line(size = 2.5) +
   theme_cowplot(18) +
-  labs(x = "", y = "Shannon diversity")
+  labs(x = "", y = "Shannon diversity", color = "Method")
+
+aquaculture_shannon %>%
+  filter(!(year == 2010 & data_source == "new FBS"),
+         !(year == 2011 & data_source == "new FBS"),
+         !(year == 2012 & data_source == "new FBS"),
+         !(year == 2013 & data_source == "new FBS")
 
 # usa_food_aquaculture %>%
 #   ggplot(aes(x = consumption_source, y = aa_reliance_pct)) +
 #   geom_boxplot()
 # 
-# usa_food_aquaculture %>%
-#   ggplot(aes(x = habitat, y = aa_reliance_pct)) +
-#   geom_boxplot()
+usa_food_aquaculture %>%
+  ggplot(aes(x = habitat, y = aa_reliance_pct)) +
+  geom_boxplot() +
+  labs(x = "Habitat type", y = "Aquatic animal reliance proportion") +
+  theme_cowplot(17)
 # 
 # aquaculture_shannon %>%
 #   ggplot(aes(x = shannon, y = aa_reliance_pct, color = consumption_source)) +
