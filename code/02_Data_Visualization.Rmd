@@ -569,12 +569,16 @@ ggsave("../images/fig_two.jpg", fig_two, device = "jpeg", units = "in", width = 
 ```
 
 ```{r figure 3}
-(one <- supply_importance_long %>%
-  filter(element == "Protein supply quantity (g/capita/day)") %>%
-  group_by(consumer_iso3c, year) %>%
-  summarize(sum = sum(aa_reliance_pct)) %>%
+(one <- fao_aquatic_source %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+   filter(!(year == 2010 & data_source == "new FBS"),
+         !(year == 2011 & data_source == "new FBS"),
+         !(year == 2012 & data_source == "new FBS"),
+         !(year == 2013 & data_source == "new FBS")) %>%
+  group_by(iso3c, year) %>%
+  summarize(sum = sum(value)) %>%
   group_by(year) %>%
-  summarize(mean_importance = 100 * mean(sum)) %>%
+  summarize(mean_importance = mean(sum)) %>%
   ggplot(aes(x = year, y = mean_importance)) +
   geom_line() +
   theme_cowplot() +
@@ -583,12 +587,16 @@ ggsave("../images/fig_two.jpg", fig_two, device = "jpeg", units = "in", width = 
  axis.title.y = element_text(size = 6.5),
  axis.text = element_text(size = 7.5)))
 
-(two <- supply_importance_long %>%
-  filter(element == "Food supply (kcal/capita/day)") %>%
-  group_by(consumer_iso3c, year) %>%
-  summarize(sum = sum(aa_reliance_pct)) %>%
+(two <- fao_aquatic_source %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+   filter(!(year == 2010 & data_source == "new FBS"),
+         !(year == 2011 & data_source == "new FBS"),
+         !(year == 2012 & data_source == "new FBS"),
+         !(year == 2013 & data_source == "new FBS")) %>%
+  group_by(iso3c, year) %>%
+  summarize(sum = sum(value)) %>%
   group_by(year) %>%
-  summarize(mean_importance = 100 * mean(sum)) %>%
+  summarize(mean_importance = mean(sum)) %>%
   ggplot(aes(x = year, y = mean_importance)) +
   geom_line() +
   theme_cowplot() +
@@ -748,7 +756,7 @@ x0_surface <- plot_ly(
   x = matrix(0, nrow = 2, ncol = 2),
   y = matrix(rep(xy_range, each = 2), nrow = 2),
   z = matrix(rep(z_range, 2), nrow = 2),
-  opacity = 0.3,
+  opacity = 0.1,
   colorscale = list(c(0, 1), c("gray", "gray")),
   showscale = FALSE
 )
@@ -760,7 +768,7 @@ y0_surface <- plot_ly(
   x = matrix(rep(xy_range, each = 2), nrow = 2),
   y = matrix(0, nrow = 2, ncol = 2),
   z = matrix(rep(z_range, 2), nrow = 2),
-  opacity = 0.3,
+  opacity = 0.1,
   colorscale = list(c(0, 1), c("gray", "gray")),
   showscale = FALSE
 )
@@ -793,7 +801,8 @@ fao_aquatic_source %>%
 fao_heatmap_data <- fao_aquatic_source %>%
   filter(Element == "Protein supply quantity (g/capita/day)", 
          data_source == "new FBS") %>%
-  mutate(combo_group = paste(consumption_source, habitat, method, sep = " | "))
+  mutate(combo_group = paste(consumption_source, habitat, method, sep = " | ")) %>%
+  filter(year == 2020)
 
 fig_five <- ggplot(fao_heatmap_data, aes(x = iso3c, y = combo_group, fill = aquatic_source_prop)) +
   geom_tile() +
@@ -806,9 +815,10 @@ fig_five <- ggplot(fao_heatmap_data, aes(x = iso3c, y = combo_group, fill = aqua
     panel.background = element_rect(fill = "transparent", color = NA),
     plot.background = element_rect(fill = "transparent", color = NA),
     legend.background = element_rect(fill = "transparent", color = NA),
-    legend.box.background = element_rect(fill = "transparent", color = NA))
+    legend.box.background = element_rect(fill = "transparent", color = NA),
+    legend.position = "bottom")
 
-ggsave("../images/fig_five.png", fig_four, device = "png", width = 6, height = 4, units = "in", bg = "transparent")
+ggsave("../images/fig_five.png", fig_five, device = "png", width = 6, height = 4, units = "in", bg = "transparent")
 ```
 
 
