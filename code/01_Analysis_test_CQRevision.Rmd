@@ -205,13 +205,33 @@ fao_aquatic_source <- fao_aquatic_source %>%
   filter(!is.na(value))
 ```
 
-```{r example of how the country standardizaton would work}
-standardized_country_names <- standardize_country_data() %>%
-  select(-input_country_name, -output_country_name)
+```{r get data to Lana}
+fao_aquatic_source <- fao_aquatic_source %>% 
+  filter(!(year == 2010 & data_source == "old FBS"),
+         !(year == 2011 & data_source == "old FBS"),
+         !(year == 2012 & data_source == "old FBS"),
+         !(year == 2013 & data_source == "old FBS"),
+         data_source == "new FBS") %>%
+  rename(aa_reliance_prop = "value", consumption_prop = "aquatic_source_prop") %>%
+  relocate(aa_reliance_prop, .after = "consumption_prop")
 
-left_join(tmp, standardized_country_names, by = c("iso3c" = "input_iso3c", "year")) %>%
-  mutate(iso3c = case_when(is.na(output_iso3c) ~ iso3c, # an NA in output_iso3c means the original iso3c value is a country
-                           !is.na(output_iso3c) ~ output_iso3c)) %>%
-  select(-output_iso3c)# a non NA output_iso3c means the original value was a territory value that needs to be converted to a country.
+write_csv(fao_aquatic_source, "../output/fao_aquatic_source_7_16_2025_lana.csv")
+
+
+fao_aquatic_source %>%
+  ggplot(aes(x = aa_reliance_prop)) +
+  geom_histogram() +
+  lims(x = c(0,1))
+```
+
+
+```{r example of how the country standardizaton would work}
+# standardized_country_names <- standardize_country_data() %>%
+#   select(-input_country_name, -output_country_name)
+# 
+# left_join(tmp, standardized_country_names, by = c("iso3c" = "input_iso3c", "year")) %>%
+#   mutate(iso3c = case_when(is.na(output_iso3c) ~ iso3c, # an NA in output_iso3c means the original iso3c value is a country
+#                            !is.na(output_iso3c) ~ output_iso3c)) %>%
+#   select(-output_iso3c)# a non NA output_iso3c means the original value was a territory value that needs to be converted to a country.
 ```
 
