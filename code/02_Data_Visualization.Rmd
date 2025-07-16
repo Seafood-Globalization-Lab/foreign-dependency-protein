@@ -726,6 +726,10 @@ terrestrial_roc <- fao_new_prop_terrestrial %>%
     facet_wrap(~ region))
 
 ggsave("../images/fig_four_b.png", fig_four, device = "png", width = 6, height = 4, units = "in", bg = "transparent")
+
+
+
+
 ```
 
 ```{r create figure four in 3d}
