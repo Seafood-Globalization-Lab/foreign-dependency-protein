@@ -24,15 +24,98 @@ The desired final file should have the following columns:
 * supply_percap_kg (from FAO 'Food supply quantity (kg/capita/yr)')
 * 
 
+```{r}
+# Recalculate per capita since we combined territories into countries
+update_population_data <- function(input_data, animal_products = FALSE, historical = FALSE) {
+
+if (historical == FALSE) {
+  fbs_totals <- input_data %>%
+  filter(Element %in% c("Food supply (kcal)", "Protein supply quantity (t)"))  # These are total yearly values
+} else {
+  fbs_totals <- input_data %>%
+  filter(Element %in% c("Protein supply quantity (t)"))
+}
+  
+  
+
+# Join filtered dataset on population data
+fbs_joined <- fbs_totals %>%
+  left_join(population, by = c("iso3c", "year", "data_source"))
+
+# Pivot three rows to wider since we can't expand food supply (same name) to two different components with a case_when()
+
+if (animal_products == FALSE) {
+  fbs_wide <- fbs_joined %>%
+  select(year, iso3c, Element, value, population) %>%
+  pivot_wider(names_from = Element, values_from = value)
+} else {
+  fbs_wide <- fbs_joined %>%
+  filter(Item == "Animal Products") %>%
+  select(year, iso3c, Element, value, population) %>%
+  pivot_wider(names_from = Element, values_from = value)
+}
+
+if (historical == TRUE) {
+  # Manually calcualte per capita values from our updated popualtion measures
+fbs_long <- fbs_wide %>%
+  mutate(
+    `Protein supply quantity (g/capita/day)` = (`Protein supply quantity (t)` * 1e6) / (population * 365)) %>%
+  pivot_longer(cols = c("Protein supply quantity (g/capita/day)")) %>%
+  mutate(Unit = case_when(name == "Protein supply quantity (g/capita/day)" ~ "t")) %>%
+  select(-`Protein supply quantity (t)`,-population,
+         -name, -Unit) 
+
+# Put recalculated per capita values back into the dataset
+fao_new_aquatic %>%
+  left_join(fbs_long, by = c("year", "iso3c")) %>%
+  mutate(value.x = case_when(
+    Element == "Protein supply quantity (g/capita/day)" ~ value.y,
+    TRUE ~ value.x
+  )) %>%
+  select(-value.y, c("value" = "value.x"))
+} else {
+  # Manually calcualte per capita values from our updated popualtion measures
+fbs_long <- fbs_wide %>%
+  mutate(
+    # Note Units: Food supply (kcal) in million Kcal, Protein supply quantity (t) in t
+    `Food supply (kcal/capita/day)` = (`Food supply (kcal)` * 1e6) / (population * 365),
+
+    `Food supply quantity (kg/capita/yr)` = (`Food supply (kcal)` * 1e6) / (population * energy_density_kcal_per_kg),
+
+    	`Protein supply quantity (g/capita/day)` = (`Protein supply quantity (t)` * 1e6) / (population * 365)) %>%
+  pivot_longer(cols = c("Food supply (kcal/capita/day)", "Food supply quantity (kg/capita/yr)", "Protein supply quantity (g/capita/day)")) %>%
+  mutate(Unit = case_when(name == "Food supply (kcal/capita/day)" ~ "kcal/cap/d",
+                     name == "Food supply quantity (kg/capita/yr)" ~ "kg/cap",
+                     name == "Protein supply quantity (g/capita/day)" ~ "t")) %>%
+  select(-`Food supply (kcal)`, -`Protein supply quantity (t)`,-population,
+         -name, -Unit) 
+
+# Put recalculated per capita values back into the dataset
+input_data %>%
+  left_join(fbs_long, by = c("year", "iso3c")) %>%
+  mutate(value.x = case_when(
+    Element == "Food supply (kcal/capita/day)" ~ value.y,
+    Element == "Food supply quantity (kg/capita/yr)" ~ value.y,
+    Element == "Protein supply quantity (g/capita/day)" ~ value.y,
+    TRUE ~ value.x
+  )) %>%
+  select(-value.y, c("value" = "value.x"))
+}
+}
+```
 
 ```{r read in data created from 00_Preprocess_Data}
 # Read in consumption data
 consumption_full <- read_parquet("../output/consumption_full.parquet")
 
+# Standardize country names
+standardized_countries <- standardize_country_data()
+
 # Read in and clean new FAO food balance sheet data
 fao_new_raw <- read_parquet("../output/fao_food.parquet") %>% 
   # Remove aggregated regions
-  filter(`Area Code` < 1000) %>% 
+  filter(`Area Code` < 1000,
+         Area != "China") %>% # China included in other names that FBS has
   # Remove flag columns
   select(-ends_with("F"), 
          -ends_with("N")) %>%
@@ -43,19 +126,23 @@ fao_new_raw <- read_parquet("../output/fao_food.parquet") %>%
   # Add iso3c column
   mutate(iso3c = countrycode(Area, origin = 'country.name', destination = 'iso3c')) %>%
     relocate(iso3c, .before = "Area") %>%
-  # FIXIT: Filter out iso3c NAs for now, but these need corrected with country standardization
-  filter(!is.na(iso3c), 
-         # Remove rows missing values in raw data
-         !is.na(value)) %>%
-  group_by(iso3c, year, Element, Item) %>%
-  mutate(value = sum(value)) %>%
-  filter(Area != "China, mainland") %>%
-  ungroup()
+  left_join(standardized_countries, by = c("iso3c" = "input_iso3c", "year")) %>%
+  mutate(iso3c = case_when(is.na(output_iso3c) ~ iso3c, # an NA in output_iso3c means the original iso3c value is a country
+                           !is.na(output_iso3c) ~ output_iso3c)) %>% 
+  mutate(iso3c = case_when(
+    str_detect(Area,"Antilles") ~ "NLD", # Fix Netherlands name that wasn't matched
+                TRUE ~ iso3c
+  )) %>%
+  group_by(iso3c, year, Element, `Element Code`, Unit, `Item Code (FBS)`, `Item Code`, Item) %>%
+  summarize(value = sum(value, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(data_source = "new FBS") 
 
-# Read in and clean historical FAO food balance sheet data
-fao_old_raw <- read_parquet("../output/fao_historical.parquet") %>% 
+# Get historical FBS population values
+fbs_old_pops <- read_parquet("../output/fao_historical.parquet") %>% 
   # Remove aggregated regions
-  filter(`Area Code` < 1000) %>% 
+  filter(`Area Code` < 1000,
+          Area != "China") %>% # China included in other names that FBS has
   # Remove flag columns
   select(-ends_with("F")) %>%
   pivot_longer(cols = Y1961:Y2013, names_to = "year") %>%
@@ -64,17 +151,47 @@ fao_old_raw <- read_parquet("../output/fao_historical.parquet") %>%
   # Only keep years 1996 and after to align with ARTIS
   filter(year >= 1996) %>%
   mutate(data_source = "old FBS") %>%
+  filter(Element == "Total Population - Both sexes") %>%
+  rename(population = "value") %>%
+  select(Area, year, population)
+
+# Read in and clean historical FAO food balance sheet data
+fao_old_raw <- read_parquet("../output/fao_historical.parquet") %>% 
+  # Remove aggregated regions
+  filter(`Area Code` < 1000,
+          Area != "China") %>% # China included in other names that FBS has
+  # Remove flag columns
+  select(-ends_with("F")) %>%
+  pivot_longer(cols = Y1961:Y2013, names_to = "year") %>%
+  # Convert year column to numeric after removing "Y" prefix
+  mutate(year = as.numeric(str_replace(year, "Y", ""))) %>%
+  # Only keep years 1996 and after to align with ARTIS
+  filter(year >= 1996) %>%
+  mutate(data_source = "old FBS") %>%
+  left_join(fbs_old_pops, by = c("Area", "year")) %>%
+  mutate(value = case_when( # Derive annual protein supply (we're going to recalculate per capita since FBS doesn't aggregate fully by country (but separates by territory)
+    Element == "Protein supply quantity (g/capita/day)" ~ (value * population * 365) / 1e6,
+    TRUE ~ value
+  ),
+  Element = case_when(Element == "Protein supply quantity (g/capita/day)" ~ "Protein supply quantity (t)",
+                      TRUE ~ Element),
+  Unit = case_when(Element == "Protein supply quantity (t)" ~ "t",
+                   TRUE ~ Unit)
+  ) %>%
   # Add iso3c column
   mutate(iso3c = countrycode(Area, origin = 'country.name', destination = 'iso3c')) %>%
     relocate(iso3c, .before = "Area") %>%
-  # FIXIT: Filter out iso3c NAs for now, but these need corrected with country standardization
-  filter(!is.na(iso3c), 
-         # Remove rows missing values in raw data
-         !is.na(value)) %>%
-  group_by(iso3c, year, Element, Item) %>%
-  mutate(value = sum(value)) %>%
-  filter(Area != "China, mainland") %>%
-  ungroup()
+  left_join(standardized_countries, by = c("iso3c" = "input_iso3c", "year")) %>%
+  mutate(iso3c = case_when(is.na(output_iso3c) ~ iso3c, # an NA in output_iso3c means the original iso3c value is a country
+                           !is.na(output_iso3c) ~ output_iso3c)) %>% 
+  mutate(iso3c = case_when(
+    str_detect(Area,"Antilles") ~ "NLD", # Fix Netherlands name that wasn't matched
+                TRUE ~ iso3c
+  )) %>%
+  group_by(iso3c, year, Element, `Element Code`, Unit, `Item Code (FBS)`, `Item Code`, Item) %>%
+  summarize(value = sum(value, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(data_source = "old FBS") 
 ```
 
 ```{r create select data frames from FBS data}
@@ -87,7 +204,6 @@ elements_select <- c("Food supply (kcal/capita/day)",
                      "Protein supply quantity (t)", 
                      # FIXIT: check difference between next two elements
                      "Domestic supply quantity",
-                     "Food",
                      "Food supply quantity (kg/capita/yr)")
 
 aquatic_animals <- c("Cephalopods",
@@ -117,9 +233,37 @@ population <- fao_old_raw %>%
   filter(Element == "Total Population - Both sexes") %>%
   select(year, iso3c, data_source, "population" = "value")) %>%
   # original unit is 1000 people - convert unit to people
-  mutate(population = 1000*population)
+  mutate(population = 1000*population) %>%
+  # Since we are recalculating per capita, we need to impute missing per population values. We've done this using the mean of a countries' overall population across the years.
+  group_by(iso3c) %>%
+  mutate(population = case_when(
+    population == 0 ~ mean(population, na.rm = TRUE),
+                           TRUE ~ population
+  ))
+
+# One country: SCG Doesn't have any available population data.
+```
+
+```{r update per capita values}
+# New FAO aquatic animals dataset
+fao_new_aquatic <- update_population_data(fao_new_aquatic,
+                                          animal_products = FALSE,
+                                          historical = FALSE)
+# Historical FAO aquatic animals dataset
+fao_old_aquatic <- update_population_data(fao_old_aquatic,
+                                          animal_products = FALSE,
+                                          historical = TRUE)
+# New FAO animals dataset
+fao_new_raw <- update_population_data(fao_new_raw,
+                       animal_products = TRUE,
+                       historical = FALSE)
+# Historical FAO animals dataset
+fao_old_raw <- update_population_data(fao_old_raw,
+                       animal_products = TRUE,
+                       historical = TRUE)
 
 ```
+
 
 ```{r clean consumption data}
 consumption_props <- consumption_full %>%
@@ -140,8 +284,7 @@ test <- consumption_props %>%
 ```{r calculate percent of protein from aquatic animals}
 fao_new_prop_aquatic <- fao_new_raw %>%
   # Filter to the total animal product protein supply
-  filter(Item == "Animal Products", 
-         Element == "Protein supply quantity (g/capita/day)") %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
   select("year", "iso3c", "data_source", "total_animal_protein" = "value") %>%
   # Join aquatic animal data and filter to product protein supply
   full_join(fao_new_aquatic %>%
@@ -156,8 +299,7 @@ fao_new_prop_aquatic <- fao_new_raw %>%
 
 fao_old_prop_aquatic <- fao_old_raw %>%
   # Filter to the total animal product protein supply
-  filter(Item == "Animal Products", 
-         Element == "Protein supply quantity (g/capita/day)") %>%
+  filter(Element == "Protein supply quantity (g/capita/day)") %>%
   select("year", "iso3c", "data_source", "total_animal_protein" = "value") %>%
   # Join aquatic animal data and filter to product protein supply
   full_join(fao_old_aquatic %>%
@@ -226,12 +368,12 @@ fao_aquatic_source %>%
 
 
 ```{r example of how the country standardizaton would work}
-# standardized_country_names <- standardize_country_data() %>%
-#   select(-input_country_name, -output_country_name)
-# 
-# left_join(tmp, standardized_country_names, by = c("iso3c" = "input_iso3c", "year")) %>%
-#   mutate(iso3c = case_when(is.na(output_iso3c) ~ iso3c, # an NA in output_iso3c means the original iso3c value is a country
-#                            !is.na(output_iso3c) ~ output_iso3c)) %>%
-#   select(-output_iso3c)# a non NA output_iso3c means the original value was a territory value that needs to be converted to a country.
+standardized_country_names <- standardize_country_data() %>%
+  select(-input_country_name, -output_country_name)
+
+left_join(tmp, standardized_country_names, by = c("iso3c" = "input_iso3c", "year")) %>%
+  mutate(iso3c = case_when(is.na(output_iso3c) ~ iso3c, # an NA in output_iso3c means the original iso3c value is a country
+                           !is.na(output_iso3c) ~ output_iso3c)) %>%
+  select(-output_iso3c)# a non NA output_iso3c means the original value was a territory value that needs to be converted to a country.
 ```
 
