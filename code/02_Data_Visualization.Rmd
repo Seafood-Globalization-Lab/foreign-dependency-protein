@@ -616,11 +616,11 @@ ggsave("../images/fig_three.jpg", fig_three, device = "jpeg", units = "in", widt
 # Get all capture data that is greater than 2010 - determine roc in capture usage
 capture_roc <- fao_aquatic_source %>%
   filter(year > 2010, data_source == "new FBS",
-         method == "capture", Element == "Protein supply quantity (g/capita/day)") %>%
+         method == "capture", Element == "Proportion animal source protein from aquatic") %>%
   mutate(aa_prop = value / aquatic_source_prop) %>%
   group_by(year, iso3c, method) %>%
   mutate(aquatic_source_prop = sum(aquatic_source_prop)) %>%
-  summarize(value = aquatic_source_prop * aa_prop) %>%
+  # summarize(value = aquatic_source_prop * aa_prop) %>%
   distinct(iso3c, year, .keep_all = TRUE) %>%
   summarize(value = sum(value)) %>%
   split(.$iso3c) %>% 
@@ -631,11 +631,11 @@ capture_roc <- fao_aquatic_source %>%
 # Get all capture data that is greater than 2010 - determine roc in aquaculture usage
 aquaculture_roc <- fao_aquatic_source %>%
   filter(year > 2010, data_source == "new FBS",
-         method == "aquaculture", Element == "Protein supply quantity (g/capita/day)") %>%
+         method == "aquaculture", Element == "Proportion animal source protein from aquatic") %>%
   mutate(aa_prop = value / aquatic_source_prop) %>%
   group_by(year, iso3c, method) %>%
   mutate(aquatic_source_prop = sum(aquatic_source_prop)) %>%
-  summarize(value = aquatic_source_prop * aa_prop) %>%
+  # summarize(value = aquatic_source_prop * aa_prop) %>%
   distinct(iso3c, year, .keep_all = TRUE) %>%
   summarize(value = sum(value)) %>%
   split(.$iso3c) %>% 
@@ -712,8 +712,8 @@ terrestrial_roc <- fao_new_prop_terrestrial %>%
   labs(x = "Change in capture fishery prevalence", y = "Aquaculture prevalence", color = "Change in meat prevalence") +
   scale_color_viridis_c(option = "plasma") +
   theme_light() +
-  lims(x = c(-0.4,0.4),
-       y = c(-0.4,0.4)) +
+  lims(x = c(-0.02,0.02),
+       y = c(-0.02,0.02)) +
   geom_hline(yintercept = 0, linetype = "dashed", lwd = 0.75, alpha = 0.6) +
   geom_vline(xintercept = 0, linetype = "dashed", lwd = 0.75, alpha = 0.6) +
   theme(
@@ -722,13 +722,40 @@ terrestrial_roc <- fao_new_prop_terrestrial %>%
     legend.background = element_rect(fill = "transparent", color = NA),
     legend.box.background = element_rect(fill = "transparent", color = NA),
     legend.position = "bottom"
-  ) +
-    facet_wrap(~ region))
+  ))
 
 ggsave("../images/fig_four_b.png", fig_four, device = "png", width = 6, height = 4, units = "in", bg = "transparent")
 
 
+fao_aquatic_source %>%
+  filter(!(year == 2010 & data_source == "old FBS"),
+         !(year == 2011 & data_source == "old FBS"),
+         !(year == 2012 & data_source == "old FBS"),
+         !(year == 2013 & data_source == "old FBS"),
+         data_source == "new FBS") %>%
+  filter(Element == "Proportion animal source protein from aquatic") %>%
+  group_by(year, iso3c) %>%
+  summarize(sum = sum(value)) %>%
+  group_by(year) %>%
+  summarize(mean = mean(sum, na.rm = TRUE)) %>%
+  ggplot(aes(x = year, y = mean)) +
+  geom_line()
 
+fao_aquatic_source %>%
+  filter(!(year == 2010 & data_source == "old FBS"),
+         !(year == 2011 & data_source == "old FBS"),
+         !(year == 2012 & data_source == "old FBS"),
+         !(year == 2013 & data_source == "old FBS"),
+         data_source == "new FBS") %>%
+  filter(Element == "Proportion animal source protein from aquatic") %>%
+  group_by(year, iso3c) %>%
+  summarize(sum = sum(value)) %>%
+  group_by(year) %>%
+  summarize(mean = mean(sum, na.rm = TRUE)) %>%
+  ggplot(aes(x = year, y = mean)) +
+  geom_line()
+
+  
 
 ```
 

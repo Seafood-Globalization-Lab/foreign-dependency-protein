@@ -22,7 +22,6 @@ The desired final file should have the following columns:
 * population
 * source (foreign/domestic/error, capture/aquaculture/error)
 * supply_percap_kg (from FAO 'Food supply quantity (kg/capita/yr)')
-* 
 
 ```{r}
 # Recalculate per capita since we combined territories into countries
