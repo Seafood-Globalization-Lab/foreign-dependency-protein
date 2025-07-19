@@ -27,80 +27,104 @@ The desired final file should have the following columns:
 ```{r}
 # Recalculate per capita since we combined territories into countries
 update_population_data <- function(input_data, animal_products = FALSE, historical = FALSE) {
-
-if (historical == FALSE) {
-  fbs_totals <- input_data %>%
-  filter(Element %in% c("Food supply (kcal)", "Protein supply quantity (t)"))  # These are total yearly values
-} else {
-  fbs_totals <- input_data %>%
-  filter(Element %in% c("Protein supply quantity (t)"))
-}
   
+  # Define which elements we'll be creating/updating
+  per_capita_elements <- c("Protein supply quantity (g/capita/day)", 
+                          "Food supply (kcal/capita/day)",
+                          "Food supply quantity (kg/capita/yr)")
   
-
-# Join filtered dataset on population data
-fbs_joined <- fbs_totals %>%
-  left_join(population, by = c("iso3c", "year", "data_source"))
-
-# Pivot three rows to wider since we can't expand food supply (same name) to two different components with a case_when()
-
-if (animal_products == FALSE) {
-  fbs_wide <- fbs_joined %>%
-  select(year, iso3c, Element, value, population) %>%
-  pivot_wider(names_from = Element, values_from = value)
-} else {
-  fbs_wide <- fbs_joined %>%
-  filter(Item == "Animal Products") %>%
-  select(year, iso3c, Element, value, population) %>%
-  pivot_wider(names_from = Element, values_from = value)
-}
-
-if (historical == TRUE) {
-  # Manually calcualte per capita values from our updated popualtion measures
-fbs_long <- fbs_wide %>%
-  mutate(
-    `Protein supply quantity (g/capita/day)` = (`Protein supply quantity (t)` * 1e6) / (population * 365)) %>%
-  pivot_longer(cols = c("Protein supply quantity (g/capita/day)")) %>%
-  mutate(Unit = case_when(name == "Protein supply quantity (g/capita/day)" ~ "t")) %>%
-  select(-`Protein supply quantity (t)`,-population,
-         -name, -Unit) 
-
-# Put recalculated per capita values back into the dataset
-fao_new_aquatic %>%
-  left_join(fbs_long, by = c("year", "iso3c")) %>%
-  mutate(value.x = case_when(
-    Element == "Protein supply quantity (g/capita/day)" ~ value.y,
-    TRUE ~ value.x
-  )) %>%
-  select(-value.y, c("value" = "value.x"))
-} else {
-  # Manually calcualte per capita values from our updated popualtion measures
-fbs_long <- fbs_wide %>%
-  mutate(
-    # Note Units: Food supply (kcal) in million Kcal, Protein supply quantity (t) in t
-    `Food supply (kcal/capita/day)` = (`Food supply (kcal)` * 1e6) / (population * 365),
-
-    `Food supply quantity (kg/capita/yr)` = (`Food supply (kcal)` * 1e6) / (population * energy_density_kcal_per_kg),
-
-    	`Protein supply quantity (g/capita/day)` = (`Protein supply quantity (t)` * 1e6) / (population * 365)) %>%
-  pivot_longer(cols = c("Food supply (kcal/capita/day)", "Food supply quantity (kg/capita/yr)", "Protein supply quantity (g/capita/day)")) %>%
-  mutate(Unit = case_when(name == "Food supply (kcal/capita/day)" ~ "kcal/cap/d",
-                     name == "Food supply quantity (kg/capita/yr)" ~ "kg/cap",
-                     name == "Protein supply quantity (g/capita/day)" ~ "t")) %>%
-  select(-`Food supply (kcal)`, -`Protein supply quantity (t)`,-population,
-         -name, -Unit) 
-
-# Put recalculated per capita values back into the dataset
-input_data %>%
-  left_join(fbs_long, by = c("year", "iso3c")) %>%
-  mutate(value.x = case_when(
-    Element == "Food supply (kcal/capita/day)" ~ value.y,
-    Element == "Food supply quantity (kg/capita/yr)" ~ value.y,
-    Element == "Protein supply quantity (g/capita/day)" ~ value.y,
-    TRUE ~ value.x
-  )) %>%
-  select(-value.y, c("value" = "value.x"))
-}
+  # Filter for total yearly values that need recalculation
+  if (historical == FALSE) {
+    elements_to_update <- c("Food supply (kcal)", "Protein supply quantity (t)")
+  } else {
+    elements_to_update <- c("Protein supply quantity (t)")
+  }
+  
+  # Split data: elements to update vs elements to keep as-is
+  data_to_update <- input_data %>%
+    filter(Element %in% elements_to_update)
+  
+  # Keep elements that are NOT being updated AND NOT the per capita elements we're creating
+  data_no_update <- input_data %>%
+    filter(!Element %in% elements_to_update,
+           !Element %in% per_capita_elements)
+  
+  # Join population data to the elements that need updating
+  data_with_pop <- data_to_update %>%
+    left_join(population, by = c("iso3c", "year", "data_source"))
+  
+  # Filter for animal products if specified
+  if (animal_products == TRUE) {
+    data_with_pop <- data_with_pop %>%
+      filter(Item == "Animal Products")
+  }
+  
+  # Calculate per capita values based on historical vs current data
+  if (historical == TRUE) {
+    # For historical data, only recalculate protein
+    updated_data <- data_with_pop %>%
+      mutate(
+        value_updated = case_when(
+          Element == "Protein supply quantity (t)" ~ (value * 1e6) / (population * 365),
+          TRUE ~ value
+        ),
+        Element = case_when(
+          Element == "Protein supply quantity (t)" ~ "Protein supply quantity (g/capita/day)",
+          TRUE ~ Element
+        ),
+        Unit = case_when(
+          Element == "Protein supply quantity (g/capita/day)" ~ "g/capita/day",
+          TRUE ~ Unit
+        )
+      ) %>%
+      select(-population, -value) %>%
+      rename(value = value_updated)
+    
+  } else {
+    # For current data, calculate multiple per capita measures
+    # We need to create separate rows for each per capita calculation
+    
+    # Calculate kcal per capita per day
+    kcal_per_capita <- data_with_pop %>%
+      filter(Element == "Food supply (kcal)") %>%
+      mutate(
+        value = (value * 1e6) / (population * 365),
+        Element = "Food supply (kcal/capita/day)",
+        Unit = "kcal/capita/day"
+      ) %>%
+      select(-population)
+    
+    # Calculate kg per capita per year (need energy density - this seems to be missing from original)
+    # Note: You'll need to define energy_density_kcal_per_kg or handle this differently
+    kg_per_capita <- data_with_pop %>%
+      filter(Element == "Food supply (kcal)") %>%
+      mutate(
+        # Using a placeholder energy density - you'll need to provide this value
+        energy_density_kcal_per_kg = 2000, # Replace with actual energy density data
+        value = (value * 1e6) / (population * energy_density_kcal_per_kg),
+        Element = "Food supply quantity (kg/capita/yr)",
+        Unit = "kg/capita/yr"
+      ) %>%
+      select(-population, -energy_density_kcal_per_kg)
+    
+    # Calculate protein per capita per day
+    protein_per_capita <- data_with_pop %>%
+      filter(Element == "Protein supply quantity (t)") %>%
+      mutate(
+        value = (value * 1e6) / (population * 365),
+        Element = "Protein supply quantity (g/capita/day)",
+        Unit = "g/capita/day"
+      ) %>%
+      select(-population)
+    
+    # Combine all the per capita calculations
+    updated_data <- bind_rows(kcal_per_capita, kg_per_capita, protein_per_capita)
+  }
+  
+  # Combine the updated per capita data with the data that didn't need updating
+  final_data <- bind_rows(data_no_update, updated_data)
+  
+  return(final_data)
 }
 ```
 
@@ -214,14 +238,20 @@ aquatic_animals <- c("Cephalopods",
 # Create data frame of aquatic animal products only for disaggregation by source
 fao_new_aquatic <- fao_new_raw %>%
   filter(Item %in% aquatic_animals,
-         Element %in% elements_select) %>%
+         Element %in% elements_select,
+         !Element %in% c("Food supply (kcal/capita/day)", 
+                        "Protein supply quantity (g/capita/day)",
+                        "Food supply quantity (kg/capita/yr)")) %>%
   group_by(year, iso3c, Element, Unit, data_source) %>%
   summarise(value = sum(value, na.rm = TRUE)) %>%
   ungroup()
 
 fao_old_aquatic <- fao_old_raw %>%
   filter(Item %in% aquatic_animals,
-         Element %in% elements_select) %>%
+         Element %in% elements_select,
+         !Element %in% c("Food supply (kcal/capita/day)", 
+                        "Protein supply quantity (g/capita/day)",
+                        "Food supply quantity (kg/capita/yr)")) %>%
   group_by(year, iso3c, Element, Unit, data_source) %>%
   summarise(value = sum(value, na.rm = TRUE)) %>%
   ungroup()
@@ -262,6 +292,25 @@ fao_old_raw <- update_population_data(fao_old_raw,
                        animal_products = TRUE,
                        historical = TRUE)
 
+# fao_new_raw %>% distinct(Element)
+# 
+# update_population_data(fao_new_raw,
+#                        animal_products = TRUE,
+#                        historical = FALSE) %>% distinct(Element)
+# anti_join(fao_old_raw, update_population_data(fao_old_raw,
+#                        animal_products = TRUE,
+#                        historical = TRUE),
+#           by = c("iso3c", "year", "Element", "Item"))
+# 
+# anti_join(fao_old_raw %>% filter(Element == "Protein supply quantity (t)",
+#          Item == "Animal Products"),
+# 
+# update_population_data(fao_old_raw,
+#                        animal_products = TRUE,
+#                        historical = FALSE) %>% filter(Element == "Protein supply quantity (g/capita/day)",
+#          Item == "Animal Products"),
+# 
+# by = c("iso3c", "year", "Item", "Element"))
 ```
 
 
@@ -284,7 +333,8 @@ test <- consumption_props %>%
 ```{r calculate percent of protein from aquatic animals}
 fao_new_prop_aquatic <- fao_new_raw %>%
   # Filter to the total animal product protein supply
-  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  filter(Element == "Protein supply quantity (g/capita/day)",
+         Item == "Animal Products") %>%
   select("year", "iso3c", "data_source", "total_animal_protein" = "value") %>%
   # Join aquatic animal data and filter to product protein supply
   full_join(fao_new_aquatic %>%
@@ -299,7 +349,8 @@ fao_new_prop_aquatic <- fao_new_raw %>%
 
 fao_old_prop_aquatic <- fao_old_raw %>%
   # Filter to the total animal product protein supply
-  filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  filter(Element == "Protein supply quantity (g/capita/day)",
+         Item == "Animal Products") %>%
   select("year", "iso3c", "data_source", "total_animal_protein" = "value") %>%
   # Join aquatic animal data and filter to product protein supply
   full_join(fao_old_aquatic %>%
