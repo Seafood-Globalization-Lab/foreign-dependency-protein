@@ -534,7 +534,7 @@ legend_source_plot <- aa_reliance_slopes %>%
   ylim(-0.0036, 0.0036) +
   theme(axis.ticks.x = element_blank()) +
   theme(legend.position = "bottom",
-        legend.justification = "center")
+        legend.justification = "center") 
 
 legend <- get_plot_component(legend_source_plot, "guide-box-bottom", return_all = TRUE)
 
@@ -570,40 +570,44 @@ ggsave("../images/fig_two.jpg", fig_two, device = "jpeg", units = "in", width = 
 
 ```{r figure 3}
 (one <- fao_aquatic_source %>%
-  filter(Element == "Protein supply quantity (g/capita/day)") %>%
-   filter(!(year == 2010 & data_source == "new FBS"),
-         !(year == 2011 & data_source == "new FBS"),
-         !(year == 2012 & data_source == "new FBS"),
-         !(year == 2013 & data_source == "new FBS")) %>%
-  group_by(iso3c, year) %>%
+  filter(!(year == 2010 & data_source == "old FBS"),
+         !(year == 2011 & data_source == "old FBS"),
+         !(year == 2012 & data_source == "old FBS"),
+         !(year == 2013 & data_source == "old FBS"),
+         data_source == "new FBS") %>%
+  filter(Element == "Proportion animal source protein from aquatic") %>%
+  group_by(year, iso3c) %>%
   summarize(sum = sum(value)) %>%
   group_by(year) %>%
-  summarize(mean_importance = mean(sum)) %>%
-  ggplot(aes(x = year, y = mean_importance)) +
-  geom_line() +
+  summarize(mean = mean(sum, na.rm = TRUE)) %>%
+  filter(!is.na(mean)) %>%
+  ggplot(aes(x = year, y = 100 * mean)) +
+  geom_line(size = 1) +
   theme_cowplot() +
-  labs(tag = "A", x = "",y = "% AA contribution to\ndaily conusmed protein\n(g/capita/day)") +
-  theme(plot.margin = margin(10, 15, 5.5, 5.5),
- axis.title.y = element_text(size = 6.5),
- axis.text = element_text(size = 7.5)))
+  labs(x = "", y = "AA reliance %") +
+  scale_x_continuous(breaks = ~ axisTicks(., log = FALSE))) # makes x axis transparent
 
 (two <- fao_aquatic_source %>%
-  filter(Element == "Protein supply quantity (g/capita/day)") %>%
-   filter(!(year == 2010 & data_source == "new FBS"),
-         !(year == 2011 & data_source == "new FBS"),
-         !(year == 2012 & data_source == "new FBS"),
-         !(year == 2013 & data_source == "new FBS")) %>%
-  group_by(iso3c, year) %>%
+  filter(!(year == 2010 & data_source == "old FBS"),
+         !(year == 2011 & data_source == "old FBS"),
+         !(year == 2012 & data_source == "old FBS"),
+         !(year == 2013 & data_source == "old FBS"),
+         data_source == "new FBS") %>%
+    add_region(col = "iso3c", region.col.name = "region") %>%
+  filter(Element == "Proportion animal source protein from aquatic") %>%
+  group_by(year, iso3c, region) %>%
   summarize(sum = sum(value)) %>%
-  group_by(year) %>%
-  summarize(mean_importance = mean(sum)) %>%
-  ggplot(aes(x = year, y = mean_importance)) +
-  geom_line() +
+  group_by(year, region) %>%
+  summarize(mean = mean(sum, na.rm = TRUE)) %>%
+  filter(!is.na(mean)) %>%
+  ggplot(aes(x = year, y = 100 * mean, color = region)) +
+  geom_line(size = 1) +
   theme_cowplot() +
-  labs(tag = "B", x = "", y = "% AA contribution to\ndaily conusmed food\n(kcal/capita/day)") +
-  theme(plot.margin = margin(10, 15, 5.5, 5.5),
-        axis.title.y = element_text(size = 6.5),
-        axis.text = element_text(size = 7.5)))
+  labs(x = "", y = "AA reliance %") +
+  scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) + # makes x axis transparent
+  scale_color_manual(values = artis_palette(6)) +
+    theme(legend.position = "bottom",
+          legend.justification = "center"))
 
 (fig_three <- plot_grid(one,
                    two,
@@ -740,23 +744,6 @@ fao_aquatic_source %>%
   summarize(mean = mean(sum, na.rm = TRUE)) %>%
   ggplot(aes(x = year, y = mean)) +
   geom_line()
-
-fao_aquatic_source %>%
-  filter(!(year == 2010 & data_source == "old FBS"),
-         !(year == 2011 & data_source == "old FBS"),
-         !(year == 2012 & data_source == "old FBS"),
-         !(year == 2013 & data_source == "old FBS"),
-         data_source == "new FBS") %>%
-  filter(Element == "Proportion animal source protein from aquatic") %>%
-  group_by(year, iso3c) %>%
-  summarize(sum = sum(value)) %>%
-  group_by(year) %>%
-  summarize(mean = mean(sum, na.rm = TRUE)) %>%
-  ggplot(aes(x = year, y = mean)) +
-  geom_line()
-
-  
-
 ```
 
 ```{r create figure four in 3d}
