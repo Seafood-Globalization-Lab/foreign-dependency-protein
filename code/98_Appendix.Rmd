@@ -5,6 +5,7 @@ date: "2025-07-19"
 output: html_document
 ---
 
+
 ```{r look at how aa reliance changes over time}
 # Look at slopes between aa_reliancec and year
 aa_reliance_slopes <- supply_importance_long %>%
