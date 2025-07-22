@@ -579,13 +579,15 @@ ggsave("../images/fig_two.jpg", fig_two, device = "jpeg", units = "in", width = 
   group_by(year, iso3c) %>%
   summarize(sum = sum(value)) %>%
   group_by(year) %>%
-  summarize(mean = mean(sum, na.rm = TRUE)) %>%
+  summarize(mean = mean(sum, na.rm = TRUE),
+            mean = 100 * mean) %>%
   filter(!is.na(mean)) %>%
-  ggplot(aes(x = year, y = 100 * mean)) +
+  ggplot(aes(x = year, y = mean)) +
   geom_line(size = 1) +
   theme_cowplot() +
   labs(x = "", y = "AA reliance %") +
-  scale_x_continuous(breaks = ~ axisTicks(., log = FALSE))) # makes x axis transparent
+  scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) +
+   lims(y = c(0,16))) # makes x axis transparent
 
 (two <- fao_aquatic_source %>%
   filter(!(year == 2010 & data_source == "old FBS"),
@@ -607,7 +609,8 @@ ggsave("../images/fig_two.jpg", fig_two, device = "jpeg", units = "in", width = 
   scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) + # makes x axis transparent
   scale_color_manual(values = artis_palette(6)) +
     theme(legend.position = "bottom",
-          legend.justification = "center"))
+          legend.justification = "center") +
+    lims(y = c(0, 32)))
 
 (fig_three <- plot_grid(one,
                    two,
@@ -744,6 +747,41 @@ fao_aquatic_source %>%
   summarize(mean = mean(sum, na.rm = TRUE)) %>%
   ggplot(aes(x = year, y = mean)) +
   geom_line()
+```
+
+```{r}
+# Get all capture data that is greater than 2010 - determine roc in capture usage
+aa_roc <- fao_aquatic_source %>%
+  filter(year > 2010, data_source == "new FBS", Element == "Proportion animal source protein from aquatic") %>%
+  group_by(iso3c, year) %>%
+  summarize(value = sum(value)) %>%
+  split(.$iso3c) %>% 
+  map(~lm(value~year, data = .x)) %>% 
+  map_df(broom::tidy, .id = 'consumer_iso3c') %>%
+  filter(term == 'year')
+
+# Part 2 - look at trends in country trends' consumption towards meat
+
+# estimate.x = capture fishery, estimate.y = aquaculture
+(  <- left_join(terrestrial_roc,aa_roc, by = c("iso3c" = "consumer_iso3c")) %>%
+  add_region(col = "iso3c", region.col.name = "region") %>%
+  ggplot(aes(x = estimate.y, y = estimate.x, color = region)) +
+  geom_point(size = 1) +
+  labs(x = "Change in aquatic animal reliance", y = "Change in terrestrial meat reliance", color = "Region") +
+  scale_color_manual(values = artis_palette(6)) +
+  theme_light() +
+  geom_hline(yintercept = 0, linetype = "dashed", lwd = 0.75, alpha = 0.6) +
+  geom_vline(xintercept = 0, linetype = "dashed", lwd = 0.75, alpha = 0.6) +
+  theme(
+    panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.box.background = element_rect(fill = "transparent", color = NA),
+    legend.position = "bottom"
+  ) +
+    facet_wrap(~ region))
+
+ggsave("../images/fig_five_b.png", fig_five, device = "png", width = 6, height = 4, units = "in", bg = "transparent")
 ```
 
 ```{r create figure four in 3d}
