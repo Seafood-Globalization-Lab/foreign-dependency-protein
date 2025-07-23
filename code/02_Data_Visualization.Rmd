@@ -46,412 +46,9 @@ ggplot() +
 }
 ```
 
-
-
 ```{r read in data created from 01_Analysis}
 # Make sure to rename variables and that code still runs
-supply_importance_long <- read_csv("../output/supply_importance_long.csv")
-```
-
-```{r create graphs}
-# Look at change of importance on protein consumption by source, across time
-
-# Try to do weighted mean instead
-(f_d_protein <- supply_importance_long %>%
-   filter(element == "Protein supply quantity (g/capita/day)") %>%
-   group_by(consumer_iso3c) %>%
-   filter(n_distinct(year) > 1) %>% # Filter out countries with only 1 year of data
-   group_by(year, region, consumption_source) %>%
-  summarize(mean_importance = mean(aa_reliance_pct, na.rm = TRUE)) %>%
-  mutate(mean_importance = 100 * mean_importance) %>%
-  ggplot(aes(x = year, y = mean_importance, color = consumption_source)) +
-  geom_point(size = 0.4) +
-  geom_line() +
-  facet_wrap(~ region) +
-  theme_cowplot(10) +
-  theme(legend.position="bottom",
-        legend.justification = "center") +
-  labs(color = "Consumption source", x = "", y = "% importance on protein consumption") +
-  scale_x_continuous(breaks = seq(1995, 2020, by = 10)))
-
-# Global sourcing importance, by habitat, by method, by source
-(sourcing_importance_global_protein <- supply_importance_long %>%
-   filter(element == "Protein supply quantity (g/capita/day)") %>%
-  group_by(year, habitat, method, consumption_source) %>%
-  summarize(mean_prop_consumption = mean(prop_consumption)) %>%
-    mutate(mean_prop_consumption = 100 * mean_prop_consumption) %>%
-  ggplot(aes(x = year, y = mean_prop_consumption, color = consumption_source)) +
-  geom_point(size = 0.4) +
-  geom_line() +
-  facet_grid(habitat ~ method, scales = "free_x", space = "free_x") +
-  theme_cowplot(10) +
-  theme(legend.position = "bottom", legend.justification = "center") +
-  labs(x = "", y = "Mean % of consumption\n(across all countries)", color = "Consumption source") +
-    scale_x_continuous(breaks = seq(1995, 2020, by = 10)))
-
-# Continental importance by method
-(sourcing_importance_continental <- supply_importance_long %>%
-  filter(element == "Protein supply quantity (g/capita/day)") %>%
-  group_by(year, habitat, method, region) %>%
-  summarize(mean_prop_consumption = mean(prop_consumption)) %>%
-  mutate(mean_prop_consumption = 100 * mean_prop_consumption) %>%
-  ggplot(aes(x = year, y = mean_prop_consumption, color = region)) +
-  geom_point(size = 0.4) +
-  geom_line() +
-  facet_grid(habitat ~ method, scales = "free_x", space = "free_x") +
-  theme_cowplot(10) +
-  scale_color_manual(values = artis_palette(6)) +
-  scale_x_continuous(breaks = seq(1995, 2020, by = 10)) +
-  labs(x = "", y = "Mean % of consumption\n(across countries in a region)", color = "Region"))
-
-# Annual mean aquatic animal % contribution to protein supply by continent
-supply_importance_long %>%
-  filter(element == "Protein supply quantity (g/capita/day)") %>%
-  group_by(consumer_iso3c, year, region) %>%
-  summarize(sum = sum(aa_reliance_pct)) %>%
-  group_by(year, region) %>%
-  summarize(mean_importance = 100 * mean(sum)) %>%
-  ggplot(aes(x = year, y = mean_importance, color = region)) +
-  geom_point() +
-  geom_line() +
-  theme_cowplot() +
-  scale_color_manual(values = artis_palette(6)) +
-  labs(x = "", y = "Mean % contribution aquatic animal\nhas to protein consumption")
-
-# Annual mean aquatic animal % contribution to protein supply globally
-supply_importance_long %>%
-  filter(element == "Protein supply quantity (g/capita/day)") %>%
-  group_by(iso3c, year) %>%
-  summarize(sum = sum(aa_reliance_pct)) %>%
-  group_by(year) %>%
-  summarize(mean_importance = 100 * mean(sum, na.rm = TRUE)) %>%
-  ggplot(aes(x = year, y = mean_importance)) +
-  geom_point() +
-  geom_line() +
-  theme_cowplot() +
-  labs(x = "", y = "Mean % contribution aquatic animal\nhas to protein consumption")
-
-# Looking at pct consumption x element variable (food / protein supply) by region
-supply_importance_long %>%
-  group_by(iso3c) %>%
-  filter(n_distinct(year) > 1) %>% # Filter out countries with only 1 year of data
-  group_by(region, year, element) %>%
-  summarize(aa_reliance_pct = mean(aa_reliance_pct, na.rm = TRUE)) %>%
-  ggplot(aes(x = year, y = aa_reliance_pct, color = region)) +
-  geom_point() +
-  geom_line() +
-  theme_cowplot() +
-  facet_grid(rows = vars(element),
-             labeller = labeller(element = function(x) str_wrap(x, width = 15))) +
-  scale_color_manual(values = artis_palette(6)) +
-  labs(x = "", color = "Region", y = "Aquati animal % contirbution") +
-  theme(strip.text = element_text(size = 8))
-```
-
-```{r look at how aa reliance changes over time}
-# Look at slopes between aa_reliancec and year
-aa_reliance_slopes <- supply_importance_long %>%
-  group_by(consumer_iso3c, year) %>%
-  summarize(aa_reliance_pct = mean(aa_reliance_pct)) %>%
-  split(.$consumer_iso3c) %>% 
-  map(~lm(aa_reliance_pct~year, data = .x)) %>% 
-  map_df(broom::tidy, .id = 'consumer_iso3c') %>%
-  filter(term == 'year') %>%
-  select(consumer_iso3c, "slope" = "estimate") %>%
-  mutate(fill_color = case_when(
-    slope > 0 ~ "1",
-    slope < 0 ~ "0",
-    TRUE ~ NA
-  )) %>%
-  add_region(col = "consumer_iso3c", region.col.name = "region")
-
-aa_reliance_slopes %>%
-  filter(!is.na(region)) %>%
-  ggplot(aes(x = reorder(consumer_iso3c, -slope), 
-             y = slope, fill = region)) +
-  geom_col() +
-  theme_minimal_hgrid() +
-  theme(axis.text.x = element_blank()) +
-  labs(x = "Consuming country", y = "Slope between aa reliance and time", fill = "Region") +
-  scale_fill_manual(values = artis_palette(7)) +
-  ylim(-0.005, 0.005)
-
-# Violin plot by region of foreign dependency slopes
-aa_reliance_slopes %>%
-  filter(!is.na(region)) %>%
-  ggplot(aes(x = region, y = slope, fill = region)) +
-  geom_violin(alpha = 0.5) +
-  geom_point() +
-  scale_fill_manual(values = artis_palette(7)) +
-  theme_minimal_hgrid(12) +
-  labs(x = "Consuming country", y = "Slope between aa reliance and time") +
-  guides(fill = "none")
-
-
-# Look at individual countries' trends in aa contribution to protein
-# Get list of countries
-countries <- aa_reliance_slopes %>%
-  arrange(-slope) %>%
-  distinct(consumer_iso3c) %>%
-  pull(consumer_iso3c)
-
-# Create new directory for foreign dependencies
-if (!dir.exists("../images/aa_reliance_trends/")) {
-  dir.create("../images/aa_reliance_trends/")
-}
-
-for (i in countries) {
-  
-  # Generate data
-  data <- supply_importance_long %>%
-  # filter(consumer_iso3c == i, region == "Oceania") %>%
-    filter(consumer_iso3c == i) %>%
-    filter(str_detect(element, "Protein")) %>%
-    group_by(year, consumer_iso3c)
-  
-  # Create image
-  
-  if (nrow(data) > 0) { # Check to see if filtered data has available observations
-    img <- data  %>%
-      group_by(year, consumer_iso3c) %>%
-  ggplot(aes(x = year, y = aa_reliance_pct, color = consumption_source)) +
-  geom_line() +
-  geom_point() +
-  facet_grid(habitat ~ method, scales = "free_x", space = "free_x") +
-    theme_cowplot() +
-    labs(x = "", y = "AA contribution to protein consumption", title = i, color = "Consumption source") +
-    theme(plot.title = element_text(hjust = 0.5),
-          axis.text.x = element_text(size = 7, angle = 45)) +
-    geom_vline(xintercept = 2009, linetype = "dashed", color = "red")
-  
-  # Save image
-  ggsave(paste0("../images/aa_reliance_trends/", which(i == countries), ".jpg"), plot = img, device = "jpeg", height = 4, width = 6, units = "in")
-  }
-  
-}
-
-aa_reliance_slopes %>%
-  arrange(-slope)
-```
-
-
-```{r look at fao dataset discrepencies}
-# Get list of FAO countries
-countries <- fao_imputed %>%
-  ungroup() %>%
-  distinct(iso3c) %>%
-  pull(iso3c)
-
-# Create new directory for foreign dependencies
-if (!dir.exists("../images/fao_dataset_comparison/")) {
-  dir.create("../images/fao_dataset_comparison/")
-}
-
-for (i in countries) {
-  
-  # Generate data
-  data <- fao_imputed %>%
-    filter(iso3c == i) %>%
-    filter(str_detect(Element, "Protein")) %>%
-    group_by(year, iso3c)
-  
-  # Create image
-  
-  if (nrow(data) > 0) { # Check to see if filtered data has available observations
-  img <- data %>%
-  ggplot(aes(x = year, y = prop_aquatic_animal, color = new_historical)) +
-  geom_line() +
-  geom_point() +
-  theme_cowplot() +
-  scale_color_manual(values = c("#4254b8", "#EE5A54", "#52BEDB")) +
-  labs(x = "", y = "Prop aquatic animal protein", color = "FAO FBS dataset", title = i) +
-    theme(plot.title = element_text(hjust = 0.5))
-  
-
-  
-  # Save image
-  ggsave(paste0("../images/fao_dataset_comparison/", i, ".jpg"), plot = img, device = "jpeg", height = 4, width = 6, units = "in")
-  }
-  
-}
-```
-
-
-```{r look at dependency on europe production & consumption}
-# Total Europe consumption that comes from Europe
-prod_eur_cons_eur <- consumption_full %>%
-  exploreARTIS::add_region(col = "consumer_iso3c", region.col.name = "consumer_region") %>%
-  exploreARTIS::add_region(col = "source_country_iso3c", region.col.name = "producer_region") %>%
-  relocate(consumer_region, .before = "source_country_iso3c") %>%
-  relocate(producer_region, .after = consumer_region) %>%
-  group_by(consumer_iso3c, year) %>%
-  filter(consumer_region == "Europe",
-         producer_region == "Europe") %>%
-  summarize(sum_weight = sum(consumption_live_t, na.rm = TRUE))
-  
-# Europe total consumption
-eur_total_cons <- consumption_full %>%
-  exploreARTIS::add_region(col = "consumer_iso3c", region.col.name = "consumer_region") %>%
-  exploreARTIS::add_region(col = "source_country_iso3c", region.col.name = "producer_region") %>%
-  relocate(consumer_region, .before = "source_country_iso3c") %>%
-  relocate(producer_region, .after = consumer_region) %>%
-  group_by(consumer_iso3c, year) %>%
-  filter(consumer_region == "Europe") %>%
-  summarize(total_cons = sum(consumption_live_t, na.rm = TRUE))
-
-# Proportion of Europe consumption that is produced in Europe
-prop_europe_prod_cons <- left_join(prod_eur_cons_eur, eur_total_cons) %>%
-  group_by(consumer_iso3c, year) %>%
-  summarize(prop_cons = sum_weight / total_cons)
-
-# Look at average change in foreign dependency from 2015-2019
-foreign_dependency_slopes <- prop_europe_prod_cons %>%
-  split(.$consumer_iso3c) %>% 
-  map(~lm(prop_cons~year, data = .x)) %>% 
-  map_df(broom::tidy, .id = 'consumer_iso3c') %>%
-  filter(term == 'year') %>%
-  select(consumer_iso3c, "slope" = "estimate") %>%
-  mutate(fill_color = case_when(
-    slope > 0 ~ "1",
-    slope < 0 ~ "0",
-    TRUE ~ NA
-  )) %>%
-  add_region(col = "consumer_iso3c", region.col.name = "region")
-
-# Plot out slopes in a barplot
-foreign_dependency_slopes %>%
-  filter(!is.na(region)) %>%
-  ggplot(aes(x = reorder(consumer_iso3c, -slope), 
-             y = slope, fill = fill_color)) +
-  geom_col() +
-  theme_minimal_hgrid() +
-  theme(axis.text.x = element_blank()) +
-  labs(x = "Consuming country", y = "Slope between foreign\ndependency and time", fill = "+/- slope") +
-  scale_fill_manual(values = c("red", "blue")) +
-  ylim(-0.03, 0.03)
-
-# Get greatest increases --> greatest decreases in fd by eez
-fd_ordered <- foreign_dependency_slopes %>%
-  arrange(-slope) %>%
-  pull(consumer_iso3c)
-
-# Create new directory for foreign dependencies
-if (!dir.exists("../images/europe pc ordered/")) {
-  dir.create("../images/europe pc ordered/")
-}
-
-for (i in fd_ordered) {
-  # Create image
-  img <- prop_europe_prod_cons %>%
-    filter(consumer_iso3c == i) %>%
-    ggplot(aes(x = year, y = prop_cons)) +
-    geom_line() +
-    geom_point() +
-    theme_minimal_hgrid() +
-    labs(x = "", y = "Proportion consumption\nproduced + consumed in Europe", title = i) +
-    theme(plot.title = element_text(hjust = 0.5))
-  
-  # Save image
-  ggsave(paste0("../images/europe pc ordered/", which(i == fd_ordered), ".jpg"), plot = img, device = "jpeg", height = 4, width = 6, units = "in")
-}
-
-# Prop consumption that was produced + consumed in Europe
-prop_europe_prod_cons %>%
-  filter(year == 2019) %>%
-  ggplot(aes(x = fct_reorder(consumer_iso3c, -prop_cons), prop_cons)) +
-  theme_cowplot() +
-  geom_col() +
-  theme(axis.text.x = element_blank()) +
-  labs(x = "Europe country", y = "Proportion consumption\nproduced + consumed in Europe")
-```
-
-```{r}
-# Calcualte total foreign weight consumption
-domestic_consumption_weights <- consumption_full %>%
-  group_by(consumer_iso3c, year) %>%
-  filter(consumer_iso3c == source_country_iso3c) %>%
-  summarize(domestic_weight = sum(consumption_live_t)) %>%
-  arrange(consumer_iso3c)
-
-# Calculate total foreign weight consumption
-foreign_consumption_weights <- consumption_full %>%
-  group_by(consumer_iso3c, year) %>%
-  filter(consumer_iso3c != source_country_iso3c) %>%
-  summarize(foreign_weight = sum(consumption_live_t)) %>%
-  arrange(consumer_iso3c)
-
-# Calculate trade dependency
-consumer_foreign_dependencies <- foreign_consumption_weights %>%
-  filter(consumer_iso3c %in% domestic_consumption_weights$consumer_iso3c) %>%
-  left_join(domestic_consumption_weights) %>%
-  group_by(consumer_iso3c, year) %>%
-  summarize(foreign_dependency = round(foreign_weight /
-                                       (foreign_weight +
-                                          domestic_weight), 3)) %>%
-  exploreARTIS::add_region("consumer_iso3c", region.col.name = "region")
-
-# Look at average change in foreign dependency from 2015-2019
-foreign_dependency_slopes <- consumer_foreign_dependencies %>%
-  split(.$consumer_iso3c) %>% 
-  map(~lm(foreign_dependency~year, data = .x)) %>% 
-  map_df(broom::tidy, .id = 'consumer_iso3c') %>%
-  filter(term == 'year') %>%
-  select(consumer_iso3c, "slope" = "estimate") %>%
-  mutate(fill_color = case_when(
-    slope > 0 ~ "1",
-    slope < 0 ~ "0",
-    TRUE ~ NA
-  )) %>%
-  add_region(col = "consumer_iso3c", region.col.name = "region")
-
-# Create barplot of foreign dependency slopes in europe over time
-foreign_dependency_slopes %>%
-  filter(!is.na(region)) %>%
-  ggplot(aes(x = reorder(consumer_iso3c, -slope), 
-             y = slope, fill = region)) +
-  geom_col() +
-  theme_minimal_hgrid() +
-  theme(axis.text.x = element_blank()) +
-  labs(x = "Consuming country", y = "Slope between foreign\ndependency and time", fill = "Region") +
-  scale_fill_manual(values = artis_palette(7)) +
-  ylim(-0.05, 0.05)
-
-# Violin plot by region of foreign dependency slopes
-foreign_dependency_slopes %>%
-  filter(!is.na(region)) %>%
-  ggplot(aes(x = region, y = slope, fill = region)) +
-  geom_violin(alpha = 0.5) +
-  geom_point() +
-  scale_fill_manual(values = artis_palette(7)) +
-  theme_minimal_hgrid(12) +
-  labs(x = "Consuming country", y = "Slope between foreign\ndependency and time") +
-  guides(fill = "none")
-
-# Get greatest increases --> greatest decreases in fd by eez
-fd_ordered <- foreign_dependency_slopes %>%
-  arrange(-slope) %>%
-  pull(consumer_iso3c)
-
-# Create new directory for foreign dependencies
-if (!dir.exists("../images/foreign dependency ordered/")) {
-  dir.create("../images/foreign dependency ordered/")
-}
-
-for (i in fd_ordered) {
-  
-  # Create image
-  img <- consumer_foreign_dependencies %>%
-    filter(consumer_iso3c == i) %>%
-    ggplot(aes(x = year, y = foreign_dependency)) +
-    geom_line() +
-    geom_point() +
-    theme_minimal_hgrid() +
-    labs(x = "", y = "Prop foreign dependency", title = i) +
-    theme(plot.title = element_text(hjust = 0.5))
-  
-  # Save image
-  ggsave(paste0("../images/foreign dependency ordered/", which(i == fd_ordered), ".jpg"), plot = img, device = "jpeg", height = 4, width = 6, units = "in")
-}
+fao_aquatic_source <- read_csv("../output/fao_aquatic_source.csv")
 ```
 
 ```{r figure one}
@@ -569,6 +166,39 @@ ggsave("../images/fig_two.jpg", fig_two, device = "jpeg", units = "in", width = 
 ```
 
 ```{r figure 3}
+# Derive per capita measurements
+aa_protein_consumed <- fao_new_aquatic %>%
+              filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  add_region(col = "iso3c", region.col.name = "region") %>%
+  mutate(type = "Aquatic animal protein")
+
+terr_protein_consumed <- fao_new_raw %>%
+  filter(Item == "Animal Products", Element == "Protein supply quantity (g/capita/day)") %>%
+  add_region(col = "iso3c", region.col.name = "region") %>%
+  mutate(type = "Terrestrial protein")
+
+# Combine terrestrial / aquatic animal protein per capita measurements
+aa_protein_consumed <- bind_rows(aa_protein_consumed, terr_protein_consumed)
+
+##### GLOBAL PROTEIN CONSUMPTION
+# Get plot of global mean daily protein consumption / capita
+((get_legend_plot <- aa_protein_consumed %>%
+  group_by(year, type) %>%
+  summarize(mean = mean(value)) %>%
+  ggplot(aes(x = year, y = mean, linetype = type)) +
+           geom_line(size = 1) +
+  labs(x = "", y = "Mean global consumed\nprotein (g/capita/day)") +
+    theme_light() +
+    scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) +
+    theme(panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    axis.text.x = element_text(size = 6),
+    legend.text = element_text(size = 6),
+    legend.position = "bottom",
+    legend.justification = "center",
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.box.background = element_rect(fill = "transparent", color = NA))))
+
 (one <- fao_aquatic_source %>%
   filter(!(year == 2010 & data_source == "old FBS"),
          !(year == 2011 & data_source == "old FBS"),
@@ -584,42 +214,99 @@ ggsave("../images/fig_two.jpg", fig_two, device = "jpeg", units = "in", width = 
   filter(!is.na(mean)) %>%
   ggplot(aes(x = year, y = mean)) +
   geom_line(size = 1) +
-  theme_cowplot() +
+  theme_light() +
   labs(x = "", y = "AA reliance %") +
   scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) +
-   lims(y = c(0,16))) # makes x axis transparent
+   lims(y = c(0,16)) +
+   theme(panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    axis.text.x = element_text(size = 6))) # makes x axis transparent
 
-(two <- fao_aquatic_source %>%
-  filter(!(year == 2010 & data_source == "old FBS"),
-         !(year == 2011 & data_source == "old FBS"),
-         !(year == 2012 & data_source == "old FBS"),
-         !(year == 2013 & data_source == "old FBS"),
-         data_source == "new FBS") %>%
-    add_region(col = "iso3c", region.col.name = "region") %>%
-  filter(Element == "Proportion animal source protein from aquatic") %>%
-  group_by(year, iso3c, region) %>%
-  summarize(sum = sum(value)) %>%
-  group_by(year, region) %>%
-  summarize(mean = mean(sum, na.rm = TRUE)) %>%
-  filter(!is.na(mean)) %>%
-  ggplot(aes(x = year, y = 100 * mean, color = region)) +
-  geom_line(size = 1) +
-  theme_cowplot() +
-  labs(x = "", y = "AA reliance %") +
-  scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) + # makes x axis transparent
+two <- get_legend_plot +
+  guides(linetype = "none")
+
+legend <- get_plot_component(get_legend_plot, "guide-box-bottom", return_all = TRUE)
+# Combine plots
+comb <- plot_grid(one, two)
+
+# Add in legend
+(fig_three_a <- plot_grid(comb, legend, ncol = 1, rel_heights = c(1,0.2)))
+
+# Save plot
+ggsave("../images/fig_three_a.png", fig_three_a, device = "png", units = "in", width = 5.5, height = 3, bg = "transparent")
+
+
+##### REGIONAL PROTEIN CONSUMPTION
+
+  (get_legend_plot <- aa_protein_consumed %>%
+  group_by(year, region, type) %>%
+  summarize(mean = mean(value)) %>%
+  ggplot(aes(x = year, y = mean, color = region, linetype = type)) +
+           geom_line(size = 1) +
   scale_color_manual(values = artis_palette(6)) +
-    theme(legend.position = "bottom",
-          legend.justification = "center") +
-    lims(y = c(0, 32)))
+  scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) +
+  theme_light() +
+  labs(x = "", y = "Mean regional consumed\nprotein (g/capita/day)") +
+    theme(panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    axis.text.x = element_text(size = 6),
+    legend.text = element_text(size = 6),
+    legend.position = "bottom",
+    legend.justification = "center",
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.box.background = element_rect(fill = "transparent", color = NA),
+    legend.title = element_text(size = 6),
+    legend.key.size = unit(.6, "lines")))
+    
+    
+(one <- fao_aquatic_source %>%
+    filter(
+      !(year == 2010 & data_source == "old FBS"),
+      !(year == 2011 & data_source == "old FBS"),
+      !(year == 2012 & data_source == "old FBS"),
+      !(year == 2013 & data_source == "old FBS"),
+      data_source == "new FBS") %>%
+    add_region(col = "iso3c", region.col.name = "region") %>%
+    filter(Element == "Proportion animal source protein from aquatic") %>%
+    group_by(year, iso3c, region) %>%
+    summarize(sum = sum(value)) %>%
+    group_by(year, region) %>%
+    summarize(mean = mean(sum, na.rm = TRUE)) %>%
+    filter(!is.na(mean)) %>%
+    ggplot(aes(
+      x = year, y = 100 * mean, color = region
+    )) +
+    geom_line(size = 1) +
+    theme_light() +
+    labs(x = "", y = "AA reliance %") +
+    scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) + # makes x axis transparent
+    scale_color_manual(values = artis_palette(6)) +
+    theme(axis.text.x = element_text(size = 6),
+      legend.text = element_text(size = 6),
+      panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA)
+    ) +
+    lims(y = c(0, 32)) +
+    guides(color = "none"))
 
-(fig_three <- plot_grid(one,
-                   two,
-                   ncol = 1))
+# Plot that won't have legend
+two <- get_legend_plot +
+  guides(color = "none", linetype = "none")
 
-ggsave("../images/fig_three.jpg", fig_three, device = "jpeg", units = "in", width = 5, height = 4)
+# Get legend
+legend <- get_plot_component(get_legend_plot, "guide-box-bottom", return_all = TRUE)
+
+# Combine plots
+comb <- plot_grid(one, two)
+
+# Add in legend
+(fig_three_b <- plot_grid(comb, legend, ncol = 1, rel_heights = c(1,0.2)))
+
+# Save plot
+ggsave("../images/fig_three_b.png", fig_three_b, device = "png", units = "in", width = 5.5, height = 3, bg = "transparent")
 ```
 
-```{r}
+```{r aquaculture vs capture fishery reliance}
 # Get all capture data that is greater than 2010 - determine roc in capture usage
 capture_roc <- fao_aquatic_source %>%
   filter(year > 2010, data_source == "new FBS",
@@ -665,11 +352,11 @@ fao_new_prop_terrestrial <- fao_new_raw %>%
               filter(Element == "Protein supply quantity (g/capita/day)") %>%
               select("year", "iso3c", "data_source", 
                      "aquatic_animal_protein" = "value"), 
-            by = c("year", "iso3c", "data_source")) %>%
+            by = c("year", "iso3c")) %>%
   # mutate(value = aquatic_animal_protein/total_terrestrial_protein,
   #        Element = "Proportion animal source protein from aquatic",
   #        Unit = "Proportion") %>%
-  mutate(value = (total_terrestrial_protein - aquatic_animal_protein) / (total_terrestrial_protein + aquatic_animal_protein),
+  mutate(value = (total_terrestrial_protein - aquatic_animal_protein) / (total_terrestrial_protein),
          Element = "Proportion animal source protein from terrestrial",
          Unit = "Proportion") %>%
   select(-total_terrestrial_protein, -aquatic_animal_protein)
@@ -716,7 +403,7 @@ terrestrial_roc <- fao_new_prop_terrestrial %>%
   add_region(col = "iso3c", region.col.name = "region") %>%
   ggplot(aes(x = estimate.x, y = estimate.y, color = estimate)) +
   geom_point(size = 1) +
-  labs(x = "Change in capture fishery prevalence", y = "Aquaculture prevalence", color = "Change in meat prevalence") +
+  labs(x = "Change in capture fishery reliance", y = "Change in aquaculture reliance", color = "Change in meat reliance") +
   scale_color_viridis_c(option = "plasma") +
   theme_light() +
   lims(x = c(-0.02,0.02),
@@ -728,45 +415,62 @@ terrestrial_roc <- fao_new_prop_terrestrial %>%
     plot.background = element_rect(fill = "transparent", color = NA),
     legend.background = element_rect(fill = "transparent", color = NA),
     legend.box.background = element_rect(fill = "transparent", color = NA),
-    legend.position = "bottom"
+    legend.position = "bottom",
+    legend.text=element_text(size=6)) +
+    geom_text_repel(
+    data = ~ dplyr::filter(.x, abs(estimate.x) > 0.005 | abs(estimate.y) > 0.0025),
+    aes(label = iso3c),
+    size = 2.5,
+    max.overlaps = 100,
+    show.legend = FALSE,
+    alpha = 0.45
   ))
 
-ggsave("../images/fig_four_b.png", fig_four, device = "png", width = 6, height = 4, units = "in", bg = "transparent")
+ggsave("../images/fig_four_a.png", fig_four, device = "png", width = 6, height = 4, units = "in", bg = "transparent")
 
-
-fao_aquatic_source %>%
-  filter(!(year == 2010 & data_source == "old FBS"),
-         !(year == 2011 & data_source == "old FBS"),
-         !(year == 2012 & data_source == "old FBS"),
-         !(year == 2013 & data_source == "old FBS"),
-         data_source == "new FBS") %>%
-  filter(Element == "Proportion animal source protein from aquatic") %>%
-  group_by(year, iso3c) %>%
-  summarize(sum = sum(value)) %>%
-  group_by(year) %>%
-  summarize(mean = mean(sum, na.rm = TRUE)) %>%
-  ggplot(aes(x = year, y = mean)) +
-  geom_line()
+left_join(terrestrial_roc,capture_aquaculture_data, by = c("iso3c" = "consumer_iso3c")) %>%
+  filter(estimate.x < 0, estimate.y > 0 )
 ```
 
-```{r}
+```{r look at terrestrial animal reliance vs aquatic animal reliance}
 # Get all capture data that is greater than 2010 - determine roc in capture usage
-aa_roc <- fao_aquatic_source %>%
-  filter(year > 2010, data_source == "new FBS", Element == "Proportion animal source protein from aquatic") %>%
-  group_by(iso3c, year) %>%
-  summarize(value = sum(value)) %>%
+aa_roc <- fao_new_raw %>%
+  # Filter to the total animal product protein supply
+  filter(Item == "Animal Products",Element == "Protein supply quantity (g/capita/day)") %>%
+  select("year", "iso3c", "data_source", "total_terrestrial_protein" = "value") %>%
+  # Join aquatic animal data and filter to product protein supply
+  full_join(fao_new_aquatic %>%
+              filter(Element == "Protein supply quantity (g/capita/day)") %>%
+              select("year", "iso3c", "data_source", 
+                     "aquatic_animal_protein" = "value"), 
+            by = c("year", "iso3c")) %>%
+  # mutate(value = aquatic_animal_protein/total_terrestrial_protein,
+  #        Element = "Proportion animal source protein from aquatic",
+  #        Unit = "Proportion") %>%
+  mutate(value = (aquatic_animal_protein) / (total_terrestrial_protein),
+         Element = "Proportion animal source protein from terrestrial",
+         Unit = "Proportion") %>%
+  select(-total_terrestrial_protein, -aquatic_animal_protein) %>%
   split(.$iso3c) %>% 
   map(~lm(value~year, data = .x)) %>% 
-  map_df(broom::tidy, .id = 'consumer_iso3c') %>%
+  map_df(broom::tidy, .id = 'iso3c') %>%
   filter(term == 'year')
 
 # Part 2 - look at trends in country trends' consumption towards meat
 
 # estimate.x = capture fishery, estimate.y = aquaculture
-(  <- left_join(terrestrial_roc,aa_roc, by = c("iso3c" = "consumer_iso3c")) %>%
+(fig_five <- left_join(terrestrial_roc, aa_roc, by = c("iso3c" = "iso3c")) %>%
   add_region(col = "iso3c", region.col.name = "region") %>%
   ggplot(aes(x = estimate.y, y = estimate.x, color = region)) +
-  geom_point(size = 1) +
+  geom_point(size = 1) + 
+    geom_text_repel(
+    data = ~ dplyr::filter(.x, abs(estimate.x) > 0.015 | abs(estimate.y) > 0.015),
+    aes(label = iso3c),
+    size = 2.5,
+    max.overlaps = 100,
+    show.legend = FALSE,
+    alpha = 0.45
+  ) +
   labs(x = "Change in aquatic animal reliance", y = "Change in terrestrial meat reliance", color = "Region") +
   scale_color_manual(values = artis_palette(6)) +
   theme_light() +
@@ -778,71 +482,52 @@ aa_roc <- fao_aquatic_source %>%
     legend.background = element_rect(fill = "transparent", color = NA),
     legend.box.background = element_rect(fill = "transparent", color = NA),
     legend.position = "bottom"
-  ) +
-    facet_wrap(~ region))
+  ))
 
-ggsave("../images/fig_five_b.png", fig_five, device = "png", width = 6, height = 4, units = "in", bg = "transparent")
+ggsave("../images/fig_five.png", fig_five, device = "png", width = 4, height = 4, units = "in", bg = "transparent")
+
+left_join(terrestrial_roc, aa_roc, by = c("iso3c" = "iso3c")) %>%
+  filter(estimate.x < 0)
 ```
 
-```{r create figure four in 3d}
-library(plotly)
-library(dplyr)
+```{r aquatic animal reliance vs protein consumptiom}
+terr_protein_roc <- fao_new_raw %>%
+  filter(Item == "Animal Products", Element == "Food supply (kcal/capita/day)") %>%
+  split(.$iso3c) %>% 
+  map(~lm(value~year, data = .x)) %>% 
+  map_df(broom::tidy, .id = 'iso3c') %>%
+  filter(term == 'year')
 
-# Join and base scatter3d
-fig_four_3d <- left_join(terrestrial_roc, capture_aquaculture_data, by = c("iso3c" = "consumer_iso3c")) %>%
-  add_region(col = "iso3c", region.col.name = "region") %>%
-  plot_ly() %>%
-  add_markers(
-    x = ~estimate.x,
-    y = ~estimate.y,
-    z = ~estimate,
-    color = ~estimate,
-    colors = "plasma",
-    marker = list(size = 3)
-  )
+aa_protein_consumed_roc <- fao_new_aquatic %>%
+              filter(Element == "Protein supply quantity (g/capita/day)") %>%
+  split(.$iso3c) %>% 
+  map(~lm(value~year, data = .x)) %>% 
+  map_df(broom::tidy, .id = 'iso3c') %>%
+  filter(term == 'year')
 
-# Define grid
-z_range <- seq(-0.2, 0.4, length.out = 2)
-xy_range <- seq(-0.4, 0.4, length.out = 2)
+(fig_six <- left_join(aa_roc, terr_protein_roc, by = c("iso3c")) %>%
+  left_join(aa_protein_consumed_roc, by = c("iso3c")) %>%
+  ggplot(aes(x = estimate.x, y = estimate, color = estimate.y)) +
+  geom_point() +
+  scale_color_viridis_c(option = "plasma") +
+  labs(x = "Change in aquatic animal reliance",
+       y = "Change in aa\nprotein consumption\nper capita",
+       color = "Change in terrestrial\nprotein consumption\nper capita") +
+  theme_light() +
+  theme(legend.position = "bottom",
+        panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.box.background = element_rect(fill = "transparent", color = NA)) +
+    geom_hline(yintercept = 0, linetype = "dashed", lwd = 0.75, alpha = 0.6) +
+  geom_vline(xintercept = 0, linetype = "dashed", lwd = 0.75, alpha = 0.6))
 
-# Plane at x = 0 (vary y and z)
-x0_surface <- plot_ly(
-  showscale = FALSE
-) %>% add_surface(
-  x = matrix(0, nrow = 2, ncol = 2),
-  y = matrix(rep(xy_range, each = 2), nrow = 2),
-  z = matrix(rep(z_range, 2), nrow = 2),
-  opacity = 0.1,
-  colorscale = list(c(0, 1), c("gray", "gray")),
-  showscale = FALSE
-)
+ggsave("../images/fig_six.png", fig_six, device = "png", width = 4, height = 4, units = "in", bg = "transparent")
 
-# Plane at y = 0 (vary x and z)
-y0_surface <- plot_ly(
-  showscale = FALSE
-) %>% add_surface(
-  x = matrix(rep(xy_range, each = 2), nrow = 2),
-  y = matrix(0, nrow = 2, ncol = 2),
-  z = matrix(rep(z_range, 2), nrow = 2),
-  opacity = 0.1,
-  colorscale = list(c(0, 1), c("gray", "gray")),
-  showscale = FALSE
-)
 
-# Combine everything
-fig_four_3d <- subplot(fig_four_3d, x0_surface, y0_surface, shareX = TRUE, shareY = TRUE) %>%
-  layout(
-    scene = list(
-      xaxis = list(title = "Change in capture fishery prevalence", range = c(-0.4, 0.4)),
-      yaxis = list(title = "Aquaculture prevalence", range = c(-0.4, 0.4)),
-      zaxis = list(title = "Change in meat prevalence")
-    ),
-    legend = list(orientation = "h", x = 0.3, y = -0.1),
-    margin = list(l = 0, r = 0, b = 0, t = 0)
-  )
-
-fig_four_3d
-
+left_join(aa_roc, terr_protein_consumed, by = c("iso3c")) %>%
+  left_join(aa_protein_consumed_roc, by = c("iso3c")) %>%
+  filter(estimate.x > 0, estimate > 0)
 ```
 
 ```{r figure five (checks to ensure data works as intended)}

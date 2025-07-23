@@ -5,6 +5,66 @@ date: "2025-07-19"
 output: html_document
 ---
 
+```{r create figure four in 3d}
+library(plotly)
+library(dplyr)
+
+# Join and base scatter3d
+fig_four_3d <- left_join(terrestrial_roc, capture_aquaculture_data, by = c("iso3c" = "consumer_iso3c")) %>%
+  add_region(col = "iso3c", region.col.name = "region") %>%
+  plot_ly() %>%
+  add_markers(
+    x = ~estimate.x,
+    y = ~estimate.y,
+    z = ~estimate,
+    color = ~estimate,
+    colors = "plasma",
+    marker = list(size = 3)
+  )
+
+# Define grid
+z_range <- seq(-0.2, 0.4, length.out = 2)
+xy_range <- seq(-0.4, 0.4, length.out = 2)
+
+# Plane at x = 0 (vary y and z)
+x0_surface <- plot_ly(
+  showscale = FALSE
+) %>% add_surface(
+  x = matrix(0, nrow = 2, ncol = 2),
+  y = matrix(rep(xy_range, each = 2), nrow = 2),
+  z = matrix(rep(z_range, 2), nrow = 2),
+  opacity = 0.1,
+  colorscale = list(c(0, 1), c("gray", "gray")),
+  showscale = FALSE
+)
+
+# Plane at y = 0 (vary x and z)
+y0_surface <- plot_ly(
+  showscale = FALSE
+) %>% add_surface(
+  x = matrix(rep(xy_range, each = 2), nrow = 2),
+  y = matrix(0, nrow = 2, ncol = 2),
+  z = matrix(rep(z_range, 2), nrow = 2),
+  opacity = 0.1,
+  colorscale = list(c(0, 1), c("gray", "gray")),
+  showscale = FALSE
+)
+
+# Combine everything
+fig_four_3d <- subplot(fig_four_3d, x0_surface, y0_surface, shareX = TRUE, shareY = TRUE) %>%
+  layout(
+    scene = list(
+      xaxis = list(title = "Change in capture fishery prevalence", range = c(-0.4, 0.4)),
+      yaxis = list(title = "Aquaculture prevalence", range = c(-0.4, 0.4)),
+      zaxis = list(title = "Change in meat prevalence")
+    ),
+    legend = list(orientation = "h", x = 0.3, y = -0.1),
+    margin = list(l = 0, r = 0, b = 0, t = 0)
+  )
+
+fig_four_3d
+
+```
 
 ```{r look at how aa reliance changes over time}
 # Look at slopes between aa_reliancec and year
@@ -312,7 +372,7 @@ for (i in fd_ordered) {
 }
 ```
 
-```{r}
+
 ```{r create graphs}
 # Look at change of importance on protein consumption by source, across time
 
@@ -407,5 +467,5 @@ supply_importance_long %>%
   labs(x = "", color = "Region", y = "Aquati animal % contirbution") +
   theme(strip.text = element_text(size = 8))
 ```
-```
+
 
