@@ -54,8 +54,7 @@ update_population_data <- function(input_data, animal_products = FALSE, historic
   
   # Filter for animal products if specified
   if (animal_products == TRUE) {
-    data_with_pop <- data_with_pop %>%
-      filter(Item == "Animal Products")
+    data_with_pop <- data_with_pop
   }
   
   # Calculate per capita values based on historical vs current data
@@ -397,7 +396,7 @@ fao_aquatic_source <- fao_aquatic_source %>%
   filter(!is.na(value))
 
 # Write final data output to .csv
-write_csv(fao_aquatic_source, "../output/fao_aquatic_source.csv")
+# write_csv(fao_aquatic_source, "../output/fao_aquatic_source.csv")
 ```
 
 ```{r get data to Lana}
