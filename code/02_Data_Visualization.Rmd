@@ -233,14 +233,14 @@ comb <- plot_grid(one, two)
 (fig_three_a <- plot_grid(comb, legend, ncol = 1, rel_heights = c(1,0.2)))
 
 # Save plot
-ggsave("../images/fig_three_a.png", fig_three_a, device = "png", units = "in", width = 5.5, height = 3, bg = "transparent")
+# ggsave("../images/fig_three_a.png", fig_three_a, device = "png", units = "in", width = 5.5, height = 3, bg = "transparent")
 
 
 ##### REGIONAL PROTEIN CONSUMPTION
 
   (get_legend_plot <- aa_protein_consumed %>%
   group_by(year, region, type) %>%
-  summarize(mean = mean(value)) %>%
+  summarize(mean = mean(value, na.rm = TRUE)) %>%
   ggplot(aes(x = year, y = mean, color = region, linetype = type)) +
            geom_line(size = 1) +
   scale_color_manual(values = artis_palette(6)) +
@@ -303,7 +303,7 @@ comb <- plot_grid(one, two)
 (fig_three_b <- plot_grid(comb, legend, ncol = 1, rel_heights = c(1,0.2)))
 
 # Save plot
-ggsave("../images/fig_three_b.png", fig_three_b, device = "png", units = "in", width = 5.5, height = 3, bg = "transparent")
+ggsave("../images/fig_three_b_scenario3.png", fig_three_b, device = "png", units = "in", width = 5.5, height = 3, bg = "transparent")
 ```
 
 ```{r aquaculture vs capture fishery reliance}
