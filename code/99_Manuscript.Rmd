@@ -115,6 +115,12 @@ Aquatic animal reliance has been an important contributor to overall food consum
 \caption{Change in aquatic animal reliance from 1996-2019. These slopes were calculated by obtaining the change in aquatic animal reliance for a country from 1996-2019. Positive slopes indicate that a country has increased its seafood consumption sourcing from foreign countries, and negative slopes indicating a shift toward an increased domestic consumption. Plot 2A shows the highest to lowest aquatic animal reliance slopes, centered around 0 (i.e., no change). Plot 2B highlights continential distributions of changes in foreign aquatic animal reliance.}
 \end{figure}
 
+<!-- \begin{figure}[H] -->
+<!-- \centering -->
+<!-- \includegraphics[width=6in]{../images/fig_four.jpg} -->
+<!-- \caption{Differences in FAO datasets as highlighted in Vonderschmidt et al 2024 where the historical values occur as a } -->
+<!-- \end{figure} -->
+
 
 
 # Discussion
@@ -130,7 +136,8 @@ While foreign imports can increase food availability and diversity [@subramaniam
 The accuracy of this dataset also needs to be considered.
 While the ARTIS database leverages different Harmonized system versions to layer and provide the most accurate seafood consumption data [@gephart_globalization_2024], the FAO-FBS was split into different datasets with old methodologies ending in 2013 and new one starting in 2010. 
 There are currently no harmonization methods for merging historical and new FAO-FBS. 
-Differences in historical vs new values can be explained as transnational shifts, but these differences can be nuanced when looking across countries and may need careful curation if focusing on a specific country [@vonderschmidt_analysis_2024]. 
+Differences in historical vs new values can be explained as transnational shifts, but these differences can be nuanced when looking across countries and may need careful curation if focusing on a specific country [@vonderschmidt_analysis_2024].
+This can be seen in figure 1A where there is an abrupt decrease from 2009 to 2010 in the importance of aquatic animals toward protein consumption while figure 1B has an abrupt increase in importance toward caloric consumption.
 Averaging over multiple years with FAO-FBS fata can produce more reliable trends - this could be a technique used to interpret our FAO-FBS-ARTIS joined data [@thar_review_2020]. 
 
 <!-- * Applications of this data - gives us high resolution sourcing contributions to daily protein and food intake (fishery managers, food systems scientists) - cite @vonderschmidt_analysis_2024 -->
