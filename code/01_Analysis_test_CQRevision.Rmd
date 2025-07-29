@@ -274,98 +274,105 @@ population <- fao_old_raw %>%
 
 # # TRY TO FILL IN FBS DATA WITH WorldBank
 # # Countries from FBS with missing population data
-# missing_countries <- c("BEL", "SCG", "BHR", "BTN", "FSM","MHL", "NRU", "PRK","QAT", "SDN", "SSD", "TON", "TUV")
-# 
-# # One country: SCG Doesn't have any available population data.
-# world_bank <- read.csv("../data/population_data_worldbank.csv")
-# 
-# # Step 3: Pivot to long format
-# world_bank_long <- world_bank %>%
-#   select(Country.Code, matches("^X(1996|1997|1998|1999|20[0-1][0-9]|2022)$")) %>% 
-#   pivot_longer(
-#     cols = -Country.Code,
-#     names_to = "year",
-#     values_to = "population"
-#   ) %>%
-#   mutate(
-#     iso3c = Country.Code,
-#     year = as.integer(sub("X", "", year)),        # Remove 'X' prefix
-#     population = as.numeric(population)
-#   ) %>%
-#   select(iso3c, year, population) %>%
-#   arrange(iso3c, year)
-# 
-# # Join the population data (for visualization / t test)
-# joined_population <- left_join(population %>%
-#                                  filter(!(year %in% 2010:2013 & data_source == "old FBS")), world_bank_long, by = c("year", "iso3c"))
-# 
-# # t tests to compare population values
-# valid_iso3c <- joined_population %>%
-#   filter(!is.na(population.x), !is.na(population.y)) %>%
-#   group_by(iso3c) %>%
-#   mutate(
-#     n_x = sum(!is.na(population.x)),
-#     n_y = sum(!is.na(population.y))
-#   ) %>%
-#   filter(n_x > 3, n_y > 3) %>%
-#   select(-n_x, -n_y) %>%
-#   filter(iso3c %in% c("BEL", "SCG", "BHR", "BTN", "FSM","MHL", "NRU", "PRK","QAT", "SDN", "SSD", "TON", "TUV"))
-# 
-# p_vals <- valid_iso3c %>%
-#   split(.$iso3c) %>% 
-#   map(~t.test(.x$population.x, .x$population.y)) %>%
-#   map_df(broom::tidy, .id = 'iso3c')
-# 
-# # Look at p values comparing population sizes in FBS vs WorldBank data
-# p_vals %>%
-#   select(iso3c, p.value) %>%
-#   mutate(p.value = round(p.value, 2)) %>% View()
-# 
-# 
-# joined_population %>% filter(iso3c == "LUX")
-# 
-# # Visualization plot to compare populations
-# (pop_comparison <- joined_population %>%
-#   pivot_longer(
-#     cols = c(population.x, population.y),
-#     names_to = "source",
-#     values_to = "population"
-#   ) %>%
-#   mutate(
-#     source = recode(source,
-#       "population.x" = "FBS",
-#       "population.y" = "WorldBank"
-#     )
-#   ) %>%
-#   filter(iso3c %in% ) %>%
-#   ggplot(aes(x = year, y = population, color = source)) +
-#   geom_line(size = 0.7) +
-#   theme_light() +
-#   labs(x = "", y = "Mean global population", color = "Source") +
-#   theme(
-#     panel.background = element_rect(fill = "transparent", color = NA),
-#     plot.background = element_rect(fill = "transparent", color = NA),
-#     legend.position = "bottom",
-#     legend.justification = "center",
-#     legend.background = element_rect(fill = "transparent", color = NA),
-#     legend.box.background = element_rect(fill = "transparent", color = NA),
-#     axis.text = element_text(size = 4),
-#     strip.text = element_text(size = 8)
-#   ) +
-#     facet_wrap(~ iso3c))
-# 
-# # Save plot
-# ggsave("../images/pop_comparison_missing_countries.png", pop_comparison, device = "png", units = "in", width = 4, height = 3, bg = "transparent")
-# 
-# # Update FBS missing countries with WorldBank population values
-# population <- population %>%
-#   left_join(world_bank_long %>% filter(iso3c %in% missing_countries),
-#             by = c("year", "iso3c")) %>%
-#   mutate(population = case_when(
-#     iso3c %in% missing_countries ~ population.y,
-#     TRUE ~ population.x)) %>%
-#   select(-population.x, -population.y) %>%
-#   filter(!is.na(population))
+missing_countries <- c("BEL", "SCG", "BHR", "BTN", "FSM","MHL", "NRU", "PRK","QAT", "SDN", "SSD", "TON", "TUV")
+
+# One country: SCG Doesn't have any available population data.
+world_bank <- read.csv("../data/population_data_worldbank.csv")
+
+# Step 3: Pivot to long format
+world_bank_long <- world_bank %>%
+  mutate(iso3c = countrycode(Country.Name, origin = "country.name", destination = "iso3c")) %>%
+  filter(!is.na(iso3c)) %>%
+  select(iso3c, starts_with("X")) %>% #starts_with instead of regex
+  pivot_longer(
+    cols = -iso3c,
+    names_to = "year",
+    values_to = "population"
+  ) %>%
+  mutate(
+    year = as.integer(sub("X", "", year)),        # Remove 'X' prefix
+    population = as.numeric(population)
+  )  %>%
+  select(iso3c, year, population) %>%
+  arrange(iso3c, year)
+  
+
+world_bank_long %>%
+  group_by(year) %>%
+  summarize(sum = sum(population, na.rm = TRUE)) %>%
+  ggplot(aes(x = year ,y = sum)) +
+  geom_line()
+
+# Join the population data (for visualization / t test)
+joined_population <- left_join(population %>%
+                                 filter(!(year %in% 2010:2013 & data_source == "old FBS")), world_bank_long, by = c("year", "iso3c"))
+
+# t tests to compare population values
+valid_iso3c <- joined_population %>%
+  filter(!is.na(population.x), !is.na(population.y)) %>%
+  group_by(iso3c) %>%
+  mutate(
+    n_x = sum(!is.na(population.x)),
+    n_y = sum(!is.na(population.y))
+  ) %>%
+  select(-n_x, -n_y) %>%
+  filter(iso3c %in% c("BEL", "SCG", "BHR", "BTN", "FSM","MHL", "NRU", "PRK","QAT", "SDN", "SSD", "TON", "TUV")) %>%
+  filter(year > 2010)
+
+p_vals <- valid_iso3c %>%
+  split(.$iso3c) %>%
+  map(~t.test(.x$population.x, .x$population.y)) %>%
+  map_df(broom::tidy, .id = 'iso3c')
+
+# Look at p values comparing population sizes in FBS vs WorldBank data
+p_vals %>%
+  select(iso3c, p.value) %>%
+  mutate(p.value = round(p.value, 2)) %>% View()
+
+
+joined_population %>% filter(iso3c == "LUX")
+
+# Visualization plot to compare populations
+(pop_comparison <- joined_population %>%
+  pivot_longer(
+    cols = c(population.x, population.y),
+    names_to = "source",
+    values_to = "population"
+  ) %>%
+  mutate(
+    source = recode(source,
+      "population.x" = "FBS",
+      "population.y" = "WorldBank"
+    )
+  ) %>%
+    group_by(year, source) %>%
+    summarize(population = sum(population, na.rm = TRUE)) %>%
+  ggplot(aes(x = year, y = population, color = source)) +
+  geom_line(size = 0.7) +
+  theme_light() +
+  labs(x = "", y = "Mean global population", color = "Source") +
+  theme(
+    panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    legend.position = "bottom",
+    legend.justification = "center",
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.box.background = element_rect(fill = "transparent", color = NA),
+    strip.text = element_text(size = 8)
+  ))
+
+# Save plot
+ggsave("../images/pop_comparison_missing_countries.png", pop_comparison, device = "png", units = "in", width = 4, height = 3, bg = "transparent")
+
+# Update FBS missing countries with WorldBank population values
+population <- population %>%
+  left_join(world_bank_long %>% filter(iso3c %in% missing_countries),
+            by = c("year", "iso3c")) %>%
+  mutate(population = case_when(
+    iso3c %in% missing_countries ~ population.y,
+    TRUE ~ population.x)) %>%
+  select(-population.x, -population.y) %>%
+  filter(!is.na(population))
 ```
 
 ```{r update per capita values}
@@ -406,7 +413,6 @@ fao_old_raw <- update_population_data(fao_old_raw,
 # 
 # by = c("iso3c", "year", "Item", "Element"))
 ```
-
 
 ```{r clean consumption data}
 consumption_props <- consumption_full %>%
