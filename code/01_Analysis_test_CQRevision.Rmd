@@ -255,6 +255,7 @@ fao_old_aquatic <- fao_old_raw %>%
   summarise(value = sum(value, na.rm = TRUE)) %>%
   ungroup()
 
+# Obtain FBS Population data
 population <- fao_old_raw %>%
   filter(Element == "Total Population - Both sexes") %>%
   select(year, iso3c, data_source, "population" = "value") %>%
@@ -262,28 +263,31 @@ population <- fao_old_raw %>%
   filter(Element == "Total Population - Both sexes") %>%
   select(year, iso3c, data_source, "population" = "value")) %>%
   # original unit is 1000 people - convert unit to people
-  mutate(population = 1000*population) %>%
+  mutate(population = 1000*population)
+
+# Store 0'ed out populations in separate dataframe
+fbs_with_zeros <- population %>%
+  filter(population == 0)
+
+# Filter out 0'ed out populations from population data
+population <- population %>%
   filter(population != 0)
-  # Since we are recalculating per capita, we need to impute missing per population values. We've done this using the mean of a countries' overall population across the years.
-  # group_by(iso3c) %>%
-  # mutate(population = case_when(
-  #   population == 0 ~ mean(population, na.rm = TRUE),
-  #                          TRUE ~ population
-  # ))
 
-
+# Problem: FBS has countries with 0's in their population. We need to find a way to fill this data in (or delete it if there's no reliable way)
 # # TRY TO FILL IN FBS DATA WITH WorldBank
 # # Countries from FBS with missing population data
-missing_countries <- c("BEL", "SCG", "BHR", "BTN", "FSM","MHL", "NRU", "PRK","QAT", "SDN", "SSD", "TON", "TUV")
+missing_countries <- fbs_with_zeros %>%
+  distinct(iso3c) %>%
+  pull(iso3c)
 
 # One country: SCG Doesn't have any available population data.
 world_bank <- read.csv("../data/population_data_worldbank.csv")
 
-# Step 3: Pivot to long format
+# Pivot to long format
 world_bank_long <- world_bank %>%
   mutate(iso3c = countrycode(Country.Name, origin = "country.name", destination = "iso3c")) %>%
   filter(!is.na(iso3c)) %>%
-  select(iso3c, starts_with("X")) %>% #starts_with instead of regex
+  select(iso3c, starts_with("X")) %>%
   pivot_longer(
     cols = -iso3c,
     names_to = "year",
@@ -296,16 +300,10 @@ world_bank_long <- world_bank %>%
   select(iso3c, year, population) %>%
   arrange(iso3c, year)
   
-
-world_bank_long %>%
-  group_by(year) %>%
-  summarize(sum = sum(population, na.rm = TRUE)) %>%
-  ggplot(aes(x = year ,y = sum)) +
-  geom_line()
-
-# Join the population data (for visualization / t test)
+# # Join the population data (for visualization / t test)
 joined_population <- left_join(population %>%
-                                 filter(!(year %in% 2010:2013 & data_source == "old FBS")), world_bank_long, by = c("year", "iso3c"))
+                                 filter(!(year %in% 2010:2013 & data_source == "old FBS"),
+                                        iso3c %in% countries), world_bank_long %>% filter(iso3c %in% countries), by = c("year", "iso3c"))
 
 # t tests to compare population values
 valid_iso3c <- joined_population %>%
@@ -319,60 +317,31 @@ valid_iso3c <- joined_population %>%
   filter(iso3c %in% c("BEL", "SCG", "BHR", "BTN", "FSM","MHL", "NRU", "PRK","QAT", "SDN", "SSD", "TON", "TUV")) %>%
   filter(year > 2010)
 
+# Calculate p-values between 0'ed countries populaton values
 p_vals <- valid_iso3c %>%
   split(.$iso3c) %>%
   map(~t.test(.x$population.x, .x$population.y)) %>%
   map_df(broom::tidy, .id = 'iso3c')
 
 # Look at p values comparing population sizes in FBS vs WorldBank data
+# Majority of p-values are greater than 0.05. Meaning the FBS and WorldBank data countries with 0's in their data are very similar. Meaning it is reliable to impute Worldbank data for FBS Data
 p_vals %>%
   select(iso3c, p.value) %>%
-  mutate(p.value = round(p.value, 2)) %>% View()
-
-
-joined_population %>% filter(iso3c == "LUX")
-
-# Visualization plot to compare populations
-(pop_comparison <- joined_population %>%
-  pivot_longer(
-    cols = c(population.x, population.y),
-    names_to = "source",
-    values_to = "population"
-  ) %>%
-  mutate(
-    source = recode(source,
-      "population.x" = "FBS",
-      "population.y" = "WorldBank"
-    )
-  ) %>%
-    group_by(year, source) %>%
-    summarize(population = sum(population, na.rm = TRUE)) %>%
-  ggplot(aes(x = year, y = population, color = source)) +
-  geom_line(size = 0.7) +
-  theme_light() +
-  labs(x = "", y = "Mean global population", color = "Source") +
-  theme(
-    panel.background = element_rect(fill = "transparent", color = NA),
-    plot.background = element_rect(fill = "transparent", color = NA),
-    legend.position = "bottom",
-    legend.justification = "center",
-    legend.background = element_rect(fill = "transparent", color = NA),
-    legend.box.background = element_rect(fill = "transparent", color = NA),
-    strip.text = element_text(size = 8)
-  ))
-
-# Save plot
-ggsave("../images/pop_comparison_missing_countries.png", pop_comparison, device = "png", units = "in", width = 4, height = 3, bg = "transparent")
+  mutate(p.value = round(p.value, 2)) %>%
+  arrange(-p.value)
 
 # Update FBS missing countries with WorldBank population values
-population <- population %>%
-  left_join(world_bank_long %>% filter(iso3c %in% missing_countries),
+fbs_with_zeros <- fbs_with_zeros %>%
+  left_join(world_bank_long,
             by = c("year", "iso3c")) %>%
-  mutate(population = case_when(
-    iso3c %in% missing_countries ~ population.y,
-    TRUE ~ population.x)) %>%
+  mutate(population = population.y) %>%
   select(-population.x, -population.y) %>%
   filter(!is.na(population))
+
+# Add 0'ed out countries back into FBS population data
+population <- bind_rows(population,
+                        fbs_with_zeros
+                        )
 ```
 
 ```{r update per capita values}
@@ -392,26 +361,6 @@ fao_new_raw <- update_population_data(fao_new_raw,
 fao_old_raw <- update_population_data(fao_old_raw,
                        animal_products = TRUE,
                        historical = TRUE)
-
-# fao_new_raw %>% distinct(Element)
-# 
-# update_population_data(fao_new_raw,
-#                        animal_products = TRUE,
-#                        historical = FALSE) %>% distinct(Element)
-# anti_join(fao_old_raw, update_population_data(fao_old_raw,
-#                        animal_products = TRUE,
-#                        historical = TRUE),
-#           by = c("iso3c", "year", "Element", "Item"))
-# 
-# anti_join(fao_old_raw %>% filter(Element == "Protein supply quantity (t)",
-#          Item == "Animal Products"),
-# 
-# update_population_data(fao_old_raw,
-#                        animal_products = TRUE,
-#                        historical = FALSE) %>% filter(Element == "Protein supply quantity (g/capita/day)",
-#          Item == "Animal Products"),
-# 
-# by = c("iso3c", "year", "Item", "Element"))
 ```
 
 ```{r clean consumption data}
