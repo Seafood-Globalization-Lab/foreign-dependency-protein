@@ -1,6 +1,6 @@
 ---
 title: "01_Analysis_test"
-author: "Jessica Gephart"
+author: "Connor Quiroz and Jessica Gephart"
 date: "2025-06-25"
 output: html_document
 ---
@@ -13,6 +13,10 @@ library(arrow)
 library(countrycode)
 library(exploreARTIS)
 library(data.table)
+
+# Create function from R folder if not building as a package
+source("../R/standardize_country_data.R")
+source("../R/update_population_data.R")
 ```
 
 This file independently produces the supply sourcing file as a test. 
@@ -24,115 +28,16 @@ The desired final file should have the following columns:
 * source (foreign/domestic/error, capture/aquaculture/error)
 * supply_percap_kg (from FAO 'Food supply quantity (kg/capita/yr)')
 
-```{r}
-# Recalculate per capita since we combined territories into countries
-update_population_data <- function(input_data, animal_products = FALSE, historical = FALSE) {
-  
-  # Define which elements we'll be creating/updating
-  per_capita_elements <- c("Protein supply quantity (g/capita/day)", 
-                          "Food supply (kcal/capita/day)",
-                          "Food supply quantity (kg/capita/yr)")
-  
-  # Filter for total yearly values that need recalculation
-  if (historical == FALSE) {
-    elements_to_update <- c("Food supply (kcal)", "Protein supply quantity (t)")
-  } else {
-    elements_to_update <- c("Protein supply quantity (t)")
-  }
-  
-  # Split data: elements to update vs elements to keep as-is
-  data_to_update <- input_data %>%
-    filter(Element %in% elements_to_update)
-  
-  # Keep elements that are NOT being updated AND NOT the per capita elements we're creating
-  data_no_update <- input_data %>%
-    filter(!Element %in% elements_to_update,
-           !Element %in% per_capita_elements)
-  
-  # Join population data to the elements that need updating
-  data_with_pop <- data_to_update %>%
-    left_join(population, by = c("iso3c", "year", "data_source"))
-  
-  # Filter for animal products if specified
-  if (animal_products == TRUE) {
-    data_with_pop <- data_with_pop
-  }
-  
-  # Calculate per capita values based on historical vs current data
-  if (historical == TRUE) {
-    # For historical data, only recalculate protein
-    updated_data <- data_with_pop %>%
-      mutate(
-        value_updated = case_when(
-          Element == "Protein supply quantity (t)" ~ (value * 1e6) / (population * 365),
-          TRUE ~ value
-        ),
-        Element = case_when(
-          Element == "Protein supply quantity (t)" ~ "Protein supply quantity (g/capita/day)",
-          TRUE ~ Element
-        ),
-        Unit = case_when(
-          Element == "Protein supply quantity (g/capita/day)" ~ "g/capita/day",
-          TRUE ~ Unit
-        )
-      ) %>%
-      select(-population, -value) %>%
-      rename(value = value_updated)
-    
-  } else {
-    # For current data, calculate multiple per capita measures
-    # We need to create separate rows for each per capita calculation
-    
-    # Calculate kcal per capita per day
-    kcal_per_capita <- data_with_pop %>%
-      filter(Element == "Food supply (kcal)") %>%
-      mutate(
-        value = (value * 1e6) / (population * 365),
-        Element = "Food supply (kcal/capita/day)",
-        Unit = "kcal/capita/day"
-      ) %>%
-      select(-population)
-    
-    # Calculate kg per capita per year (need energy density - this seems to be missing from original)
-    # Note: You'll need to define energy_density_kcal_per_kg or handle this differently
-    kg_per_capita <- data_with_pop %>%
-      filter(Element == "Food supply (kcal)") %>%
-      mutate(
-        # Using a placeholder energy density - you'll need to provide this value
-        energy_density_kcal_per_kg = 2000, # Replace with actual energy density data
-        value = (value * 1e6) / (population * energy_density_kcal_per_kg),
-        Element = "Food supply quantity (kg/capita/yr)",
-        Unit = "kg/capita/yr"
-      ) %>%
-      select(-population, -energy_density_kcal_per_kg)
-    
-    # Calculate protein per capita per day
-    protein_per_capita <- data_with_pop %>%
-      filter(Element == "Protein supply quantity (t)") %>%
-      mutate(
-        value = (value * 1e6) / (population * 365),
-        Element = "Protein supply quantity (g/capita/day)",
-        Unit = "g/capita/day"
-      ) %>%
-      select(-population)
-    
-    # Combine all the per capita calculations
-    updated_data <- bind_rows(kcal_per_capita, kg_per_capita, protein_per_capita)
-  }
-  
-  # Combine the updated per capita data with the data that didn't need updating
-  final_data <- bind_rows(data_no_update, updated_data)
-  
-  return(final_data)
-}
-```
-
 ```{r read in data created from 00_Preprocess_Data}
 # Read in consumption data
 consumption_full <- read_parquet("../output/consumption_full.parquet")
 
 # Standardize country names
-standardized_countries <- standardize_country_data()
+standardized_countries <- standardize_country_data() %>%
+  # FIXIT: confirm this is correct, but this is an attempt to ensure each input_iso - year combination has a single output
+  select(year, input_iso3c, output_iso3c) %>%
+  distinct() 
+  
 
 # Read in and clean new FAO food balance sheet data
 fao_new_raw <- read_parquet("../output/fao_food.parquet") %>% 
@@ -148,14 +53,16 @@ fao_new_raw <- read_parquet("../output/fao_food.parquet") %>%
   mutate(data_source = "new FBS") %>% 
   # Add iso3c column
   mutate(iso3c = countrycode(Area, origin = 'country.name', destination = 'iso3c')) %>%
-    relocate(iso3c, .before = "Area") %>%
-  left_join(standardized_countries, by = c("iso3c" = "input_iso3c", "year")) %>%
+  relocate(iso3c, .before = "Area") %>%
+  ## Manually add in select iso3c codes
+  mutate(iso3c = case_when(
+    Area == "Netherlands Antilles (former)" ~ "ANT",
+    TRUE ~ iso3c
+  )) %>%
+  left_join(standardized_countries %>% 
+              filter(!is.na(input_iso3c)), by = c("iso3c" = "input_iso3c", "year")) %>%
   mutate(iso3c = case_when(is.na(output_iso3c) ~ iso3c, # an NA in output_iso3c means the original iso3c value is a country
                            !is.na(output_iso3c) ~ output_iso3c)) %>% 
-  mutate(iso3c = case_when(
-    str_detect(Area,"Antilles") ~ "NLD", # Fix Netherlands name that wasn't matched
-                TRUE ~ iso3c
-  )) %>%
   group_by(iso3c, year, Element, `Element Code`, Unit, `Item Code (FBS)`, `Item Code`, Item) %>%
   summarize(value = sum(value, na.rm = TRUE)) %>%
   ungroup() %>%
@@ -203,14 +110,19 @@ fao_old_raw <- read_parquet("../output/fao_historical.parquet") %>%
   ) %>%
   # Add iso3c column
   mutate(iso3c = countrycode(Area, origin = 'country.name', destination = 'iso3c')) %>%
-    relocate(iso3c, .before = "Area") %>%
+  relocate(iso3c, .before = "Area") %>%
+  # NAs in iso3c column must be resolved before join
+  ## remove countries that did not exist within ARTIS years
+  filter(!(Area %in% c("Belgium-Luxembourg", "Czechoslovakia", "Yugoslav SFR"))) %>%
+  ## Manually add in select iso3c codes
+  mutate(iso3c = case_when(
+    Area == "Netherlands Antilles (former)" ~ "ANT",
+    Area == "Serbia and Montenegro" ~ "SCG",
+    TRUE ~ iso3c
+  )) %>%
   left_join(standardized_countries, by = c("iso3c" = "input_iso3c", "year")) %>%
   mutate(iso3c = case_when(is.na(output_iso3c) ~ iso3c, # an NA in output_iso3c means the original iso3c value is a country
                            !is.na(output_iso3c) ~ output_iso3c)) %>% 
-  mutate(iso3c = case_when(
-    str_detect(Area,"Antilles") ~ "NLD", # Fix Netherlands name that wasn't matched
-                TRUE ~ iso3c
-  )) %>%
   group_by(iso3c, year, Element, `Element Code`, Unit, `Item Code (FBS)`, `Item Code`, Item) %>%
   summarize(value = sum(value, na.rm = TRUE)) %>%
   ungroup() %>%
