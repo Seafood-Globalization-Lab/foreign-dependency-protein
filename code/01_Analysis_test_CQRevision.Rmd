@@ -211,6 +211,9 @@ world_bank_long <- world_bank %>%
   )  %>%
   select(iso3c, year, population) %>%
   arrange(iso3c, year)
+
+# Create countries object for countries with missing population data
+countries <- missing_countries
   
 # # Join the population data (for visualization / t test)
 joined_population <- left_join(population %>%
@@ -226,8 +229,12 @@ valid_iso3c <- joined_population %>%
     n_y = sum(!is.na(population.y))
   ) %>%
   select(-n_x, -n_y) %>%
-  filter(iso3c %in% c("BEL", "SCG", "BHR", "BTN", "FSM","MHL", "NRU", "PRK","QAT", "SDN", "SSD", "TON", "TUV")) %>%
+  filter(iso3c %in% countries) %>%
   filter(year > 2010)
+
+# Calculate absolute differences between 
+valid_iso3c <- valid_iso3c %>%
+  mutate(absolute_diff = abs(population.x-population.y))
 
 # Calculate p-values between 0'ed countries populaton values
 p_vals <- valid_iso3c %>%
@@ -239,7 +246,7 @@ p_vals <- valid_iso3c %>%
 # Majority of p-values are greater than 0.05. Meaning the FBS and WorldBank data countries with 0's in their data are very similar. Meaning it is reliable to impute Worldbank data for FBS Data
 p_vals %>%
   select(iso3c, p.value) %>%
-  mutate(p.value = round(p.value, 2)) %>%
+  mutate(dd = round(p.value, 2)) %>%
   arrange(-p.value)
 
 # Update FBS missing countries with WorldBank population values
@@ -251,9 +258,9 @@ fbs_with_zeros <- fbs_with_zeros %>%
   filter(!is.na(population))
 
 # Add 0'ed out countries back into FBS population data
-population <- bind_rows(population,
-                        fbs_with_zeros
-                        )
+# population <- bind_rows(population,
+#                         fbs_with_zeros
+#                         )
 ```
 
 ```{r update per capita values}
@@ -363,20 +370,14 @@ fao_aquatic_source <- fao_aquatic_source %>%
 ```
 
 ```{r get data to Lana}
-fao_aquatic_source <- fao_aquatic_source %>% 
-  filter(!(year == 2010 & data_source == "old FBS"),
-         !(year == 2011 & data_source == "old FBS"),
-         !(year == 2012 & data_source == "old FBS"),
-         !(year == 2013 & data_source == "old FBS"),
-         data_source == "new FBS") %>%
-  rename(aa_reliance_prop = "value", consumption_prop = "aquatic_source_prop") %>%
-  relocate(aa_reliance_prop, .after = "consumption_prop")
-
-write_csv(fao_aquatic_source, "../output/fao_aquatic_source_7_16_2025_lana.csv")
-
-
-fao_aquatic_source %>%
-  ggplot(aes(x = aa_reliance_prop)) +
-  geom_histogram() +
-  lims(x = c(0,1))
+# fao_aquatic_source <- fao_aquatic_source %>% 
+#   filter(!(year == 2010 & data_source == "old FBS"),
+#          !(year == 2011 & data_source == "old FBS"),
+#          !(year == 2012 & data_source == "old FBS"),
+#          !(year == 2013 & data_source == "old FBS"),
+#          data_source == "new FBS") %>%
+#   rename(aa_reliance_prop = "value", consumption_prop = "aquatic_source_prop") %>%
+#   relocate(aa_reliance_prop, .after = "consumption_prop")
+# 
+# write_csv(fao_aquatic_source, "../output/fao_aquatic_source_7_16_2025_lana.csv")
 ```
