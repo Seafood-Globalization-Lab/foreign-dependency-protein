@@ -30,13 +30,33 @@ The desired final file should have the following columns:
 
 ```{r read in data created from 00_Preprocess_Data}
 # Read in consumption data
-consumption_full <- read_parquet("../output/consumption_full.parquet")
+# Set parquet database folder location
+db_folder <- "/Users/gephart/Library/CloudStorage/Dropbox/Research/ARTIS/ARTIS_1.1.0_FAO_2025_08_02/"
+
+artis_ds <- arrow::open_dataset(file.path(db_folder, "datasets", "ARTIS_consumption_v1.1.0_FAO_mid_2025-08-02.parquet"))
+
+# Summarize consumption file by source country
+artis_ts_result <- artis_ds %>%
+  filter(
+    end_use == "direct human consumption",
+    (hs_version == "HS96" & year <= 2003) |
+      (hs_version == "HS02" & year >= 2004 & year <= 2009) |
+      (hs_version == "HS07" & year >= 2010 & year <= 2012) |
+      (hs_version == "HS12" & year >= 2013 & year <= 2020)
+  ) %>%
+  group_by(year, consumer_iso3c, consumption_source, habitat, method) %>%
+  summarise(consumption_live_t = sum(consumption_live_t, na.rm = TRUE))
+
+consumption_full <- artis_ts_result %>%
+  collect() %>%
+  mutate(consumption_source = str_replace(consumption_source, " step 1", ""),
+         consumption_source = str_replace(consumption_source, " step 2", ""))
 
 # Standardize country names
 standardized_countries <- standardize_country_data() %>%
-  # FIXIT: confirm this is correct, but this is an attempt to ensure each input_iso - year combination has a single output
   select(year, input_iso3c, output_iso3c) %>%
-  distinct() 
+  distinct() %>%
+  filter(!is.na(input_iso3c))
   
 
 # Read in and clean new FAO food balance sheet data
@@ -133,13 +153,13 @@ fao_old_raw <- read_parquet("../output/fao_historical.parquet") %>%
 # Set elements to keep 
 # NOTE: How reasonable applying the live weight proportions here will 
 # vary by element. Need to consider which to ultimately keep. 
-elements_select <- c("Food supply (kcal/capita/day)", 
-                     "Food supply (kcal)", 
-                     "Protein supply quantity (g/capita/day)",
+# Per capita elements of interest left out and calculated manually later to 
+# ensure consistency with country boundaries
+elements_select <- c("Food supply (kcal)", 
                      "Protein supply quantity (t)", 
                      # FIXIT: check difference between next two elements
                      "Domestic supply quantity",
-                     "Food supply quantity (kg/capita/yr)")
+                     "Food")
 
 aquatic_animals <- c("Cephalopods",
                      "Crustaceans", "Demersal Fish",
@@ -149,20 +169,14 @@ aquatic_animals <- c("Cephalopods",
 # Create data frame of aquatic animal products only for disaggregation by source
 fao_new_aquatic <- fao_new_raw %>%
   filter(Item %in% aquatic_animals,
-         Element %in% elements_select,
-         !Element %in% c("Food supply (kcal/capita/day)", 
-                        "Protein supply quantity (g/capita/day)",
-                        "Food supply quantity (kg/capita/yr)")) %>%
+         Element %in% elements_select) %>%
   group_by(year, iso3c, Element, Unit, data_source) %>%
   summarise(value = sum(value, na.rm = TRUE)) %>%
   ungroup()
 
 fao_old_aquatic <- fao_old_raw %>%
   filter(Item %in% aquatic_animals,
-         Element %in% elements_select,
-         !Element %in% c("Food supply (kcal/capita/day)", 
-                        "Protein supply quantity (g/capita/day)",
-                        "Food supply quantity (kg/capita/yr)")) %>%
+         Element %in% elements_select) %>%
   group_by(year, iso3c, Element, Unit, data_source) %>%
   summarise(value = sum(value, na.rm = TRUE)) %>%
   ungroup()
@@ -186,7 +200,7 @@ population <- population %>%
   filter(population != 0)
 
 # Problem: FBS has countries with 0's in their population. We need to find a way to fill this data in (or delete it if there's no reliable way)
-# # TRY TO FILL IN FBS DATA WITH WorldBank
+# # TRY TO FILL IN FBS DATA WITH World Bank
 # # Countries from FBS with missing population data
 missing_countries <- fbs_with_zeros %>%
   distinct(iso3c) %>%
