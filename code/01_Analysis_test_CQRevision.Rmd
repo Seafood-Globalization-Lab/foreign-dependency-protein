@@ -13,6 +13,7 @@ library(arrow)
 library(countrycode)
 library(exploreARTIS)
 library(data.table)
+library(here)
 
 # Create function from R folder if not building as a package
 source("../R/standardize_country_data.R")
@@ -31,7 +32,8 @@ The desired final file should have the following columns:
 ```{r read in data created from 00_Preprocess_Data}
 # Read in consumption data
 # Set parquet database folder location
-db_folder <- "/Users/gephart/Library/CloudStorage/Dropbox/Research/ARTIS/ARTIS_1.1.0_FAO_2025_08_02/"
+# db_folder <- "/Users/gephart/Library/CloudStorage/Dropbox/Research/ARTIS/ARTIS_1.1.0_FAO_2025_08_02/"
+db_folder <- paste0(here(),"/data/ARITS_1.1.0_FAO_2025_08_02")
 
 artis_ds <- arrow::open_dataset(file.path(db_folder, "datasets", "ARTIS_consumption_v1.1.0_FAO_mid_2025-08-02.parquet"))
 
@@ -51,14 +53,11 @@ consumption_full <- artis_ts_result %>%
   collect() %>%
   mutate(consumption_source = str_replace(consumption_source, " step 1", ""),
          consumption_source = str_replace(consumption_source, " step 2", ""))
+```
 
-# Standardize country names
-standardized_countries <- standardize_country_data() %>%
-  select(year, input_iso3c, output_iso3c) %>%
-  distinct() %>%
-  filter(!is.na(input_iso3c))
-  
+> We will run initial checks on the data by checking FAO FBS population data that has not had their territories corrected to the Worldbank population data. No territory aggregation, just checking country to country populations.
 
+```{r run checks on population data}
 # Read in and clean new FAO food balance sheet data
 fao_new_raw <- read_parquet("../output/fao_food.parquet") %>% 
   # Remove aggregated regions
@@ -79,12 +78,12 @@ fao_new_raw <- read_parquet("../output/fao_food.parquet") %>%
     Area == "Netherlands Antilles (former)" ~ "ANT",
     TRUE ~ iso3c
   )) %>%
-  left_join(standardized_countries %>% 
-              filter(!is.na(input_iso3c)), by = c("iso3c" = "input_iso3c", "year")) %>%
-  mutate(iso3c = case_when(is.na(output_iso3c) ~ iso3c, # an NA in output_iso3c means the original iso3c value is a country
-                           !is.na(output_iso3c) ~ output_iso3c)) %>% 
-  group_by(iso3c, year, Element, `Element Code`, Unit, `Item Code (FBS)`, `Item Code`, Item) %>%
-  summarize(value = sum(value, na.rm = TRUE)) %>%
+  # left_join(standardized_country_iso3c %>% 
+  #             filter(!is.na(input_iso3c)), by = c("iso3c" = "input_iso3c", "year")) %>%
+  # mutate(iso3c = case_when(is.na(output_iso3c) ~ iso3c, # an NA in output_iso3c means the original iso3c value is a country
+  #                          !is.na(output_iso3c) ~ output_iso3c)) %>% 
+  # group_by(iso3c, year, Element, `Element Code`, Unit, `Item Code (FBS)`, `Item Code`, Item) %>%
+  # summarize(value = sum(value, na.rm = TRUE)) %>%
   ungroup() %>%
   mutate(data_source = "new FBS") 
 
@@ -140,15 +139,181 @@ fao_old_raw <- read_parquet("../output/fao_historical.parquet") %>%
     Area == "Serbia and Montenegro" ~ "SCG",
     TRUE ~ iso3c
   )) %>%
-  left_join(standardized_countries, by = c("iso3c" = "input_iso3c", "year")) %>%
+  # left_join(standardized_country_iso3c, by = c("iso3c" = "input_iso3c", "year")) %>%
+  # mutate(iso3c = case_when(is.na(output_iso3c) ~ iso3c, # an NA in output_iso3c means the original iso3c value is a country
+  #                          !is.na(output_iso3c) ~ output_iso3c)) %>% 
+  group_by(iso3c, year, Element, `Element Code`, Unit, `Item Code (FBS)`, `Item Code`, Item) %>%
+  summarize(value = sum(value, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(data_source = "old FBS")
+
+# Obtain FBS Population data
+population <- fao_old_raw %>%
+  filter(Element == "Total Population - Both sexes") %>%
+  select(year, iso3c, data_source, "population" = "value") %>%
+  bind_rows(fao_new_raw %>%
+  filter(Element == "Total Population - Both sexes") %>%
+  select(year, iso3c, data_source, "population" = "value")) %>%
+  # original unit is 1000 people - convert unit to people
+  mutate(population = 1000*population) %>%
+  # Prioritize new fbs in overlapping years
+  filter(!(year %in% 2010:2013 & data_source == "old FBS"))
+
+
+# One country: SCG Doesn't have any available population data.
+world_bank <- read.csv("../data/population_data_worldbank.csv")
+
+# Pivot to long format
+world_bank_long <- world_bank %>%
+  mutate(iso3c = countrycode(Country.Name, origin = "country.name", destination = "iso3c")) %>%
+  filter(!is.na(iso3c)) %>%
+  select(iso3c, starts_with("X")) %>%
+  pivot_longer(
+    cols = -iso3c,
+    names_to = "year",
+    values_to = "population"
+  ) %>%
+  mutate(
+    year = as.integer(sub("X", "", year)),        # Remove 'X' prefix
+    population = as.numeric(population)
+  )  %>%
+  select(iso3c, year, population) %>%
+  arrange(iso3c, year)
+  
+# # Join the population data (for visualization / t test)
+joined_population <- left_join(population %>%
+                                 filter(!(year %in% 2010:2013 & data_source == "old FBS")), world_bank_long, by = c("year", "iso3c"))
+
+# Calculate absolute differences between 
+absolute_diff_dataset <- joined_population %>%
+  mutate(absolute_diff = abs(population.x-population.y)) %>%
+  arrange(-absolute_diff)
+
+# Log absolute differences betwen FBS and WorldBank population data
+absolute_diff_dataset %>%
+ggplot(aes(y = log(absolute_diff), x = data_source, fill = data_source)) +
+  geom_boxplot() +
+  labs(y = "Absolute Difference") +
+  theme_minimal()
+```
+
+> Result: Differences between FAO-FBS and WorldBank data are very large. As seen from the boxplot that are log transformed, the median is around 11 for both datasets, which e^11 = 59874 difference in people per country per year. Moving forward, we will include both FBS and WorldBank population columns in the final dataset, but will only calculate per capita values using FAO-FBS columns.
+
+```{r go forth running country standardization}
+# Standardize country names
+standardized_country_iso3c <- standardize_country_data() %>%
+  select(year, input_iso3c, output_iso3c) %>%
+  distinct() %>%
+  filter(!is.na(input_iso3c))
+
+# Read in and clean new FAO food balance sheet data
+fao_new_raw <- read_parquet("../output/fao_food.parquet") %>% 
+  # Remove aggregated regions
+  filter(`Area Code` < 1000,
+         Area != "China") %>% # China included in other names that FBS has
+  # Remove flag columns
+  select(-ends_with("F"), 
+         -ends_with("N")) %>%
+  pivot_longer(cols = Y2010:Y2022, names_to = "year") %>%
+  # Convert year column to numeric after removing "Y" prefix
+  mutate(year = as.numeric(str_replace(year, "Y", ""))) %>%
+  mutate(data_source = "new FBS") %>% 
+  # Add iso3c column
+  mutate(iso3c = countrycode(Area, origin = 'country.name', destination = 'iso3c')) %>%
+  # Hand correct FBS country names that weren't matched to iso3c via countrycode.
+  mutate(iso3c = case_when(
+    str_detect(Area, "T\xfcrkiye") ~ "TUR",
+    str_detect(Area, "Serbia and Montenegro") ~ "SCG",
+    str_detect(Area, "Netherlands Antilles (former)") ~ "NLD",
+    str_detect(Area, "C\xf4te d'Ivoire") ~ "CIV",
+    TRUE ~ iso3c)
+  ) %>%
+  relocate(iso3c, .before = "Area") %>%
+  ## Manually add in select iso3c codes
+  mutate(iso3c = case_when(
+    Area == "Netherlands Antilles (former)" ~ "ANT",
+    TRUE ~ iso3c
+  )) %>%
+  # Implement country standardization
+  left_join(standardized_country_iso3c, by = c("iso3c" = "input_iso3c", "year")) %>%
   mutate(iso3c = case_when(is.na(output_iso3c) ~ iso3c, # an NA in output_iso3c means the original iso3c value is a country
                            !is.na(output_iso3c) ~ output_iso3c)) %>% 
   group_by(iso3c, year, Element, `Element Code`, Unit, `Item Code (FBS)`, `Item Code`, Item) %>%
   summarize(value = sum(value, na.rm = TRUE)) %>%
   ungroup() %>%
-  mutate(data_source = "old FBS") 
-```
+  mutate(data_source = "new FBS") 
 
+# Get historical FBS population values
+fbs_old_pops <- read_parquet("../output/fao_historical.parquet") %>% 
+  # Remove aggregated regions
+  filter(`Area Code` < 1000,
+          Area != "China") %>% # China included in other names that FBS has
+  # Remove flag columns
+  select(-ends_with("F")) %>%
+  pivot_longer(cols = Y1961:Y2013, names_to = "year") %>%
+  # Convert year column to numeric after removing "Y" prefix
+  mutate(year = as.numeric(str_replace(year, "Y", ""))) %>%
+  # Only keep years 1996 and after to align with ARTIS
+  filter(year >= 1996) %>%
+  mutate(data_source = "old FBS") %>%
+  filter(Element == "Total Population - Both sexes") %>%
+  rename(population = "value") %>%
+  select(Area, year, population)
+
+# Read in and clean historical FAO food balance sheet data
+fao_old_raw <- read_parquet("../output/fao_historical.parquet") %>% 
+  # Remove aggregated regions
+  filter(`Area Code` < 1000,
+          Area != "China") %>% # China included in other names that FBS has
+  # Remove flag columns
+  select(-ends_with("F")) %>%
+  pivot_longer(cols = Y1961:Y2013, names_to = "year") %>%
+  # Convert year column to numeric after removing "Y" prefix
+  mutate(year = as.numeric(str_replace(year, "Y", ""))) %>%
+  # Only keep years 1996 and after to align with ARTIS
+  filter(year >= 1996) %>%
+  mutate(data_source = "old FBS") %>%
+  left_join(fbs_old_pops, by = c("Area", "year")) %>%
+  mutate(value = case_when( # Derive annual protein supply (we're going to recalculate per capita since FBS doesn't aggregate fully by country (but separates by territory)
+    Element == "Protein supply quantity (g/capita/day)" ~ (value * 1e6) / (population * 365),
+    TRUE ~ value
+  ),
+  Element = case_when(Element == "Protein supply quantity (g/capita/day)" ~ "Protein supply quantity (t)",
+                      TRUE ~ Element),
+  Unit = case_when(Element == "Protein supply quantity (t)" ~ "t",
+                   TRUE ~ Unit)
+  ) %>%
+  # Add iso3c column
+  mutate(iso3c = countrycode(Area, origin = 'country.name', destination = 'iso3c')) %>%
+  # Hand correct FBS country names that weren't matched to iso3c via countrycode.
+  mutate(iso3c = case_when(
+    str_detect(Area, "T\xfcrkiye") ~ "TUR",
+    str_detect(Area, "Serbia and Montenegro") ~ "SCG",
+    str_detect(Area, "Netherlands Antilles (former)") ~ "NLD",
+    str_detect(Area, "C\xf4te d'Ivoire") ~ "CIV",
+    TRUE ~ iso3c)
+  ) %>%
+  relocate(iso3c, .before = "Area") %>%
+  # NAs in iso3c column must be resolved before join
+  ## remove countries that did not exist within ARTIS years
+  filter(!(Area %in% c("Belgium-Luxembourg", "Czechoslovakia", "Yugoslav SFR"))) %>%
+  ## Manually add in select iso3c codes
+  mutate(iso3c = case_when(
+    Area == "Netherlands Antilles (former)" ~ "ANT",
+    Area == "Serbia and Montenegro" ~ "SCG",
+    TRUE ~ iso3c
+  )) %>%
+  # Implement country standardization
+  left_join(standardized_country_iso3c, by = c("iso3c" = "input_iso3c", "year")) %>%
+  mutate(iso3c = case_when(is.na(output_iso3c) ~ iso3c, # an NA in output_iso3c means the original iso3c value is a country
+                           !is.na(output_iso3c) ~ output_iso3c)) %>%
+  group_by(iso3c, year, Element, `Element Code`, Unit, `Item Code (FBS)`, `Item Code`, Item) %>%
+  summarize(value = sum(value, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(data_source = "old FBS") %>%
+  # Get rid of countries with 0'ed out total protein values - this can lead to infinity estimates
+  filter(!(value == 0 & str_detect(Element, "Protein") & Item == "Animal Products"))
+```
 ```{r create select data frames from FBS data}
 # Set elements to keep 
 # NOTE: How reasonable applying the live weight proportions here will 
@@ -180,101 +345,6 @@ fao_old_aquatic <- fao_old_raw %>%
   group_by(year, iso3c, Element, Unit, data_source) %>%
   summarise(value = sum(value, na.rm = TRUE)) %>%
   ungroup()
-
-# Obtain FBS Population data
-population <- fao_old_raw %>%
-  filter(Element == "Total Population - Both sexes") %>%
-  select(year, iso3c, data_source, "population" = "value") %>%
-  bind_rows(fao_new_raw %>%
-  filter(Element == "Total Population - Both sexes") %>%
-  select(year, iso3c, data_source, "population" = "value")) %>%
-  # original unit is 1000 people - convert unit to people
-  mutate(population = 1000*population)
-
-# Store 0'ed out populations in separate dataframe
-fbs_with_zeros <- population %>%
-  filter(population == 0)
-
-# Filter out 0'ed out populations from population data
-population <- population %>%
-  filter(population != 0)
-
-# Problem: FBS has countries with 0's in their population. We need to find a way to fill this data in (or delete it if there's no reliable way)
-# # TRY TO FILL IN FBS DATA WITH World Bank
-# # Countries from FBS with missing population data
-missing_countries <- fbs_with_zeros %>%
-  distinct(iso3c) %>%
-  pull(iso3c)
-
-# One country: SCG Doesn't have any available population data.
-world_bank <- read.csv("../data/population_data_worldbank.csv")
-
-# Pivot to long format
-world_bank_long <- world_bank %>%
-  mutate(iso3c = countrycode(Country.Name, origin = "country.name", destination = "iso3c")) %>%
-  filter(!is.na(iso3c)) %>%
-  select(iso3c, starts_with("X")) %>%
-  pivot_longer(
-    cols = -iso3c,
-    names_to = "year",
-    values_to = "population"
-  ) %>%
-  mutate(
-    year = as.integer(sub("X", "", year)),        # Remove 'X' prefix
-    population = as.numeric(population)
-  )  %>%
-  select(iso3c, year, population) %>%
-  arrange(iso3c, year)
-
-# Create countries object for countries with missing population data
-countries <- missing_countries
-  
-# # Join the population data (for visualization / t test)
-joined_population <- left_join(population %>%
-                                 filter(!(year %in% 2010:2013 & data_source == "old FBS"),
-                                        iso3c %in% countries), world_bank_long %>% filter(iso3c %in% countries), by = c("year", "iso3c"))
-
-# t tests to compare population values
-valid_iso3c <- joined_population %>%
-  filter(!is.na(population.x), !is.na(population.y)) %>%
-  group_by(iso3c) %>%
-  mutate(
-    n_x = sum(!is.na(population.x)),
-    n_y = sum(!is.na(population.y))
-  ) %>%
-  select(-n_x, -n_y) %>%
-  filter(iso3c %in% countries) %>%
-  filter(year > 2010)
-
-# Calculate absolute differences between 
-valid_iso3c <- valid_iso3c %>%
-  mutate(absolute_diff = abs(population.x-population.y))
-
-# Calculate p-values between 0'ed countries populaton values
-p_vals <- valid_iso3c %>%
-  split(.$iso3c) %>%
-  map(~t.test(.x$population.x, .x$population.y)) %>%
-  map_df(broom::tidy, .id = 'iso3c')
-
-# Look at p values comparing population sizes in FBS vs WorldBank data
-# Majority of p-values are greater than 0.05. Meaning the FBS and WorldBank data countries with 0's in their data are very similar. Meaning it is reliable to impute Worldbank data for FBS Data
-p_vals %>%
-  select(iso3c, p.value) %>%
-  mutate(dd = round(p.value, 2)) %>%
-  arrange(-p.value)
-
-# Update FBS missing countries with WorldBank population values
-fbs_with_zeros <- fbs_with_zeros %>%
-  left_join(world_bank_long,
-            by = c("year", "iso3c")) %>%
-  mutate(population = population.y) %>%
-  select(-population.x, -population.y) %>%
-  filter(!is.na(population))
-
-# Add 0'ed out countries back into FBS population data
-# population <- bind_rows(population,
-#                         fbs_with_zeros
-#                         )
 ```
 
 ```{r update per capita values}
@@ -362,14 +432,23 @@ fao_aquatic_source <- fao_aquatic %>%
             relationship = "many-to-many") %>%
   # Disaggregate proportionately to ARTIS consumption sourcing
   mutate(value = value*aquatic_source_prop) %>%
-  left_join(population, 
-            by = c("year", "iso3c", "data_source"))
+  # add in FAO FBS population data
+  left_join(population %>%
+              rename(population_fao_fbs = "population"), 
+            by = c("year", "iso3c", "data_source")) %>%
+  # Add in worldbank population data
+  left_join(world_bank_long %>%
+              rename(population_world_bank = "population"),
+  by = c("year", "iso3c"))
 
 # FIXIT: Test is not currently working - seems to be related to country cleaning (e.g., China duplicates likely due to China vs China, Mainland)
 tmp <- fao_aquatic_source %>% 
   group_by(year, iso3c, Element, data_source) %>%
   summarise(test = sum(aquatic_source_prop)) %>%
   filter(abs(test-1) > 0.0001)
+
+# Add in population data
+  
 
 # FIXIT: Test not passing, seemingly only for iso codes not in ARTIS. Check if this passes after new country standardization
 tmp <- fao_aquatic_source %>%
@@ -378,20 +457,7 @@ tmp <- fao_aquatic_source %>%
 # FIXIT: For now, filter out missing values, but determine handling after confirming source of NAs
 fao_aquatic_source <- fao_aquatic_source %>%
   filter(!is.na(value))
-
+  
 # Write final data output to .csv
 # write_csv(fao_aquatic_source, "../output/fao_aquatic_source.csv")
-```
-
-```{r get data to Lana}
-# fao_aquatic_source <- fao_aquatic_source %>% 
-#   filter(!(year == 2010 & data_source == "old FBS"),
-#          !(year == 2011 & data_source == "old FBS"),
-#          !(year == 2012 & data_source == "old FBS"),
-#          !(year == 2013 & data_source == "old FBS"),
-#          data_source == "new FBS") %>%
-#   rename(aa_reliance_prop = "value", consumption_prop = "aquatic_source_prop") %>%
-#   relocate(aa_reliance_prop, .after = "consumption_prop")
-# 
-# write_csv(fao_aquatic_source, "../output/fao_aquatic_source_7_16_2025_lana.csv")
 ```
