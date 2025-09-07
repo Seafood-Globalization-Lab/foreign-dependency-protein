@@ -32,8 +32,8 @@ The desired final file should have the following columns:
 ```{r load artis data}
 # Read in consumption data
 # Set parquet database folder location
-db_folder <- "/Users/gephart/Library/CloudStorage/Dropbox/Research/ARTIS/ARTIS_1.1.0_FAO_2025_08_02/"
-#db_folder <- paste0(here(),"/data/ARITS_1.1.0_FAO_2025_08_02")
+# db_folder <- "/Users/gephart/Library/CloudStorage/Dropbox/Research/ARTIS/ARTIS_1.1.0_FAO_2025_08_02/"
+db_folder <- paste0(here(),"/data/ARITS_1.1.0_FAO_2025_08_02")
 
 artis_ds <- arrow::open_dataset(file.path(db_folder, "datasets", "ARTIS_consumption_v1.1.0_FAO_mid_2025-08-02.parquet"))
 
@@ -185,7 +185,6 @@ world_bank_long <- world_bank %>%
   arrange(iso3c, year)
 ```
 
-
 ```{r compare population data}
 # # Join the population data (for visualization / t test)
 joined_population <- population_fbs %>%
@@ -193,6 +192,8 @@ joined_population <- population_fbs %>%
   left_join(world_bank_long %>%
               rename("population_wb" = "population"), 
             by = c("year", "iso3c"))
+
+
 
 # Calculate absolute differences between 
 absolute_diff_dataset <- joined_population %>%
@@ -204,8 +205,12 @@ absolute_diff_dataset <- joined_population %>%
 absolute_diff_dataset %>%
 ggplot(aes(y = log(absolute_diff), x = data_source, fill = data_source)) +
   geom_boxplot() +
-  labs(y = "Absolute Difference") +
+  labs(y = "Log (Asolute Difference)") +
   theme_minimal()
+
+absolute_diff_dataset %>%
+  arrange(-absolute_diff) %>%
+  filter(data_source == "new FBS")
 
 absolute_diff_dataset %>%
   ggplot(aes(x = population_fao, y = population_wb, color = data_source)) +
