@@ -1,0 +1,62 @@
+---
+title: "02_results"
+author: "Jessica Gephart"
+date: "2025-09-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(cowplot)
+library(exploreARTIS)
+```
+
+```{r load data}
+aquatic_reliance <- read.csv("../data/fao_aquatic_reliance_source.csv")
+aquatic_fbs <- read.csv("../data/fao_fbs_aquatic_source.csv")
+```
+
+```{r}
+aquatic_reliance %>%
+  filter(year == 2020) %>%
+  mutate(habitat_method = paste(habitat, method)) %>%
+  plot_bar(bar_group = "iso3c", fill_type = "habitat_method", 
+           value = "aquatic_source_prop")
+
+aquatic_reliance %>%
+  filter(year == 2020) %>%
+  mutate(habitat_method = paste(habitat, method)) %>%
+  plot_bar(bar_group = "iso3c", fill_type = "consumption_source", 
+           value = "aquatic_source_prop")
+```
+
+```{r}
+aquatic_reliance %>%
+  filter(year == 2020, consumption_source == "foreign") %>%
+  mutate(habitat_method = paste(habitat, method)) %>%
+  plot_bar(bar_group = "iso3c", fill_type = "habitat_method", 
+           value = "aquatic_source_prop", 
+           top_n = 30)
+```
+
+
+```{r}
+aquatic_reliance %>%
+  filter(year == 2020) %>%
+  mutate(habitat_method = paste(habitat, method)) %>%
+  plot_bar(bar_group = "iso3c", fill_type = "habitat_method",
+           value = "prop_animal_protein", 
+           top_n = 30)
+
+
+aquatic_reliance %>%
+  filter(year == 2020) %>%
+  mutate(habitat_method = paste(habitat, method)) %>%
+  filter(habitat_method == "marine capture") %>%
+  plot_bar(bar_group = "iso3c", fill_type = "habitat_method",
+           value = "prop_animal_protein", 
+           top_n = 30)
+```
+
+
