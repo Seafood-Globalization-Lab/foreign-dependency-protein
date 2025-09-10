@@ -521,15 +521,9 @@ if(nrow(test) > 0){
 
 # Check for NA values
 a <- fao_aquatic_source %>%
-  filter(is.na(value))
+  filter(is.na(value) | is.na(aquatic_source_prop) | is.na(iso3c))
 
-b <- fao_aquatic_source %>%
-  filter(is.na(aquatic_source_prop))
-
-c <- fao_aquatic_source %>%
-  filter(is.na(iso3c))
-
-if((nrow(a) + nrow(b) + nrow(c)) > 0) {
+if(nrow(a) > 0) {
   warning("There is an NA")
 }
 
@@ -579,15 +573,9 @@ if(nrow(test) > 0){
 
 # Check for NA values
 a <- fao_aquatic_reliance_source %>%
-  filter(is.na(prop_animal_protein))
+  filter(is.na(prop_animal_protein) | is.na(aquatic_source_prop) | is.na(iso3c))
 
-b <- fao_aquatic_reliance_source %>%
-  filter(is.na(aquatic_source_prop))
-
-c <- fao_aquatic_reliance_source %>%
-  filter(is.na(iso3c))
-
-if((nrow(a) + nrow(b) + nrow(c)) > 0) {
+if(nrow(a) > 0) {
   warning("There is an NA")
 }
 
