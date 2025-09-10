@@ -604,5 +604,13 @@ population_fao_wb <- fao_aquatic_source %>%
          population_wb) %>%
   distinct()
 
+# Check for NAs
+a <- population_fao_wb %>%
+  filter(is.na(iso3c) | is.na(year))
+
+if(nrow(a) > 0) {
+  warning("There is an NA")
+}
+
 write.csv(population_fao_wb, "../data/population_fao_wb.csv")
 ```
