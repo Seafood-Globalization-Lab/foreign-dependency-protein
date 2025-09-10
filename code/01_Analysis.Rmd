@@ -61,6 +61,30 @@ consumption_full <- artis_ts_result %>%
 
 > We will run initial checks on the data by checking FAO FBS population data that has not had their territories corrected to the Worldbank population data. No territory aggregation, just checking country to country populations.
 
+```{r convert FAO data to .parquet}
+if(!file.exists("../output/fao_food.parquet")) {
+  # Read in FAO consumer data
+fao_food <- read_csv("../data/FoodBalanceSheets_E_All_Data/FoodBalanceSheets_E_All_Data.csv")
+
+# Save to .parquet
+write_parquet(fao_food, "../output/fao_food.parquet")
+}
+
+if (!file.exists("../output/fao_historical.parquet")) {
+  # Read in FAO historical data
+fao_historical <- read_csv("../data/FoodBalanceSheetsHistoric_E_All_Data/FoodBalanceSheetsHistoric_E_All_Data.csv") %>%
+  # Use area codes to correct names with special characters
+  mutate(Area = case_when(
+    `Area Code` == 107 ~ "Cote d'Ivoire",
+    `Area Code` == 223 ~ "Turkey",
+    TRUE ~ Area
+  ))
+
+# Save to .parquet
+write_parquet(fao_historical, "../output/fao_historical.parquet")
+}
+```
+
 ```{r load fao and wb data}
 # Read in and clean new FAO food balance sheet data
 fao_new_raw <- read_parquet("../output/fao_food.parquet") %>% 
@@ -295,20 +319,61 @@ aquatic_animals <- c("Cephalopods",
                      "Freshwater Fish", "Marine Fish, Other",
                      "Molluscs, Other", "Pelagic Fish")
 
-# Create data frame of aquatic animal products only for disaggregation by source
+# Create data frame of aquatic animal and terrestrial animal products only for disaggregation by source
 fao_new_aquatic <- fao_new_raw %>%
   filter(Item %in% aquatic_animals,
          Element %in% elements_select) %>%
   group_by(year, iso3c, Element, Unit, data_source) %>%
   summarise(value = sum(value, na.rm = TRUE)) %>%
-  ungroup()
+  ungroup() %>%
+  mutate(food_group = "Aquatic")
 
 fao_old_aquatic <- fao_old_raw %>%
   filter(Item %in% aquatic_animals,
          Element %in% elements_select) %>%
   group_by(year, iso3c, Element, Unit, data_source) %>%
   summarise(value = sum(value, na.rm = TRUE)) %>%
-  ungroup()
+  ungroup() %>%
+  mutate(food_group = "Aquatic")
+
+# Create data frame of terrestrial animal products for multiple elements
+fao_new_terrestrial <- fao_new_raw %>%
+  filter(Item == "Animal Products",  # Or filter for terrestrial animals specifically
+         Element %in% elements_select) %>%
+  select(year, iso3c, Element, Unit, data_source, total_animal_value = value) %>%
+  # Join with aquatic data to subtract aquatic from total
+  left_join(fao_new_aquatic %>%
+              select(year, iso3c, Element, data_source, aquatic_value = value),
+            by = c("year", "iso3c", "Element", "data_source")) %>%
+  mutate(
+    aquatic_value = replace_na(aquatic_value, 0),
+    value = total_animal_value - aquatic_value,
+    food_group = "Terrestrial"
+  ) %>%
+  select(-total_animal_value, -aquatic_value)
+
+fao_old_terrestrial <- fao_old_raw %>%
+  filter(Item == "Animal Products",  # Or filter for terrestrial animals specifically
+         Element %in% elements_select) %>%
+  select(year, iso3c, Element, Unit, data_source, total_animal_value = value) %>%
+  # Join with aquatic data to subtract aquatic from total
+  left_join(fao_old_aquatic %>%
+              select(year, iso3c, Element, data_source, aquatic_value = value),
+            by = c("year", "iso3c", "Element", "data_source")) %>%
+  mutate(
+    aquatic_value = replace_na(aquatic_value, 0),
+    value = total_animal_value - aquatic_value,
+    food_group = "Terrestrial"
+  ) %>%
+  select(-total_animal_value, -aquatic_value)
+
+# Combine all data into one comprehensive dataset
+fao_combined_food_groups <- bind_rows(
+  fao_new_aquatic,
+  fao_old_aquatic,
+  fao_new_terrestrial,
+  fao_old_terrestrial
+)
 ```
 
 ```{r clean consumption data}
@@ -319,6 +384,10 @@ consumption_props <- consumption_full %>%
   mutate(aquatic_source_prop = consumption_live_t/sum(consumption_live_t)) %>%
   select(-consumption_live_t) %>%
   ungroup()
+
+# Test for NAs
+consumption_props %>%
+  filter(is.na(aquatic_source_prop))
 
 # Test that all add back to 1
 test <- consumption_props %>%
@@ -333,7 +402,6 @@ if(nrow(test) > 0){
 rm(list = c("consumption_full"))
 ```
 
-
 ```{r calculate percent of protein from aquatic animals}
 fao_new_prop_aquatic <- fao_new_raw %>%
   # Filter to the total animal product protein supply
@@ -346,10 +414,34 @@ fao_new_prop_aquatic <- fao_new_raw %>%
               select("year", "iso3c", "data_source", 
                      "aquatic_animal_protein" = "value"), 
             by = c("year", "iso3c", "data_source")) %>%
-  mutate(value = aquatic_animal_protein/total_animal_protein,
-         Element = "Proportion animal source protein from aquatic",
-         Unit = "Proportion") %>%
-  select(-total_animal_protein, -aquatic_animal_protein)
+  # Filter out rows with no aquatic animal or terrestrial animal protein (0'ed out years)
+  filter(!(aquatic_animal_protein == 0 &
+         total_animal_protein == 0
+         )) %>%
+  mutate(
+    aquatic_reliance = aquatic_animal_protein/total_animal_protein,
+    terrestrial_reliance = (total_animal_protein - aquatic_animal_protein)/total_animal_protein
+  ) %>%
+  # Reshape to long format with food group indicator
+  pivot_longer(
+    cols = c(aquatic_reliance, terrestrial_reliance),
+    names_to = "food_group_temp",
+    values_to = "value"
+  ) %>%
+  mutate(
+    food_group = case_when(
+      food_group_temp == "aquatic_reliance" ~ "Aquatic",
+      food_group_temp == "terrestrial_reliance" ~ "Terrestrial"
+    ),
+    Element = "Proportion animal source protein",
+    Unit = "Proportion"
+  ) %>%
+  # Get total protein in tonnage
+  mutate(protein_consumed_t = case_when(
+    food_group == "Aquatic" ~ aquatic_animal_protein,
+    food_group == "Terrestrial" ~ total_animal_protein - aquatic_animal_protein
+  )) %>%
+  select(-total_animal_protein, -aquatic_animal_protein, -food_group_temp)
 
 fao_old_prop_aquatic <- fao_old_raw %>%
   # Filter to the total animal product protein supply
@@ -362,14 +454,37 @@ fao_old_prop_aquatic <- fao_old_raw %>%
               select("year", "iso3c", "data_source", 
                      "aquatic_animal_protein" = "value"), 
             by = c("year", "iso3c", "data_source")) %>%
-  mutate(value = aquatic_animal_protein/total_animal_protein,  
-         Element = "Proportion animal source protein from aquatic",
-         Unit = "Proportion") %>%
-  select(-total_animal_protein, -aquatic_animal_protein)
+  # Filter out rows with no aquatic animal or terrestrial animal protein (0'ed out years)
+  filter(!(aquatic_animal_protein == 0 &
+         total_animal_protein == 0
+         )) %>%
+  mutate(
+    aquatic_reliance = aquatic_animal_protein/total_animal_protein,
+    terrestrial_reliance = (total_animal_protein - aquatic_animal_protein)/total_animal_protein
+  ) %>%
+  # Reshape to long format with food group indicator
+  pivot_longer(
+    cols = c(aquatic_reliance, terrestrial_reliance),
+    names_to = "food_group_temp",
+    values_to = "value"
+  ) %>%
+  mutate(
+    food_group = case_when(
+      food_group_temp == "aquatic_reliance" ~ "Aquatic",
+      food_group_temp == "terrestrial_reliance" ~ "Terrestrial"
+    ),
+    Element = "Proportion animal source protein",
+    Unit = "Proportion"
+  ) %>%
+  # Get total protein in tonnage
+  mutate(protein_consumed_t = case_when(
+    food_group == "Aquatic" ~ aquatic_animal_protein,
+    food_group == "Terrestrial" ~ total_animal_protein - aquatic_animal_protein
+  )) %>%
+  select(-total_animal_protein, -aquatic_animal_protein, -food_group_temp)
 
 # Create joined data frames
-fao_aquatic <- fao_new_aquatic %>%
-  bind_rows(fao_old_aquatic) %>%
+fao_aquatic <- fao_combined_food_groups %>%
   left_join(joined_population, 
             by = c("year", "iso3c", "data_source"))
 
@@ -389,11 +504,14 @@ fao_aquatic_source <- fao_aquatic %>%
             relationship = "many-to-many") %>%
   # Disaggregate proportionately to ARTIS consumption sourcing
   mutate(value = value*aquatic_source_prop) %>%
-  clean_names()
+  clean_names() %>%
+  # Filter out na habitat and methods
+  filter(!is.na(habitat),
+         !is.na(method))
 
 # Confirm proportions add back to 1
 test <- fao_aquatic_source %>% 
-  group_by(year, iso3c, element, data_source) %>%
+  group_by(year, iso3c, element, data_source, food_group) %>%
   summarise(test = sum(aquatic_source_prop)) %>%
   filter(abs(test-1) > 0.0001)
 
@@ -401,7 +519,21 @@ if(nrow(test) > 0){
   warning("Disaggregated FBS data proportions do not sum to 1")
 }
 
-write.csv(fao_aquatic_source, 
+# Check for NA values
+a <- fao_aquatic_source %>%
+  filter(is.na(value))
+
+b <- fao_aquatic_source %>%
+  filter(is.na(aquatic_source_prop))
+
+c <- fao_aquatic_source %>%
+  filter(is.na(iso3c))
+
+if((nrow(a) + nrow(b) + nrow(c)) > 0) {
+  warning("There is an NA")
+}
+
+write.csv(fao_aquatic_source,
           "../data/fao_fbs_aquatic_source.csv", row.names = FALSE)
 
 # Disaggregate reliance data
@@ -411,21 +543,66 @@ fao_aquatic_reliance_source <- fao_aquatic_reliance  %>%
             # FIXIT: confirm this should be many-to-many
             relationship = "many-to-many") %>%
   # Disaggregate proportionately to ARTIS consumption sourcing
-  mutate(prop_animal_protein = value*aquatic_source_prop) %>%
+  mutate(prop_animal_protein = case_when(
+    food_group == "Aquatic" ~ value*aquatic_source_prop,
+    TRUE ~ value
+  )) %>%
   select(-value) %>%
-  clean_names()
+  clean_names() %>%
+  # Filter out na habitat and methods
+  filter(!is.na(habitat),
+         !is.na(method)) %>%
+  relocate(protein_consumed_t, .after = "prop_animal_protein")
 
 # Confirm proportions add back to 1
-test <- fao_aquatic_reliance_source %>% 
-  group_by(year, iso3c, element, data_source) %>%
+(test <- fao_aquatic_reliance_source %>% 
+  group_by(year, iso3c, element, data_source, food_group) %>%
   summarise(test = sum(aquatic_source_prop)) %>%
-  filter(abs(test-1) > 0.0001)
+  filter(abs(test-1) > 0.0001))
+
+# Confirm aquatic animal + terrestrial reliance for a given country's year adds to 1
+(test <- fao_aquatic_reliance_source %>%
+  filter(!(year %in% 2010:2013 & data_source == "old FBS")) %>%
+  group_by(year, food_group, iso3c) %>%
+  summarize(sum = case_when(
+    food_group == "Aquatic" ~ sum(prop_animal_protein, na.rm = TRUE),
+    food_group == "Terrestrial" ~ mean(prop_animal_protein, na.rm = TRUE)
+  ), .groups = "drop") %>%
+  distinct() %>%
+  group_by(year, iso3c) %>%
+  summarize(sum = sum(sum)) %>%
+    filter(abs(sum-1) > 0.0001))
 
 if(nrow(test) > 0){
   warning("Disaggregated aquatic food reliance proportions do not sum to 1")
 }
 
-write.csv(fao_aquatic_reliance_source, 
-          "../data/fao_aquatic_reliance_source.csv", row.names = FALSE)
-```
+# Check for NA values
+a <- fao_aquatic_reliance_source %>%
+  filter(is.na(prop_animal_protein))
 
+b <- fao_aquatic_reliance_source %>%
+  filter(is.na(aquatic_source_prop))
+
+c <- fao_aquatic_reliance_source %>%
+  filter(is.na(iso3c))
+
+if((nrow(a) + nrow(b) + nrow(c)) > 0) {
+  warning("There is an NA")
+}
+
+# Write to csv
+write.csv(fao_aquatic_reliance_source,
+          "../data/fao_aquatic_reliance_source.csv", row.names = FALSE)
+
+# Write population data to separate file
+population_fao_wb <- fao_aquatic_source %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
+  select(iso3c,
+         year,
+         population_fao,
+         population_wb) %>%
+  distinct()
+
+write.csv(population_fao_wb, "../data/population_fao_wb.csv")
+```

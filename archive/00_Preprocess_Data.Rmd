@@ -48,22 +48,4 @@ consumption_full <- consumption_full %>%
 write_parquet(consumption_full, "../output/consumption_full.parquet")
 ```
 
-```{r convert FAO data to .parquet}
-# Read in FAO consumer data
-fao_food <- read_csv("../data/FoodBalanceSheets_E_All_Data/FoodBalanceSheets_E_All_Data.csv")
 
-# Save to .parquet
-write_parquet(fao_food, "../output/fao_food.parquet")
-
-# Read in FAO historical data
-fao_historical <- read_csv("../data/FoodBalanceSheetsHistoric_E_All_Data/FoodBalanceSheetsHistoric_E_All_Data.csv") %>%
-  # Use area codes to correct names with special characters
-  mutate(Area = case_when(
-    `Area Code` == 107 ~ "Cote d'Ivoire",
-    `Area Code` == 223 ~ "Turkey",
-    TRUE ~ Area
-  ))
-
-# Save to .parquet
-write_parquet(fao_historical, "../output/fao_historical.parquet")
-```
