@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 library(tidyverse)
 library(cowplot)
 library(arrow)
@@ -498,16 +498,18 @@ rm(list = c("fao_new_aquatic", "fao_old_aquatic", "fao_new_prop_aquatic", "fao_o
 
 ```{r disaggregate by source}
 fao_aquatic_source <- fao_aquatic %>%
-  left_join(consumption_props, 
-            by = c("year", "iso3c" = "consumer_iso3c"),
+  left_join(consumption_props %>%
+              mutate(food_group = "Aquatic"), 
+            by = c("year", "iso3c" = "consumer_iso3c", "food_group"),
             # FIXIT: confirm this should be many-to-many
             relationship = "many-to-many") %>%
   # Disaggregate proportionately to ARTIS consumption sourcing
   mutate(value = value*aquatic_source_prop) %>%
   clean_names() %>%
-  # Filter out na habitat and methods
-  filter(!is.na(habitat),
-         !is.na(method))
+  # Filter out na habitat and methods for aquatic foods
+  filter((food_group == "Aquatic" & !is.na(habitat)) | 
+         (food_group == "Aquatic" & !is.na(method)) | 
+           food_group == "Terrestrial")
 
 # Confirm proportions add back to 1
 test <- fao_aquatic_source %>% 
@@ -521,6 +523,7 @@ if(nrow(test) > 0){
 
 # Check for NA values
 a <- fao_aquatic_source %>%
+  filter(food_group == "Aquatic") %>%
   filter(is.na(value) | is.na(aquatic_source_prop) | is.na(iso3c))
 
 if(nrow(a) > 0) {
@@ -532,25 +535,31 @@ write.csv(fao_aquatic_source,
 
 # Disaggregate reliance data
 fao_aquatic_reliance_source <- fao_aquatic_reliance  %>%
-  left_join(consumption_props, 
-            by = c("year", "iso3c" = "consumer_iso3c"),
+  left_join(consumption_props %>%
+              mutate(food_group = "Aquatic"), 
+            by = c("year", "iso3c" = "consumer_iso3c", "food_group"),
             # FIXIT: confirm this should be many-to-many
             relationship = "many-to-many") %>%
   # Disaggregate proportionately to ARTIS consumption sourcing
   mutate(prop_animal_protein = case_when(
     food_group == "Aquatic" ~ value*aquatic_source_prop,
     TRUE ~ value
-  )) %>%
-  select(-value) %>%
+    ), 
+    protein_consumed_t = case_when(
+      food_group == "Aquatic" ~ protein_consumed_t*aquatic_source_prop,
+    TRUE ~ protein_consumed_t
+    )) %>%
+  select(-value, -Element, -Unit) %>%
   clean_names() %>%
-  # Filter out na habitat and methods
-  filter(!is.na(habitat),
-         !is.na(method)) %>%
+  # Filter out na habitat and methods for aquatic foods
+  filter((food_group == "Aquatic" & !is.na(habitat)) | 
+         (food_group == "Aquatic" & !is.na(method)) | 
+           food_group == "Terrestrial") %>%
   relocate(protein_consumed_t, .after = "prop_animal_protein")
 
 # Confirm proportions add back to 1
 (test <- fao_aquatic_reliance_source %>% 
-  group_by(year, iso3c, element, data_source, food_group) %>%
+  group_by(year, iso3c, data_source, food_group) %>%
   summarise(test = sum(aquatic_source_prop)) %>%
   filter(abs(test-1) > 0.0001))
 
@@ -573,6 +582,7 @@ if(nrow(test) > 0){
 
 # Check for NA values
 a <- fao_aquatic_reliance_source %>%
+  filter(food_group == "Aquatic") %>%
   filter(is.na(prop_animal_protein) | is.na(aquatic_source_prop) | is.na(iso3c))
 
 if(nrow(a) > 0) {
@@ -600,5 +610,5 @@ if(nrow(a) > 0) {
   warning("There is an NA")
 }
 
-write.csv(population_fao_wb, "../data/population_fao_wb.csv")
+write.csv(population_fao_wb, "../data/population_fao_wb.csv", row.names = FALSE)
 ```
