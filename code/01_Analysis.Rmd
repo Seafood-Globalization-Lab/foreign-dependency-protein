@@ -32,8 +32,8 @@ The desired final file should have the following columns:
 ```{r load artis data}
 # Read in consumption data
 # Set parquet database folder location
-# db_folder <- "/Users/gephart/Library/CloudStorage/Dropbox/Research/ARTIS/ARTIS_1.1.0_FAO_2025_08_02/"
-db_folder <- paste0(here(),"/data/ARITS_1.1.0_FAO_2025_08_02")
+db_folder <- "/Users/gephart/Library/CloudStorage/Dropbox/Research/ARTIS/ARTIS_1.1.0_FAO_2025_08_02/"
+#db_folder <- paste0(here(),"/data/ARITS_1.1.0_FAO_2025_08_02")
 
 artis_ds <- arrow::open_dataset(file.path(db_folder, "datasets", "ARTIS_consumption_v1.1.0_FAO_mid_2025-08-02.parquet"))
 

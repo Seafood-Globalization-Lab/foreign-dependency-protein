@@ -11,6 +11,8 @@ library(tidyverse)
 library(cowplot)
 library(exploreARTIS)
 library(cowplot)
+library(ggrepel)
+library(countrycode)
 ```
 
 ```{r load data}
@@ -482,11 +484,13 @@ aquaculture <- aquatic_reliance %>%
 (reliance_roc <- marine_capture %>%
   add_region(col = "iso3c", region.col.name = "region") %>%
   left_join(aquaculture, by = "iso3c") %>%
-  ggplot(aes(x = aquatic_estimate, y = terrestrial_estimate)) +
+  ggplot(aes(x = aquatic_estimate, y = terrestrial_estimate, label = iso3c)) +
   geom_point(size = 0.8) +
   facet_wrap(~ region) +
   geom_hline(yintercept = 0, linetype = "dashed", lwd = 0.75, alpha = 0.6) +
   geom_vline(xintercept = 0, linetype = "dashed", lwd = 0.75, alpha = 0.6) +
+  geom_text_repel(size = 2) +
+  geom_rug() +
   scale_color_manual(values = artis_palette(6)) +
   labs(x = "Change in marine capture reliance (2010-2020)", y = "Change in aquaculture relaince (2010-2020)") +
   theme_light() +
