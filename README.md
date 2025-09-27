@@ -10,29 +10,20 @@ The final data in the output folder **`supply_importance_wide.csv`** and **`supp
 
 ## Column names
 
-| Variable name | Explanation |
-|------------------------------------|------------------------------------|
-| year | calendar year |
-| conusmer_iso3c | consuming country (in ISO3 code) |
-| region | region the consuming country was in (e.g., North America, Asia, Oceania) |
-| habitat | The habitat the consumed seafood was caught from (marine, inland) |
-| method | The method the consumed seafood was produced from (capture, aquaculture) |
-| consumption_source | The source of production (domestic, foreign) |
-| prop_consumption | The proportion of seafood consumption by habitat, method, and consumption source. Adding across these three categories within a country and year will sum to 1 |
-| aa_food_supply_kcal_capita_day | Total aquatic animal food supply in calories, per capita, per day |
-| aa_protein_supply_g_capita_day | Total aquatic animal protein supply in grams per capita per day |
-| animal_food_supply_kcal_capita_day | Total animal food supply in calories, per capita, per day |
-| animal_protein_supply_g_capita_day | Total animal protein supply in grams per capita per day |
-| prop_aa_food_supply | Proportion that aquatic animals contribute to food supply |
-| prop_aa_protein_supply | Proportion that aquatic animals contribute to protein supply |
-| prop_aa_contribution_to_animal_daily_calories | proportion contribution that aquatic animals contribute to consumed animal foods |
-| prop_aa_contribution_to_animal_protein | proportion contribution that aquatic animals contribute to consumed animal proteins |
-| prop_consumption_x_fao_food_supply_kcal_capita_day | \% consumption (by method/habitat/consumption source category) that is devoted to the total aquatic animal (aa) food supplies (different from contribution as this is the direct aa amount and not the prop of aa to total animal foods |
-| prop_consumption_x_fao_protein_supply_g_capita_day | \% consumption (by method/habitat/consumption source category) that is devoted to the total aquatic animal (aa) protein supply |
+| **Column Name**         | **R Data Type** | **Description / Values** |
+|-------------------------|-----------------|---------------------------|
+| `year`                  | int             | Year in which seafood was consumed. |
+| `iso3c`                 | character       | Consuming country ISO3 code. |
+| `data_source`           | character       | Data source that reliance data is derived from:<br>• `Old FBS` – Old FAO Food Balance Sheets<br>• `New FBS` – New FAO Food Balance Sheets |
+| `food_group`            | character       | Origin that seafood/reliance is coming from:<br>• `Aquatic` – aquatic animal protein sources<br>• `Terrestrial` – terrestrial animal protein sources |
+| `consumption_source`    | character       | Type of consumption source:<br>• `domestic` – domestic consumption<br>• `foreign` – foreign consumption |
+| `habitat`               | character       | Habitat in which the species/species group was produced:<br>• `marine` – marine organism<br>• `inland` – freshwater organism<br>• `unknown` – unknown habitat |
+| `method`                | character       | Method of production:<br>• `aquaculture` – produced via aquaculture<br>• `capture` – wild caught<br>• `unknown` – unknown production method |
+| `aquatic_source_prop`   | int             | The proportion of seafood consumption, separated by `consumption_source`, `habitat`, and `method` for *aquatic* protein consumption. |
+| `prop_animal_protein`   | int             | The reliance (measured in proportion) toward aquatic/terrestrial animal proteins. For *aquatic* proteins, this is the reliance separated by sourcing, and for *terrestrial* proteins, this is obtained from FAO-FBS. |
+| `protein_consumed_t`    | int             | The direct tonnage consumed from aquatic and terrestrial sources. For *aquatic* sources, this will be separated by `aquatic_source_prop` (i.e., adding `protein_consumed_t` across all sourcing material would create the total aquatic consumed protein in tons). For *terrestrial* sources, it is just the total gotten from FAO-FBS. |
 
-: Columns 1-7 were ARTIS derived, 8-13 were FAO FBS derived, and 14-17 were ARTIS-FAO joined derived. Any derived variable (e.g., columns 6-17) are measured for a given country for a given year (also grouped by method, habitat, and consumption_source).
-
-The **`supply_importance_long.csv`** version consolidates columns 8-17 consolidates the different elements (i.e, food supply, protein supply) into the `Element` variable grouping.
+**Note:** *Terrestrial* protein values are included in this data. For every value of `food_group` that is `terrestrial`, the columns `consumption_source`, `habitat`, `method`, and `aquatic_source_prop` will be `NA` since these only apply to aquatic products.
 
 # References
 
