@@ -32,8 +32,8 @@ The desired final file should have the following columns:
 ```{r load artis data}
 # Read in consumption data
 # Set parquet database folder location
-db_folder <- "/Users/gephart/Library/CloudStorage/Dropbox/Research/ARTIS/ARTIS_1.1.0_FAO_2025_08_02/"
-#db_folder <- paste0(here(),"/data/ARITS_1.1.0_FAO_2025_08_02")
+# db_folder <- "/Users/gephart/Library/CloudStorage/Dropbox/Research/ARTIS/ARTIS_1.1.0_FAO_2025_08_02/"
+db_folder <- paste0(here(),"/data/ARITS_1.1.0_FAO_2025_08_02")
 
 artis_ds <- arrow::open_dataset(file.path(db_folder, "datasets", "ARTIS_consumption_v1.1.0_FAO_mid_2025-08-02.parquet"))
 
@@ -531,7 +531,7 @@ if(nrow(a) > 0) {
 }
 
 write.csv(fao_aquatic_source,
-          "../data/fao_fbs_aquatic_source.csv", row.names = FALSE)
+          "../output/fao_fbs_aquatic_source.csv", row.names = FALSE)
 
 # Disaggregate reliance data
 fao_aquatic_reliance_source <- fao_aquatic_reliance  %>%
@@ -591,7 +591,7 @@ if(nrow(a) > 0) {
 
 # Write to csv
 write.csv(fao_aquatic_reliance_source,
-          "../data/fao_aquatic_reliance_source.csv", row.names = FALSE)
+          "../output/fao_aquatic_reliance_source.csv", row.names = FALSE)
 
 # Write population data to separate file
 population_fao_wb <- fao_aquatic_source %>%
@@ -610,5 +610,12 @@ if(nrow(a) > 0) {
   warning("There is an NA")
 }
 
-write.csv(population_fao_wb, "../data/population_fao_wb.csv", row.names = FALSE)
+# Write population data to csv
+write.csv(population_fao_wb, "../output/population_fao_wb.csv", row.names = FALSE)
+
+
+# Clean up environment
+keep <- c("fao_aquatic_source", "fao_aquatic_reliance_source", "population_fao_wb") # Keep only output files in env
+rm(list = setdiff(ls(), keep))
+gc(full = TRUE) # Clean up memory usage
 ```
