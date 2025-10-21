@@ -18,10 +18,10 @@ The final data in the output folder **`supply_importance_wide.csv`** and **`supp
 | `food_group`            | character       | Origin that seafood/reliance is coming from:<br>• `Aquatic` – aquatic animal protein sources<br>• `Terrestrial` – terrestrial animal protein sources |
 | `consumption_source`    | character       | Type of consumption source:<br>• `domestic` – domestic consumption<br>• `foreign` – foreign consumption |
 | `habitat`               | character       | Habitat in which the species/species group was produced:<br>• `marine` – marine organism<br>• `inland` – freshwater organism<br>• `unknown` – unknown habitat |
-| `method`                | character       | Method of production:<br>• `aquaculture` – produced via aquaculture<br>• `capture` – wild caught<br>• `unknown` – unknown production method |
-| `aquatic_source_prop`   | int             | The proportion of seafood consumption, separated by `consumption_source`, `habitat`, and `method` for *aquatic* protein consumption. |
-| `prop_animal_protein`   | int             | The reliance (measured in proportion) toward aquatic/terrestrial animal proteins. For *aquatic* proteins, this is the reliance separated by sourcing, and for *terrestrial* proteins, this is obtained from FAO-FBS. |
 | `protein_consumed_t`    | int             | The direct tonnage consumed from aquatic and terrestrial sources. For *aquatic* sources, this will be separated by `aquatic_source_prop` (i.e., adding `protein_consumed_t` across all sourcing material would create the total aquatic consumed protein in tons). For *terrestrial* sources, it is just the total gotten from FAO-FBS. |
+| `method`                | character       | Method of production:<br>• `aquaculture` – produced via aquaculture<br>• `capture` – wild caught<br>• `unknown` – unknown production method |
+| `prop_aquatic_source`   | int             | The proportion of seafood consumption, separated by `consumption_source`, `habitat`, and `method` for *aquatic* protein consumption. |
+| `prop_animal_protein`   | int             | The reliance (measured in proportion) toward aquatic/terrestrial animal proteins. For *aquatic* proteins, this is the reliance separated by sourcing, and for *terrestrial* proteins, this is obtained from FAO-FBS. |
 
 **Note:** *Terrestrial* protein values are included in this data. For every value of `food_group` that is `terrestrial`, the columns `consumption_source`, `habitat`, `method`, and `aquatic_source_prop` will be `NA` since these only apply to aquatic products.
 
