@@ -670,7 +670,6 @@ df <- fao_aquatic_reliance_source %>%
   mutate(percent = 100*protein_consumed_t/sum(protein_consumed_t))
 ```
 
-
 ```{r write files to .csv}
 # Write aquatic reliance source file to csv
 write.csv(fao_aquatic_source,
@@ -683,4 +682,3 @@ write.csv(fao_aquatic_reliance_source,
 # Write population data to csv
 write.csv(population_fao_wb, "../output/population_fao_wb.csv", row.names = FALSE)
 ```
-
