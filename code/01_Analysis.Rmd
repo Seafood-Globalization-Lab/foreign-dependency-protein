@@ -492,7 +492,7 @@ fao_aquatic <- fao_combined_food_groups %>%
 fao_aquatic_reliance <- fao_new_prop_aquatic %>%
   bind_rows(fao_old_prop_aquatic)
 
-# rm(list = c("fao_new_aquatic", "fao_old_aquatic", "fao_new_prop_aquatic", "fao_old_prop_aquatic"))
+rm(list = c("fao_new_aquatic", "fao_old_aquatic", "fao_new_prop_aquatic", "fao_old_prop_aquatic"))
 ```
 
 
@@ -559,7 +559,7 @@ population_fao_wb <- fao_aquatic_source %>%
 
 # Clean up environment
 keep <- c("fao_aquatic_source", "fao_aquatic_reliance_source", "population_fao_wb") # Keep only output files in env
-# rm(list = setdiff(ls(), keep))
+rm(list = setdiff(ls(), keep))
 gc(full = TRUE) # Clean up memory usage
 ```
 
