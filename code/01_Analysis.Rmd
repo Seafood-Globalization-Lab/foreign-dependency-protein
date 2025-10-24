@@ -327,7 +327,7 @@ fao_new_aquatic <- fao_new_raw %>%
   group_by(year, iso3c, Element, Unit, data_source) %>%
   summarise(value = sum(value, na.rm = TRUE)) %>%
   ungroup() %>%
-  mutate(food_group = "Aquatic")
+  mutate(food_group = "aquatic")
 
 fao_old_aquatic <- fao_old_raw %>%
   filter(Item %in% aquatic_animals,
@@ -335,7 +335,7 @@ fao_old_aquatic <- fao_old_raw %>%
   group_by(year, iso3c, Element, Unit, data_source) %>%
   summarise(value = sum(value, na.rm = TRUE)) %>%
   ungroup() %>%
-  mutate(food_group = "Aquatic")
+  mutate(food_group = "aquatic")
 
 # Create data frame of terrestrial animal products for multiple elements
 fao_new_terrestrial <- fao_new_raw %>%
@@ -431,16 +431,16 @@ fao_new_prop_aquatic <- fao_new_raw %>%
   ) %>%
   mutate(
     food_group = case_when(
-      food_group_temp == "aquatic_reliance" ~ "Aquatic",
-      food_group_temp == "terrestrial_reliance" ~ "Terrestrial"
+      food_group_temp == "aquatic_reliance" ~ "aquatic",
+      food_group_temp == "terrestrial_reliance" ~ "terrestrial"
     ),
     Element = "Proportion animal source protein",
     Unit = "Proportion"
   ) %>%
   # Get total protein in tonnage
   mutate(protein_consumed_t = case_when(
-    food_group == "Aquatic" ~ aquatic_animal_protein,
-    food_group == "Terrestrial" ~ total_animal_protein - aquatic_animal_protein
+    food_group == "aquatic" ~ aquatic_animal_protein,
+    food_group == "terrestrial" ~ total_animal_protein - aquatic_animal_protein
   )) %>%
   select(-total_animal_protein, -aquatic_animal_protein, -food_group_temp)
 
@@ -471,16 +471,16 @@ fao_old_prop_aquatic <- fao_old_raw %>%
   ) %>%
   mutate(
     food_group = case_when(
-      food_group_temp == "aquatic_reliance" ~ "Aquatic",
-      food_group_temp == "terrestrial_reliance" ~ "Terrestrial"
+      food_group_temp == "aquatic_reliance" ~ "aquatic",
+      food_group_temp == "terrestrial_reliance" ~ "terrestrial"
     ),
     Element = "Proportion animal source protein",
     Unit = "Proportion"
   ) %>%
   # Get total protein in tonnage
   mutate(protein_consumed_t = case_when(
-    food_group == "Aquatic" ~ aquatic_animal_protein,
-    food_group == "Terrestrial" ~ total_animal_protein - aquatic_animal_protein
+    food_group == "aquatic" ~ aquatic_animal_protein,
+    food_group == "terrestrial" ~ total_animal_protein - aquatic_animal_protein
   )) %>%
   select(-total_animal_protein, -aquatic_animal_protein, -food_group_temp)
 
@@ -505,7 +505,7 @@ rm(list = c("fao_new_aquatic", "fao_old_aquatic", "fao_new_prop_aquatic", "fao_o
 # Join FAO source data to ARTIS consumption sourcing proportions
 fao_aquatic_source <- fao_aquatic %>%
   left_join(consumption_props %>%
-              mutate(food_group = "Aquatic"), 
+              mutate(food_group = "aquatic"), 
             by = c("year", "iso3c" = "consumer_iso3c", "food_group"),
             # FIXIT: confirm this should be many-to-many
             relationship = "many-to-many") %>%
@@ -513,9 +513,9 @@ fao_aquatic_source <- fao_aquatic %>%
   mutate(value = value*prop_aquatic_source) %>%
   clean_names() %>%
   # Filter out na habitat and methods for aquatic foods
-  filter((food_group == "Aquatic" & !is.na(habitat)) | 
-         (food_group == "Aquatic" & !is.na(method)) | 
-           food_group == "Terrestrial")
+  filter((food_group == "aquatic" & !is.na(habitat)) | 
+         (food_group == "aquatic" & !is.na(method)) | 
+           food_group == "terrestrial")
 
 #######################################
 ###    AQUATIC RELIANCE DATASET     ###
@@ -524,25 +524,25 @@ fao_aquatic_source <- fao_aquatic %>%
 # Disaggregate FAO animal protein reliance data
 fao_aquatic_reliance_source <- fao_aquatic_reliance  %>%
   left_join(consumption_props %>%
-              mutate(food_group = "Aquatic"), 
+              mutate(food_group = "aquatic"), 
             by = c("year", "iso3c" = "consumer_iso3c", "food_group"),
             # FIXIT: confirm this should be many-to-many
             relationship = "many-to-many") %>%
   # Disaggregate proportionately to ARTIS consumption sourcing
   mutate(prop_animal_protein = case_when(
-    food_group == "Aquatic" ~ value*prop_aquatic_source,
+    food_group == "aquatic" ~ value*prop_aquatic_source,
     TRUE ~ value
     ), 
     protein_consumed_t = case_when(
-      food_group == "Aquatic" ~ protein_consumed_t*prop_aquatic_source,
+      food_group == "aquatic" ~ protein_consumed_t*prop_aquatic_source,
     TRUE ~ protein_consumed_t
     )) %>%
   select(-value, -Element, -Unit) %>%
   clean_names() %>%
   # Filter out na habitat and methods for aquatic foods
-  filter((food_group == "Aquatic" & !is.na(habitat)) | 
-         (food_group == "Aquatic" & !is.na(method)) | 
-           food_group == "Terrestrial") %>%
+  filter((food_group == "aquatic" & !is.na(habitat)) | 
+         (food_group == "aquatic" & !is.na(method)) | 
+           food_group == "terrestrial") %>%
   relocate(protein_consumed_t, .before = "prop_animal_protein")
 
 #######################################
@@ -572,7 +572,7 @@ gc(full = TRUE) # Clean up memory usage
 # Confirm proportions add back to 1
 test <- fao_aquatic_source %>% 
   group_by(year, iso3c, element, data_source, food_group) %>%
-  summarise(test = sum(aquatic_source_prop)) %>%
+  summarise(test = sum(prop_aquatic_source)) %>%
   filter(abs(test-1) > 0.0001)
 
 if(nrow(test) > 0){
@@ -581,8 +581,8 @@ if(nrow(test) > 0){
 
 # Check for NA values
 a <- fao_aquatic_source %>%
-  filter(food_group == "Aquatic") %>%
-  filter(is.na(value) | is.na(aquatic_source_prop) | is.na(iso3c))
+  filter(food_group == "aquatic") %>%
+  filter(is.na(value) | is.na(prop_aquatic_source) | is.na(iso3c))
 
 if(nrow(a) > 0) {
   warning("There is an NA")
@@ -603,8 +603,8 @@ if(nrow(a) > 0) {
   filter(!(year %in% 2010:2013 & data_source == "old FBS")) %>%
   group_by(year, food_group, iso3c) %>%
   summarize(sum = case_when(
-    food_group == "Aquatic" ~ sum(prop_animal_protein, na.rm = TRUE),
-    food_group == "Terrestrial" ~ mean(prop_animal_protein, na.rm = TRUE)
+    food_group == "aquatic" ~ sum(prop_animal_protein, na.rm = TRUE),
+    food_group == "terrestrial" ~ mean(prop_animal_protein, na.rm = TRUE)
   ), .groups = "drop") %>%
   distinct() %>%
   group_by(year, iso3c) %>%
@@ -617,7 +617,7 @@ if(nrow(test) > 0){
 
 # Check for NA values in aquatic reliance source dataset
 a <- fao_aquatic_reliance_source %>%
-  filter(food_group == "Aquatic") %>%
+  filter(food_group == "aquatic") %>%
   filter(is.na(prop_animal_protein) | is.na(prop_aquatic_source) | is.na(iso3c))
 
 if(nrow(a) > 0) {
@@ -626,7 +626,7 @@ if(nrow(a) > 0) {
 
 # Look at attributes of aquatic food only from the reliance dataset
 summary(fao_aquatic_reliance_source %>%
-          filter(food_group == "Aquatic"))
+          filter(food_group == "aquatic"))
 
 #######################################
 ###         POPULATION DATA         ###
