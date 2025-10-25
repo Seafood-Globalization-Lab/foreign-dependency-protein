@@ -1,7 +1,6 @@
-<<<<<<< HEAD
 ---
 title: "01_Analysis"
-author: "Jessica Gephart"
+author: "Connor Quiroz and Jessica Gephart"
 date: "2025-09-05"
 output: html_document
 ---
@@ -34,7 +33,12 @@ The desired final file should have the following columns:
 # Read in consumption data
 # Set parquet database folder location
 # db_folder <- "/Users/gephart/Library/CloudStorage/Dropbox/Research/ARTIS/ARTIS_1.1.0_FAO_2025_08_02/"
-db_folder <- paste0(here(),"/data/ARITS_1.1.0_FAO_2025_08_02")
+
+# Desktop folder
+# db_folder <- paste0(here(),"/data/ARITS_1.1.0_FAO_2025_08_02")
+
+# Laptop folder
+db_folder <- "C:/Users/cjqui/Desktop/SGL/Data/ARITS_1.1.0_FAO_2025_08_02"
 
 artis_ds <- arrow::open_dataset(file.path(db_folder, "datasets", "ARTIS_consumption_v1.1.0_FAO_mid_2025-08-02.parquet"))
 
@@ -557,11 +561,6 @@ population_fao_wb <- fao_aquatic_source %>%
          population_fao,
          population_wb) %>%
   distinct()
-
-# Clean up environment
-keep <- c("fao_aquatic_source", "fao_aquatic_reliance_source", "population_fao_wb") # Keep only output files in env
-rm(list = setdiff(ls(), keep))
-gc(full = TRUE) # Clean up memory usage
 ```
 
 ```{r run quality checks on data}
@@ -669,6 +668,11 @@ df <- fao_aquatic_reliance_source %>%
   summarise(protein_consumed_t = sum(protein_consumed_t)) %>%
   group_by(year, iso3c, data_source) %>%
   mutate(percent = 100*protein_consumed_t/sum(protein_consumed_t))
+
+# Clean up environment
+keep <- c("fao_aquatic_source", "fao_aquatic_reliance_source", "population_fao_wb") # Keep only output files in env
+rm(list = setdiff(ls(), keep))
+gc(full = TRUE) # Clean up memory usage
 ```
 
 ```{r write files to .csv}

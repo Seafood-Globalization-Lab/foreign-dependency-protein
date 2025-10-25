@@ -1,0 +1,558 @@
+---
+title: "Thesis Figures"
+author: "Connor Quiroz"
+date: "2025-10-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load data}
+# Read in FAO sourcing / reliance data
+aquatic_reliance <- read.csv("../output/fao_aquatic_reliance_source.csv")
+aquatic_fbs <- read.csv("../output/fao_fbs_aquatic_source.csv")
+
+# Read in population
+population_fao_wb <- read.csv("../output/population_fao_wb.csv")
+```
+
+```{r}
+aquatic_reliance %>%
+  filter(year == 2020,
+         food_group == "aquatic") %>%
+  mutate(habitat_method = paste(habitat, method)) %>%
+  plot_bar(bar_group = "iso3c", fill_type = "habitat_method", 
+           value = "prop_aquatic_source")
+
+aquatic_reliance %>%
+  filter(year == 2020,
+         food_group == "aquatic") %>%
+  mutate(habitat_method = paste(habitat, method)) %>%
+  plot_bar(bar_group = "iso3c", fill_type = "consumption_source", 
+           value = "prop_aquatic_source")
+```
+
+```{r}
+aquatic_reliance %>%
+  filter(year == 2020, consumption_source == "foreign") %>%
+  mutate(habitat_method = paste(habitat, method)) %>%
+  plot_bar(bar_group = "iso3c", fill_type = "habitat_method", 
+           value = "prop_aquatic_source", 
+           top_n = 30)
+```
+
+
+```{r}
+aquatic_reliance %>%
+  filter(year == 2020,
+         food_group == "aquatic") %>%
+  mutate(habitat_method = paste(habitat, method)) %>%
+  plot_bar(bar_group = "iso3c", fill_type = "habitat_method",
+           value = "prop_animal_protein", 
+           top_n = 30)
+
+
+aquatic_reliance %>%
+  filter(year == 2020,
+         food_group == "aquatic") %>%
+  mutate(habitat_method = paste(habitat, method)) %>%
+  filter(habitat_method == "marine capture") %>%
+  plot_bar(bar_group = "iso3c", fill_type = "habitat_method",
+           value = "prop_animal_protein", 
+           top_n = 30)
+```
+
+```{r regional weighted mean reliance}
+# Get population weights for each country
+aa_reliance_mean_regional_trends_alt <- aquatic_reliance %>%
+  add_region(col = "iso3c", region.col.name = "region") %>%
+  group_by(year, data_source, food_group, region) %>%
+  summarise(food_group_total_protein_t = sum(protein_consumed_t)) %>%
+  group_by(year, data_source, region) %>%
+  mutate(prop_animal_protein = 100*food_group_total_protein_t/sum(food_group_total_protein_t)) %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) # Remove overlapping years, prioritizing new years
+
+(aa_reliance_mean_regional_trends <- aa_reliance_mean_regional_trends_alt %>%
+    filter(food_group == "aquatic") %>%
+  ggplot(aes(x = year, y = prop_animal_protein, color = region, linetype = data_source)) +
+           geom_line(size = 1.1) +
+  scale_color_manual(values = artis_palette(6)) +
+  theme_light() +
+  theme(legend.position = "bottom",
+        legend.key.size = unit(0.2, 'cm'),
+        legend.text = element_text(size = 6),
+        legend.title = element_text(size = 8)) +
+  labs(x = "",
+       y = "Regional AA reliance (%)",
+       color = "Region",
+       linetype = "Data source"))
+
+ggsave("../images/aa_reliance_mean_regional_trends.jpg", plot = aa_reliance_mean_regional_trends, device = "jpeg", units = "in", width = 5, height = 4)
+```
+
+```{r regional habitat by method reliance}
+regional_inland_marine <- aquatic_reliance %>%
+  add_region(col = "iso3c", region.col.name = "region") %>%
+  group_by(data_source, year, region, habitat, food_group) %>%
+  summarise(food_group_total_protein_t = sum(protein_consumed_t)) %>%
+  left_join(total_protein, by = c("data_source", "year")) %>%
+  filter(food_group == "aquatic") %>%
+  group_by(data_source, year, region, habitat) %>%
+  summarize(prop_animal_protein = 100*food_group_total_protein_t/sum(total_protein)) %>%
+  filter(habitat != "unknown") %>%
+  ggplot(aes(x = year, y = prop_animal_protein, linetype = data_source, color = habitat)) +
+  geom_line(size = 0.9) +
+  facet_wrap(~ region) +
+  theme_light() +
+  theme(legend.position = "bottom",
+        axis.text = element_text(size = 6,
+                                 angle = 45),
+        legend.title = element_text(size = 7),
+        legend.text = element_text(size = 5)) +
+  labs(linetype = "Consumption source",
+       color = "Data source",
+       x = "",
+       y = "Aquatic animal Reliance (%)") +
+  scale_color_manual(values = artis_palette(3))
+
+ggsave("../images/regional_inland_marine.jpg", plot = regional_inland_marine, device = "jpeg", units = "in", width = 5, height = 4)
+```
+
+  
+```{r}
+# Distribution of protein reliance
+(aa_reliance_histogram <- aquatic_reliance %>%
+  filter(year == 2020,
+         food_group == "aquatic") %>%
+   mutate(prop_animal_protein = prop_animal_protein * 100) %>%
+  ggplot(aes(x = prop_animal_protein, fill = consumption_source)) +
+  geom_histogram(alpha = 0.5, color = "black",position = "identity") +
+  facet_wrap(habitat ~ method) +
+  theme_light() +
+  theme(legend.position = "bottom") +
+  scale_fill_manual(values = artis_palette(3)) +
+  labs(x = "AA reliance (%)", y = "Number of countries",
+       fill = "Consumption source"))
+
+ggsave("../images/aa_reliance_histogram.jpg", plot = aa_reliance_histogram, device = "jpeg", units = "in", width = 5, height = 4)
+```
+
+```{r}
+# Calculate rate of change in capture fishery reliance
+marine_capture <- aquatic_reliance %>%
+  # Filter out old FBS in overlapping years to prioritize new FBS
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         data_source == "new FBS", food_group == "aquatic",
+         method == "capture") %>%
+  group_by(iso3c, year) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein, na.rm = TRUE)) %>%
+  distinct() %>%
+  split(.$iso3c) %>% 
+  map(~lm(prop_animal_protein~year, data = .x)) %>% 
+  map_df(broom::tidy, .id = 'iso3c') %>%
+  filter(term == 'year') %>%
+  mutate(food_group = "Aquatic") %>%
+  select(c("iso3c", "aquatic_estimate" = "estimate"))
+
+# Calculate rate of change in aquaculture fishery reliance
+aquaculture <- aquatic_reliance %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         data_source == "new FBS", food_group == "aquatic",
+         method == "aquaculture") %>%
+  group_by(iso3c, year) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein, na.rm = TRUE)) %>%
+  distinct() %>%
+  split(.$iso3c) %>% 
+  map(~lm(prop_animal_protein~year, data = .x)) %>% 
+  map_df(broom::tidy, .id = 'iso3c') %>%
+  filter(term == 'year') %>%
+  select(c("iso3c", "aquaculture_estimate" = "estimate"))
+
+# Calculate rate of change in terrestrial reliance
+terrestrial_roc <- aquatic_reliance %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         data_source == "new FBS", food_group == "terrestrial") %>%
+  group_by(iso3c, year) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein, na.rm = TRUE)) %>%
+  distinct() %>%
+  split(.$iso3c) %>% 
+  map(~lm(prop_animal_protein~year, data = .x)) %>% 
+  map_df(broom::tidy, .id = 'iso3c') %>%
+  filter(term == 'year') %>%
+  select(c("iso3c", "terrestrial_estimate" = "estimate"))
+
+# Plot rate of change in aquaculture reliance vs marine capture reliance
+(reliance_roc <- marine_capture %>%
+  add_region(col = "iso3c", region.col.name = "region") %>%
+  left_join(aquaculture, by = "iso3c") %>%
+    left_join(terrestrial_roc, by = c("iso3c")) %>%
+  ggplot(aes(x = aquatic_estimate, y = aquaculture_estimate, color = terrestrial_estimate, label = iso3c)) +
+  geom_point(size = 0.8) +
+  facet_wrap(~ region) +
+  geom_hline(yintercept = 0, linetype = "dashed", lwd = 0.75, alpha = 0.6) +
+  geom_vline(xintercept = 0, linetype = "dashed", lwd = 0.75, alpha = 0.6) +
+  geom_text_repel(size = 2) +
+  geom_rug() +
+  labs(x = "Change in capture reliance (2010-2020)",
+       y = "Change in aquaculture relaince (2010-2020)",
+       color = "Change in terrestrial reliance (2010-2020)") +
+  theme_light() +
+  theme(axis.text = element_text(size = 5)) +
+    scale_color_viridis_c(option = "plasma") +
+    theme(legend.position = "bottom",
+          legend.text = element_text(size = 6)))
+
+
+ggsave("../images/reliance_roc.jpg", plot = reliance_roc, device = "jpeg", units = "in", width = 5, height = 4)
+```
+
+```{r}
+
+aquatic_reliance_ranks <- aquatic_reliance %>%
+  filter(food_group == "aquatic", year == 2019) %>%
+  group_by(iso3c) %>%
+  summarise(prop_animal_protein_total = sum(prop_animal_protein)) %>%
+  arrange(desc(prop_animal_protein_total)) %>%
+  mutate(total_rank = rank(-prop_animal_protein_total)) %>%
+  left_join(aquatic_reliance %>%
+  filter(food_group == "aquatic", method == "capture", habitat == "marine", year == 2019) %>%
+  group_by(iso3c) %>%
+  summarise(prop_animal_protein_marine = sum(prop_animal_protein)) %>%
+  arrange(desc(prop_animal_protein_marine)) %>%
+  mutate(marine_capture_rank = rank(-prop_animal_protein_marine)), 
+         by = "iso3c")
+
+# comparing
+
+aquatic_reliance_ranks <- aquatic_reliance %>%
+  filter(food_group == "aquatic", year == 2019) %>%
+  group_by(iso3c) %>%
+  summarise(prop_animal_protein_total = sum(prop_animal_protein)) %>%
+  arrange(desc(prop_animal_protein_total)) %>%
+  mutate(total_rank = rank(-prop_animal_protein_total)) %>%
+  left_join(aquatic_reliance %>%
+  filter(food_group == "aquatic", method == "capture", habitat == "marine", year == 2019) %>%
+  group_by(iso3c) %>%
+  summarise(prop_animal_protein_marine = sum(prop_animal_protein)) %>%
+  arrange(desc(prop_animal_protein_marine)) %>%
+  mutate(marine_capture_rank = rank(-prop_animal_protein_marine)), 
+         by = "iso3c") %>%
+  left_join(aquatic_reliance %>%
+  filter(food_group == "aquatic", method == "aquaculture", year == 2019) %>%
+  group_by(iso3c) %>%
+  summarise(prop_animal_protein_marine = sum(prop_animal_protein)) %>%
+  arrange(desc(prop_animal_protein_marine)) %>%
+  mutate(inland_aquaculture_rank = rank(-prop_animal_protein_marine)), 
+         by = "iso3c") %>%
+  left_join(aquatic_reliance %>%
+  filter(food_group == "aquatic", consumption_source == "foreign", year == 2019) %>%
+  group_by(iso3c) %>%
+  summarise(prop_animal_protein_marine = sum(prop_animal_protein)) %>%
+  arrange(desc(prop_animal_protein_marine)) %>%
+  mutate(foreign_rank = rank(-prop_animal_protein_marine)), 
+         by = "iso3c") %>%
+  add_region(col = "iso3c", region.col.name = "region")
+
+(A <- aquatic_reliance_ranks %>%
+  ggplot(aes(x = total_rank, 
+             y = marine_capture_rank, 
+             color = region)) +
+  geom_point(size = 0.6) +
+  geom_abline(slope = 1, intercept = 0, linetype = "longdash") +
+  stat_ellipse(aes(fill = region), geom = "polygon", alpha = 0.1, show.legend = FALSE, size = 0.4) +
+  theme_light() +
+  scale_color_viridis_d(option = "turbo", direction = -1) +
+    labs(x = "Total aquatic reliance rank",
+         y = "Marine capture reliance rank",
+         color = "Region",
+         tag = "A") +
+    theme(legend.position = "bottom") +
+    guides(color = guide_legend(override.aes = list(size = 1))))
+
+(B <- aquatic_reliance_ranks %>%
+  ggplot(aes(x = total_rank, 
+             y = foreign_rank, 
+             color = region)) +
+  geom_point(size = 0.6) +
+  geom_abline(slope = 1, intercept = 0, linetype = "longdash") +
+  stat_ellipse(aes(fill = region), geom = "polygon", alpha = 0.1, show.legend = FALSE, size = 0.4) +
+  theme_light() +
+    scale_color_viridis_d(option = "turbo", direction = -1) +
+    labs(x = "Total aquatic reliance rank",
+         y = "Foreign reliance rank",
+         tag = "B") +
+    guides(color = "none"))
+
+
+# Make versions of your plots without legends
+A_nolegend <- A + theme(legend.position = "none")
+B_nolegend <- B + theme(legend.position = "none")
+
+# Extract legend from one plot (they share the same color/region scale)
+legend <- get_plot_component(A, "guide-box-bottom", return_all = TRUE)
+
+
+# Combine plots
+
+plot <- plot_grid(A_nolegend,
+                  B_nolegend)
+
+(zonal_trends <- cowplot::plot_grid(
+  plot,
+  legend,
+  ncol = 1,
+  rel_heights = c(1, 0.25)
+))
+
+# Save plot
+ggsave("../images/zonal_trends.jpg", plot = zonal_trends, device = "jpeg", units = "in", width = 5, height = 4)
+
+
+
+
+
+a <- aquatic_reliance_ranks %>%
+  plot_bar(bar_group = "iso3c", value = "prop_animal_protein_total",
+           top_n = 15, 
+           plot.title = "Total aquatic reliance")
+
+b <- aquatic_reliance_ranks %>%
+  plot_bar(bar_group = "iso3c", value = "prop_animal_protein_marine", 
+           top_n = 15, 
+           plot.title = "Marine reliance")
+
+ggarrange(a, b)
+```
+
+```{r look at aquatic reliance ranks over time}
+aquatic_reliance %>%
+  filter(food_group == "aquatic") %>%
+  group_by(iso3c, year) %>%
+  summarise(prop_animal_protein_total = sum(prop_animal_protein)) %>%
+  arrange(desc(prop_animal_protein_total)) %>%
+  group_by(year) %>%
+  mutate(total_rank = rank(-prop_animal_protein_total)) %>%
+  left_join(aquatic_reliance %>%
+  filter(food_group == "aquatic", method == "capture", habitat == "marine") %>%
+  group_by(iso3c, year) %>%
+  summarise(prop_animal_protein_marine = sum(prop_animal_protein)) %>%
+  arrange(desc(prop_animal_protein_marine)) %>%
+    group_by(year) %>%
+  mutate(marine_capture_rank = rank(-prop_animal_protein_marine)), 
+         by = c("iso3c", "year")) %>%
+  filter(iso3c == "USA") %>%
+  ggplot() +
+  geom_segment(aes(x = year, xend = year, y = total_rank, yend = marine_capture_rank), size = 0.45) +
+  geom_point(aes(x = year, y = total_rank), color = "cyan2", size = 1.6) +
+  geom_point(aes(x = year, y = marine_capture_rank), color = "red", size = 1.6) +
+  theme_minimal() +
+  labs(x = "", y = "Cyan = total AA reliance rank\nred = marine capture rank")
+```
+
+```{r try something different}
+# Calculate dif
+diffs <- aquatic_reliance %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
+  filter(food_group == "aquatic") %>%
+  group_by(iso3c, year) %>%
+  summarise(prop_animal_protein_total = sum(prop_animal_protein)) %>%
+  left_join(aquatic_reliance %>%
+  filter(food_group == "aquatic", method == "capture", habitat == "marine") %>%
+  group_by(iso3c, year) %>%
+  summarise(prop_animal_protein_marine = sum(prop_animal_protein)),
+  by = c("iso3c", "year")) %>%
+  ungroup() %>%
+  mutate(total_minus_marine_capture = prop_animal_protein_total - prop_animal_protein_marine) %>%
+  select(iso3c, year, total_minus_marine_capture)
+
+total_protein_reliance <- aquatic_reliance %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
+  filter(food_group == "aquatic") %>%
+  group_by(iso3c, year) %>%
+  summarise(prop_animal_protein_total = sum(prop_animal_protein))
+
+
+subtracted_ranks <- data.frame()
+
+for (country in unique(aquatic_reliance$iso3c)) {
+  for (date in sort(unique(aquatic_reliance$year))) {
+    
+    # Get subtracted value
+    filtered_value <- diffs %>%
+      filter(iso3c == country, year == date) %>%
+      pull(total_minus_marine_capture)
+    
+    # Replace target country & year with its total - marine capture value
+    if({total_protein_reliance %>%
+       filter(iso3c == country & year == date) %>%
+       nrow} > 0) {
+      
+      df <- total_protein_reliance %>%
+      filter(year == date) %>%
+      ungroup() %>%
+      mutate(prop_animal_protein_total = case_when(
+        iso3c == country ~ filtered_value,
+        TRUE ~ prop_animal_protein_total
+      ),
+      rank = rank(-prop_animal_protein_total)) %>%
+      filter(iso3c == country) %>%
+      select(year, iso3c, rank)
+      
+      subtracted_ranks <- bind_rows(subtracted_ranks, df)
+      
+    }
+    
+  }
+}
+
+# Look at the change in total reliance rank over time vs rank in marine capture rank
+total_protein_reliance %>%
+  left_join(subtracted_ranks, by = c("year", "iso3c")) %>%
+  group_by(year) %>%
+  mutate(total_rank = rank(-prop_animal_protein_total)) %>%
+  filter(iso3c == "FIN") %>%
+  ggplot() +
+  geom_segment(aes(x = year, xend = year, y = total_rank, yend = rank), size = 0.45) +
+  geom_point(aes(x = year, y = total_rank), color = "cyan2", size = 1.6) +
+  geom_point(aes(x = year, y = rank), color = "red", size = 1.6) +
+  theme_minimal() +
+  labs(x = "", y = "Cyan = total AA reliance rank\nred = marine capture rank")
+
+# Look at total protein reliance rank vs the rank for each country if their marine capture was subtracted out of their total individually and compared against the other countries' full reliance ranks (to see how much marine capture impacts the overall reliance measure)
+(marine_capture <- total_protein_reliance %>%
+  group_by(year) %>%
+  mutate(total_rank = rank(-prop_animal_protein_total)) %>%
+  left_join(subtracted_ranks, by = c("year", "iso3c")) %>%
+  filter(year == 2020, rank - total_rank > 20) %>%
+  mutate(iso3c = fct_reorder(iso3c, .x = rank - total_rank, .desc = TRUE)) %>%
+  # filter(iso3c == "AGO") %>%
+  ggplot() +
+  geom_segment(aes(x = iso3c, xend = iso3c, y = total_rank, yend = rank), size = 0.15, alpha = 0.2) +
+  geom_point(aes(x = iso3c, y = total_rank, color = "Overall AA reliance rank"), size = 1.6) +
+  geom_point(aes(x = iso3c, y = rank, color = "Subtracted rank (marine capture)"), size = 1.6) +
+  scale_color_manual(
+  name = "Rank\nType",
+  values = c("Overall AA reliance rank" = "#0072B2",      # Blue
+             "Subtracted rank (marine capture)" = "#D55E00")  # Orange
+) +
+  theme_light() +
+  theme(legend.position = "bottom",
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.text = element_text(size = 5.5),
+        legend.title = element_text(size = 9),
+        panel.grid.major.x = element_blank(), # Removes major vertical gridlines
+    panel.grid.minor.x = element_blank()  # Removes minor vertical gridlines
+    ) +
+  labs(x = "Country", y = "Rank (lower = higher reliance)\n(higher = less reliance")  +
+    guides(color = guide_legend(nrow = 2)))
+
+# Look at total protein reliance rank vs the rank for each country if their aquaculture was subtracted out of their total individually and compared against the other countries' full reliance ranks (to see how much aquaculture impacts the overall reliance measure)
+(aquaculture <- total_protein_reliance %>%
+  group_by(year) %>%
+  mutate(total_rank = rank(-prop_animal_protein_total)) %>%
+  left_join(aquaculture_ranks, by = c("year", "iso3c")) %>%
+  filter(year == 2020, rank - total_rank > 20) %>%
+     mutate(iso3c = countrycode(iso3c, origin = "iso3c", destination = "country.name")) %>%
+  mutate(iso3c = fct_reorder(iso3c, .x = rank - total_rank, .desc = TRUE)) %>%
+    # mutate(value = rank-total_rank) %>%
+  ggplot() +
+  geom_segment(aes(x = iso3c, xend = iso3c, y = total_rank, yend = rank), size = 0.45) +
+  geom_point(aes(x = iso3c, y = total_rank, color = "Overall AA reliance rank"), size = 1.6) +
+  geom_point(aes(x = iso3c, y = rank, color = "Subtracted rank (aquaculture)"), size = 1.6) +
+  scale_color_manual(
+  name = "Rank\nType",
+  values = c("Overall AA reliance rank" = "#0072B2",      # Blue
+             "Subtracted rank (aquaculture)" = "#D55E00")  # Orange
+) +
+  theme_light() +
+  theme(axis.text.x = element_text(size = 4.5, angle = 90),
+        legend.text = element_text(size = 5.5),
+        legend.title = element_text(size = 9),
+        legend.position = "bottom") +
+  labs(x = "Country", y = "Rank (lower = higher reliance)\n(higher = less reliance")  +
+    guides(color = guide_legend(nrow = 2)))
+
+# Combine plots
+(mc_aq_comparison <- plot_grid(marine_capture, aquaculture))
+
+ggsave("../images/mc_aq_comparison.jpg", plot = mc_aq_comparison, height= 4, width = 5, units = "in", device = "jpg")
+
+# Look at Angola change in total rank from subtracted rank over time (it had the greatest difference in reliance)
+# Look at Angola change in total rank from subtracted rank over time
+(a <- total_protein_reliance %>%
+  group_by(year) %>%
+  mutate(total_rank = rank(-prop_animal_protein_total)) %>%
+  left_join(subtracted_ranks, by = c("year", "iso3c")) %>%
+  filter(iso3c == "AGO") %>%
+  ggplot() +
+  geom_segment(aes(x = year, xend = year, y = total_rank, yend = rank), size = 0.45) +
+  geom_point(aes(x = year, y = total_rank, color = "Overall AA reliance rank"), size = 1.6) +  # Changed iso3c to year
+  geom_point(aes(x = year, y = rank, color = "Subtracted rank (marine capture)"), size = 1.6) +  # Changed iso3c to year
+  scale_color_manual(
+  name = "Rank Type",
+  values = c("Overall AA reliance rank" = "#0072B2",      # Blue
+             "Subtracted rank (marine capture)" = "#D55E00")  # Orange
+) +
+  theme_light() +
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 4.5),
+        legend.title = element_text(size = 6),
+        title = element_text(size = 9),
+        legend.key.size = unit(0.2, 'cm')) +
+  labs(x = "Year", y = "Rank (lower = higher reliance)") +
+    guides(color = guide_legend(nrow = 2)))
+
+(b <- aquatic_reliance %>%
+    filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
+  filter(iso3c == "AGO", food_group == "aquatic") %>%
+  mutate(prop_animal_protein = round(prop_animal_protein, 3)) %>%
+  group_by(year, method, habitat, consumption_source) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein)) %>%
+  select(year, habitat, method, consumption_source, prop_animal_protein) %>%
+   unite("habitat_method_source", habitat, method, consumption_source, sep = "_") %>%
+  filter(!str_detect(habitat_method_source, "unknown_unknown")) %>%
+  mutate(habitat_method_source = str_replace_all(habitat_method_source, "_", ", ")) %>%
+    mutate(prop_animal_protein = 100 * prop_animal_protein) %>%
+  ggplot(aes(x = year, y = prop_animal_protein, fill = habitat_method_source)) +
+           geom_col(method = "fill") +
+  labs(
+    x = "Year",
+    y = "AA Reliance %",
+    fill = "Source\n(Habitat,\nMethod)"
+  ) +
+  theme_light() +
+  scale_fill_viridis_d(end = 0.8) +
+  theme(legend.position = "bottom",
+        legend.key.size = unit(0.2, 'cm'),
+        legend.text = element_text(size = 4.5),
+        legend.title = element_blank(),
+        title = element_text(size = 9)) +
+    guides(fill = guide_legend(nrow = 4)))
+
+(ago_analysis <- plot_grid(a,b))
+
+ggsave("../images/ago_analysis.jpg", plot = ago_analysis, height = 3, width = 5, units = "in", device = "jpg")
+```
+
+```{r}
+# Rank total total reliance 
+aquatic_reliance_ranks %>%
+  mutate(diff = total_rank - marine_capture_rank) %>%
+  filter(abs(diff) >= 25) %>%
+  mutate(iso3c = fct_reorder(iso3c, diff),
+         change_direction = case_when(
+           (total_rank < marine_capture_rank) > 0 ~ "Total AA reliance rank higher than marine capture", 
+           (total_rank > marine_capture_rank) > 0 ~ "Marine capture reliance rank higher than total AA"
+         )) %>%
+  ggplot() +
+  geom_segment(aes(x = total_rank, xend = marine_capture_rank, y = iso3c, yend = iso3c)) +
+  geom_point(aes(x = total_rank, y = iso3c), color = "forestgreen", size = 1.5) +
+  geom_point(aes(x = marine_capture_rank, y = iso3c), color = "darkblue", size = 1.5) +
+  labs(x = "Rank (lower = more reliant)", y = "") +
+  facet_wrap(~change_direction, ncol = 1, scales = "free_y") +
+  theme_minimal() 
+
+```
