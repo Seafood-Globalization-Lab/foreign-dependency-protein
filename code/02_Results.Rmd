@@ -215,6 +215,7 @@ aquatic_plot_data_circle <- aquatic_plot_data %>%
 
 # Create labels dataframe for country names (for circular plot only)
 aquatic_labels_df <- aquatic_plot_data_circle %>%
+  mutate(iso3c = case_when(iso3c == "Micronesia (Federated States of)" ~ "Micronesia", TRUE ~ iso3c)) %>%
   group_by(iso3c) %>%
   summarise(
     total_reliance = first(total_reliance),
@@ -250,6 +251,7 @@ shell_palette <- c(mc_1,mc_2,mc_3,mc_4,aq_1,aq_2,aq_3,aq_4)
 
 # Create the circular plot (for countries ranked 16th and below)
 a <- aquatic_plot_data_circle %>%
+  mutate(iso3c = case_when(iso3c == "Micronesia (Federated States of)" ~ "Micronesia", TRUE ~ iso3c)) %>%
   ggplot(aes(x = iso3c, y = prop_animal_protein, fill = fill_category)) +
   geom_col(stat = "identity", position = "stack", width = 0.8) +
   # Add inner and outer circle boundaries
@@ -268,7 +270,7 @@ a <- aquatic_plot_data_circle %>%
             inherit.aes = FALSE,
             fontface = "bold",
             alpha = 0.9,
-            size = 2,
+            size = 1.65,
             color = "grey40") +
   # Use your artis_palette if available, otherwise use Set3
   scale_fill_manual(values = shell_palette) +
@@ -323,7 +325,7 @@ ggsave("../images/aquatic_reliance_sourcing.jpg", plot = aquatic_reliance_sourci
 source("../R/create_map.R")
 
 global_limits <- aquatic_reliance %>%
-  filter(year == 2020, food_group == "aquatic") %>%
+  filter(year == 2019, food_group == "aquatic") %>%
   summarize(
     min_val = 100 * min(prop_animal_protein, na.rm = TRUE),
     max_val = 100 * max(prop_animal_protein, na.rm = TRUE)
@@ -334,7 +336,7 @@ max_val <- global_limits$max_val
 
 # generate both maps with identical color limits
 a <- aquatic_reliance %>%
-  filter(year == 2020,
+  filter(year == 2019,
          food_group == "aquatic",
          consumption_source == "foreign") %>%
   group_by(iso3c) %>%
@@ -350,7 +352,7 @@ a <- aquatic_reliance %>%
 b <- aquatic_reliance %>%
   filter(method == "capture",
          habitat == "marine",
-         year == 2020,
+         year == 2019,
          food_group == "aquatic") %>%
   group_by(iso3c) %>%
   summarize(prop_animal_protein = 100 * sum(prop_animal_protein)) %>%
@@ -398,6 +400,7 @@ aquatic_reliance_ranks <- aquatic_reliance %>%
 (aquatic_reliance_rank_change <- aquatic_reliance_ranks %>%
   filter(total_rank <= 25 | marine_capture_rank <= 25) %>%
   mutate(country_name = countrycode(iso3c, origin = "iso3c", destination = "country.name"),
+         country_name = case_when(country_name == "Micronesia (Federated States of)" ~ "Micronesia", TRUE ~ country_name),
          country_name = fct_reorder(country_name, -total_rank), 
          ) %>%
   ggplot() +
