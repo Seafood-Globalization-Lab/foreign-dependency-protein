@@ -39,7 +39,7 @@ aa_reliance_mean_global_trends_alt <- aquatic_reliance %>%
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) # Remove overlapping years, prioritizing new years
 
 aa_reliance_mean_global_trends <- aa_reliance_mean_global_trends_alt %>%
-  mutate(food_group = factor(food_group, levels = c("terrestrial", "aquatic"))) %>%
+  mutate(food_group = factor(food_group, levels = c("Terrestrial", "Aquatic"))) %>%
   ggplot(aes(x = year, y = prop_animal_protein, fill = food_group)) +
   geom_area(size = 0.4) +  # adds subtle separation between layers
   scale_fill_manual(values = c(desaturate("#AA3C3B", 0.4), "#3D8A8D")) +
@@ -121,7 +121,7 @@ artis_colors <- artis_colors[c(2,1)]
 aa_reliance_multiple_trends <- aa_reliance_multiple_trends_alt_1 %>%
   ggplot(aes(x = year, y = prop_animal_protein, fill = consumption_source)) +
   geom_area(size = 0.75) +  # clean separation between areas
-  scale_fill_manual(values = artis_colors) +
+  scale_fill_manual(values = c("#1179be", "#b1d0ed")) +
   facet_wrap(~ habitat_method) +
   labs(
     fill = "Consumption source",
@@ -409,7 +409,8 @@ max_val <- global_limits$max_val
 a <- aquatic_reliance %>%
   filter(year == 2019,
          food_group == "aquatic",
-         consumption_source == "foreign") %>%
+         habitat == "inland",
+         method == "aquaculture") %>%
   group_by(iso3c) %>%
   summarize(prop_animal_protein = 100 * sum(prop_animal_protein)) %>%
   create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
@@ -455,6 +456,21 @@ legend <- get_legend(a)
 (aa_reliance_chloropleth <- plot_grid(aa_reliance_chloropleth, legend, ncol = 1, rel_heights = c(1, 0.1)))
 
 ggsave("../images/GSS/aa_reliance_chloropleth.png", plot = aa_reliance_chloropleth, device = "png", units = "in", width = 5, height = 2.5, bg = "transparent")
+
+
+?fct_reorder(iso3c, .fun = prop_animal_protein)
+# Add ranked bar plots
+aquatic_reliance %>%
+  filter(year == 2019,
+         food_group == "aquatic",
+         habitat == "inland",
+         method == "aquaculture") %>%
+  group_by(iso3c) %>%
+  summarize(prop_animal_protein = 100 * sum(prop_animal_protein)) %>%
+  mutate(iso3c = fct_reorder(iso3c, prop_animal_protein)) %>%
+  top_n(10) %>%
+  ggplot(aes(x = prop_animal_protein, y = iso3c)) +
+  geom_col()
 ```
 
 
@@ -791,9 +807,64 @@ plot_df<- aquatic_protein_quant %>%
     plot.margin = margin(5, 5, 5, 5)
   ))
 
-
-
+ 
 
 ggsave("../images/GSS/terr_aquatic.png", plot = reliance_roc_pres, device = "png", units = "in", width = 7, height = 5, bg = "transparent")
+```
+
+```{r}
+  lm(aquatic_reliance_estimate ~ aquatic_estimate * region + terrestrial_estimate * region, data = plot_df) %>%
+    summary()
+  library(lme4)
+  
+model <- lmer(aquatic_reliance_estimate ~ aquatic_estimate + terrestrial_estimate +
+       (aquatic_estimate + terrestrial_estimate | region),
+     data = plot_df)
+
+re <- ranef(model, condVar = TRUE)  # condVar=TRUE lets us extract uncertainty later
+re_region <- re$region
+
+
+df_re <- as_tibble(re_region, rownames = "region")
+df_long <- df_re %>%
+  pivot_longer(cols = c(aquatic_estimate, terrestrial_estimate),
+               names_to = "slope_type",
+               values_to = "slope_value")
+
+
+ggplot(df_long,
+       aes(x = region, y = slope_value, fill = slope_type, group = slope_type)) +
+  geom_col() +
+  theme_minimal() +
+  labs(title = "Random Slopes by Region",
+       x = "Region", y = "Random Slope Value",
+       color = "Slope Type") +
+    scale_fill_manual(values = c("blue", "red"))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+```{r}
+pre_df <- aquatic_reliance %>%
+  group_by(year, iso3c, data_source, food_group) %>%
+  summarize(protein_consumed_t = sum(protein_consumed_t)) %>%
+  pivot_wider(values_from = "protein_consumed_t", names_from = "food_group") %>%
+  mutate(aquatic_reliance = Aquatic / (Aquatic + Terrestrial)) %>%
+  add_region(col = "iso3c", region.col.name = "region")
+
+dataset <- {lmer(aquatic_reliance ~ Aquatic + Terrestrial +
+       (Aquatic + Terrestrial | region),
+     data = pre_df) %>%
+  ranef()}$region
+
+ dataset%>%
+  mutate(iso3c = rownames(.)) %>%
+  add_region(col = "iso3c", region.col.name = "region") %>%
+  group_by(region) %>%
+  summarize(`(Intercept)` = mean(`(Intercept)`),
+           Aquatic = mean(Aquatic),
+           Terrestrial = mean(Terrestrial)) %>%
+  pivot_longer(cols = c("Aquatic", "Terrestrial")) %>%
+  ggplot(aes(x = region, y = value, fill = name)) +
+    geom_col()
 ```
 

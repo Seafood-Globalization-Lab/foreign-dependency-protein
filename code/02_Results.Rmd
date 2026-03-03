@@ -1018,6 +1018,144 @@ ggsave("../images/bayesian plots/tile_plot_intercepts_props.jpg", plot = tile_pl
 
 ## RQ 1: How do aquatic food reliance trends disaggregated by source differ from aggregate aquatic food reliance?
 
+### Country level trends in delta 2010-2020 aquatic animal reliance
+
+```{r}
+library(dplyr)
+library(purrr)
+library(broom)
+library(ggplot2)
+library(ggridges)
+library(forcats)
+library(stringr)
+
+# --- 1. Disaggregated slopes (your existing pipeline) ---
+disagg <- aquatic_reliance %>%
+  filter(data_source == "new FBS", food_group == "aquatic") %>%
+  group_by(iso3c) %>%
+  mutate(n = n_distinct(year)) %>%
+  filter(n >= 3) %>%
+  group_by(iso3c, consumption_source, habitat, method) %>%
+  filter(n() >= 3) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
+    tidy  = map(model, broom::tidy)
+  ) %>%
+  unnest(tidy) %>%
+  filter(term == "year") %>%
+  mutate(
+    consource_habitat_method = paste(method),
+    sqrt_signed = sign(estimate) * sqrt(abs(estimate)),
+    group_label = consource_habitat_method
+  ) %>%
+  drop_na(estimate) %>%
+  filter(!str_detect(consource_habitat_method, "unknown")) %>%
+  group_by(group_label) %>%
+  mutate(pct_above = mean(estimate > 0) * 100) %>%
+  ungroup()
+
+# --- 2. Aggregate slopes (overall aquatic reliance per country) ---
+agg <- aquatic_reliance %>%
+  filter(data_source == "new FBS", food_group == "aquatic") %>%
+  group_by(iso3c) %>%
+  mutate(n = n_distinct(year)) %>%
+  filter(n >= 3) %>% # Get countries with only 3 years or more of data (so lm can properly fit points)
+  group_by(iso3c, year, data_source, food_group) %>%
+  summarise(prop_animal_protein = sum(prop_animal_protein)) %>%
+  group_by(iso3c) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
+    tidy  = map(model, broom::tidy)
+  ) %>%
+  unnest(tidy) %>%
+  filter(term == "year") %>%
+  mutate(
+    sqrt_signed = sign(estimate) * sqrt(abs(estimate)),
+    group_label = "aggregate"
+  ) %>%
+  drop_na(estimate) %>%
+  group_by(group_label) %>%
+  mutate(pct_above = mean(estimate > 0) * 100) %>%
+  ungroup()
+
+# --- 3. Combine disaggregated + aggregate ---
+all_slopes <- bind_rows(agg, disagg)
+
+
+all_slopes <- all_slopes %>%
+  mutate(
+    pct_below = 100 - pct_above,
+    label_majority = if_else(
+      pct_above >= 50,
+      sprintf("%.0f%%", pct_above),
+      sprintf("%.0f%%", pct_below)
+    ),
+    label_x = if_else(
+      pct_above >= 50,
+      0.002,   # right side, close to center
+      -0.002   # left side, close to center
+    ),
+    label_hjust = if_else(pct_above >= 50, 0, 1),
+    color = case_when(pct_above >= 50 ~ "#2166ac",
+                      TRUE ~ "#b2182b")
+  )
+
+
+(plot <- ggplot(all_slopes, aes(
+  x = estimate,
+  y = fct_reorder(group_label, pct_above)
+)) +
+  geom_density_ridges_gradient(
+    aes(fill = after_stat(x > 0)),
+    scale = 1.4,
+    rel_min_height = 0.01,
+    color = "black"
+  ) +
+  scale_fill_manual(
+    values = c(`TRUE` = "#2166ac", `FALSE` = "#b2182b")
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_text(
+    aes(x = label_x, label = label_majority, hjust = label_hjust),
+    color = all_slopes$color,
+    vjust = -2,
+    size = 2.5
+  ) +
+  guides(fill = "none") +
+  labs(x = expression(bold(Delta[2010-2020] ~ "Aquatic animal protein reliance %")), y = "Production source") +
+  xlim(c(-0.0105, 0.0105)) +
+
+  # --- Matching theme from aa_reliance_multiple_trends ---
+  theme_minimal(base_size = 8) +
+  theme(
+    # Grid and background
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
+    panel.grid.minor.y = element_blank(),
+    panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA),
+
+    # Axis styling
+    axis.text = element_text(size = 6, color = "black"),
+    axis.title.x = element_text(size = 7, face = "bold", margin = margin(t = 5)),
+    axis.title.y = element_text(size = 7, face = "bold"),
+
+    # Ridge spacing
+    axis.text.y = element_text(size = 6),
+
+    # No legend
+    legend.position = "none"
+  ))
+
+
+
+# ggsave("../images/pct_ichange_reliance.jpg", plot = plot, device = "jpg", units = "in", width = 5, height = 4)
+```
+
+
 ```{r}
 #################################################################
 ###   Calculate rate of change in aggregate animal reliance   ###
@@ -1045,10 +1183,15 @@ aggregate_slope <- ({aa_reliance_mean_global_trends %>%
   remove_rownames()
 
 aggregate_pos_countries <- aquatic_reliance %>%
+  filter(data_source == "new FBS") %>%
+  group_by(iso3c) %>%
+  mutate(n = n_distinct(year)) %>%
+  filter(n >= 3) %>%
   group_by(iso3c, year, data_source, food_group) %>%
   summarise(food_group_total_protein_t = sum(protein_consumed_t)) %>%
-  group_by(year, data_source) %>%
+  group_by(iso3c, year, data_source) %>%
   mutate(prop_animal_protein = 100*food_group_total_protein_t/sum(food_group_total_protein_t)) %>%
+  filter(food_group == "aquatic") %>%
   split(.$iso3c) %>%
   map(~lm(prop_animal_protein~year, data = .x)) %>%
   map_df(broom::tidy, .id = 'iso3c') %>%
@@ -1195,8 +1338,10 @@ df_plot <- bind_rows(aggregate_slope, disaggregated_slope) %>%
     panel.grid.minor    = element_blank()
   ))
 
-ggsave("../images/aa_reliance_mean_global_slopes.png", plot = plot, device = "png", units = "in", width = 7, height = 4, bg = "transparent")
+# ggsave("../images/aa_reliance_mean_global_slopes.png", plot = plot, device = "png", units = "in", width = 7, height = 4, bg = "transparent")
 ```
+
+### Compare aggregate to disaggregate reliance
 
 ```{r compare aggregate to disaggregated reliance}
 aa_reliance_mean_global_trends_alt <- aquatic_reliance %>%
@@ -1282,41 +1427,99 @@ aa_reliance_mean_global_trends <- aa_reliance_mean_global_trends_alt %>%
  aa_reliance_multiple_trends_alt_1 <- aa_reliance_multiple_trends_alt %>%
   mutate(habitat = str_to_title(habitat)) %>%
   mutate(habitat_method = paste(habitat, method, sep = " "))
+ 
+# Create forward / backward projections
+ 
+ coefs <- aquatic_reliance %>%
+  group_by(year, data_source, habitat, method, food_group) %>%
+  summarise(food_group_total_protein_t = sum(protein_consumed_t), .groups = "drop") %>%
+  filter(food_group == "aquatic") %>%
+  left_join(total_protein, by = c("year", "data_source")) %>%
+  mutate(prop_animal_protein = 100 * (food_group_total_protein_t / total_protein)) %>%
+  group_by(data_source, habitat, method) %>%   # <- KEEP data_source
+  nest() %>%
+  mutate(model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
+         tidy  = map(model, broom::tidy)) %>%
+  unnest(tidy) %>%
+  select(data_source, habitat, method, term, estimate) %>%
+  pivot_wider(values_from = estimate, names_from = term) %>%
+  rename(year_coef = year)
+ 
+ observed_ranges <- tibble(
+  data_source = c("old FBS", "new FBS"),
+  min_year = c(1996, 2010),
+  max_year = c(2009, 2020)
+)
+
+
+projections <- coefs %>%
+  left_join(year_ranges, by = "data_source") %>%
+  rowwise() %>%
+  mutate(year = list(start_year:end_year)) %>%
+  unnest(year) %>%
+  ungroup() %>%
+  mutate(
+    prop_animal_protein = `(Intercept)` + year_coef * year,
+    habitat = str_to_title(habitat)
+  ) %>%
+  filter(method != "unknown", habitat != "Unknown") %>%
+  select(year, data_source, habitat, method, prop_animal_protein) %>%
+  mutate(type = "projected") %>%
+  left_join(observed_ranges, by = "data_source") %>%
+  filter(year < min_year | year > max_year)  # Keep only years outside observed range
 
  
 # Artis palette
 artis_colors <- artis_palette(3)
 
 artis_colors <- artis_colors[c(2,1)]
- 
-aa_reliance_multiple_trends <- aa_reliance_multiple_trends_alt_1 %>%
-  ggplot(aes(x = year, y = prop_animal_protein, fill = consumption_source)) +
-  geom_area(size = 0.75) +  # clean separation between areas
-  scale_fill_manual(values = c("#1179be", "#b1d0ed")) +
+
+# Prepare observed subsets without overlap
+observed_old <- aa_reliance_multiple_trends_alt_1 %>%
+  filter(data_source == "old FBS", year <= 2009) %>%
+  mutate(type = "observed")
+
+observed_new <- aa_reliance_multiple_trends_alt_1 %>%
+  filter(data_source == "new FBS", year >= 2010) %>%
+  mutate(type = "observed")
+
+# Filter projections to non-overlapping years
+projections_old <- projections %>%
+  filter(data_source == "old FBS", year > 2009) %>%
+  mutate(type = "projected")
+
+projections_new <- projections %>%
+  filter(data_source == "new FBS", year < 2010) %>%
+  mutate(type = "projected")
+
+# Combine all cleanly
+combined <- bind_rows(observed_old, observed_new, projections_old, projections_new) %>%
+  mutate(habitat_method = paste(habitat, method))
+
+# Plot
+aa_reliance_multiple_trends <- ggplot() +
+  geom_area(data = filter(combined, type == "observed"),
+            aes(x = year, y = prop_animal_protein, fill = consumption_source),
+            size = 0.75) +
+  geom_line(data = filter(combined, type == "projected"),
+            aes(x = year, y = prop_animal_protein, group = data_source),
+            colour = "black", linetype = "dashed", linewidth = 0.3, alpha = 0.7) +
   facet_wrap(~ habitat_method) +
-  labs(
-    fill = "Consumption source",
-    x = "",
-    y = "Aquatic Animal Reliance (%)"
-  ) +
+  scale_fill_manual(values = c("#1179be", "#b1d0ed")) +
+  labs(fill = "Consumption source", x = "", y = "Aquatic Animal Reliance (%)") +
   theme_minimal(base_size = 8) +
   theme(
-    # Grid and background
     panel.grid.major.x = element_blank(),
     panel.grid.minor.x = element_blank(),
     panel.grid.major.y = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
     panel.grid.minor.y = element_blank(),
     panel.background = element_rect(fill = "transparent", color = NA),
     plot.background = element_rect(fill = "transparent", color = NA),
-
-    # Facet and axis styling
     strip.background = element_blank(),
     strip.text = element_text(size = 7, face = "bold"),
     axis.text = element_text(size = 6, color = "black"),
     axis.title.y = element_text(size = 7, margin = margin(r = 5), face = "bold"),
     axis.text.x = element_text(size = 5.5, angle = 30, hjust = 1),
-
-    # Legend styling
     legend.position = "bottom",
     legend.title = element_text(size = 7, face = "bold"),
     legend.text = element_text(size = 6),
@@ -1340,6 +1543,7 @@ aa_reliance_multiple_trends <- aa_reliance_multiple_trends_alt_1 %>%
   label_size = 10
 ))
 
+# 2020 reliance  by habitat / method
 aa_reliance_multiple_trends_alt_1 %>%
   filter(year == 2020) %>%
   group_by(habitat, method) %>%
@@ -1349,10 +1553,71 @@ aa_reliance_multiple_trends_alt_1 %>%
   summarize(prop_animal_protein = food_group_total_protein_t / total_protein) %>%
   arrange(prop_animal_protein)
 
+# reliance by method
+aa_reliance_multiple_trends_alt_1 %>%
+  filter(data_source == "new FBS") %>%
+  group_by(year, method) %>%
+  summarize(food_group_total_protein_t = sum(food_group_total_protein_t),
+            total_protein = total_protein) %>%
+  distinct() %>%
+  summarize(prop_animal_protein = food_group_total_protein_t / total_protein) %>%
+  arrange(prop_animal_protein) %>% View()
+  
 
-
+# 2020 reliance by domestic / foreign
+aquatic_reliance %>%
+  group_by(year, data_source, consumption_source, food_group) %>%
+  summarise(food_group_total_protein_t = sum(protein_consumed_t)) %>%
+  filter(food_group == "aquatic") %>%
+  left_join(total_protein, by = c("year", "data_source")) %>%
+  ungroup() %>%
+  mutate(prop_animal_protein = 100 * (food_group_total_protein_t / total_protein)) %>% # Divide AA / TERRESTRIAL + AA
+  # filter(habitat != "unknown") %>%
+   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>% # Remove overlapping years, prioritizing new years
+  group_by(year) %>%
+mutate(prop = prop_animal_protein / sum(prop_animal_protein)) %>%
+  filter(year == 2020) %>%
+  select(year, consumption_source, prop)
 
 ggsave("../images/aa_reliance_mean_global_trends.png", plot = aa_reliance_mean_global_trends_plot, device = "png", units = "in", width = 5, height = 3, bg = "transparent")
+```
+
+```{r delete}
+test %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
+  ggplot() +
+  geom_area(aes(x = year, y = prop_animal_protein, fill = method),
+            size = 0.75) +
+  # geom_line(data = filter(combined, type == "projected"),
+  #           aes(x = year, y = prop_animal_protein, group = data_source),
+  #           colour = "black", linetype = "dashed", linewidth = 0.3, alpha = 0.7) +
+  facet_wrap(~ habitat_method) +
+  scale_fill_manual(values = c("#1179be", "#b1d0ed")) +
+  labs(fill = "Consumption source", x = "", y = "Aquatic Animal Reliance (%)") +
+  theme_minimal(base_size = 8) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
+    panel.grid.minor.y = element_blank(),
+    panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 7, face = "bold"),
+    axis.text = element_text(size = 6, color = "black"),
+    axis.title.y = element_text(size = 7, margin = margin(r = 5), face = "bold"),
+    axis.text.x = element_text(size = 5.5, angle = 30, hjust = 1),
+    legend.position = "bottom",
+    legend.title = element_text(size = 7, face = "bold"),
+    legend.text = element_text(size = 6),
+    legend.key.size = unit(0.3, "cm"),
+    legend.box = "vertical",
+    legend.spacing = unit(0.1, "cm"),
+    legend.margin = margin(t = 0, b = 0),
+    legend.box.margin = margin(t = -2, b = -2),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.box.background = element_rect(fill = "transparent", color = NA)
+  )
 ```
 
 
@@ -1415,23 +1680,6 @@ plot_df<- aquatic_protein_quant %>%
   full_join(aquatic_protein_reliance, by="iso3c") %>%
   add_region(col = "iso3c", region.col.name = "region")
 
-# Plot rate of change in aquaculture reliance vs marine capture reliance
-(reliance_roc <- plot_df %>%
-    ggplot(aes(x = aquatic_estimate, y = terrestrial_estimate, color = aquatic_reliance_estimate, label = iso3c)) +
-    geom_point(size = 0.8) +
-    facet_wrap(~ region, scales="free") +
-    geom_hline(yintercept = 0, linetype = "dashed", lwd = 0.75, alpha = 0.6) +
-    geom_vline(xintercept = 0, linetype = "dashed", lwd = 0.75, alpha = 0.6) +
-    geom_text_repel(size = 2) +
-    geom_rug() +
-    labs(x = "Change in aquatic protein quantity (2010-2020)",
-         y = "Change in terrestrial protein quantity (2010-2020)") +
-    theme_light() +
-    theme(axis.text = element_text(size = 5)) +
-    scale_color_viridis_c(option = "plasma") +
-    theme(legend.position = "bottom",
-          legend.text = element_text(size = 6)))
-
 (plot <- plot_df %>%
   # filter(!iso3c %in% c("MHL","MDV")) %>%
   ggplot(aes(
@@ -1491,14 +1739,12 @@ panel.grid.minor.x = element_blank(),
     legend.background     = element_rect(fill = "transparent", color = NA),
     legend.box.background = element_rect(fill = "transparent", color = NA)
   ) +
-    geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
-    facet_wrap(~ region))
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed"))
 
 ggsave("../images/terr_aquatic_consumption.png", plot = plot, device = "png", units = "in", width = 4.5, height = 3, bg = "transparent")
 
 # Count number of regions in each quadrant
  
-
 (plot <- plot_df %>%
   mutate(quadrant = case_when(
     aquatic_estimate > 0 & terrestrial_estimate > 0 ~ "Q1",
@@ -1508,14 +1754,15 @@ ggsave("../images/terr_aquatic_consumption.png", plot = plot, device = "png", un
   )) %>%
   group_by(quadrant, region) %>%
   summarize(n = n_distinct(iso3c), .groups = "drop") %>%
-  ggplot(aes(x = quadrant, y = n, fill = region)) +
-  geom_col(position = "fill", width = 0.75) +
+  mutate(quadrant = factor(quadrant, levels = c("Q2", "Q1", "Q3", "Q4"))) %>%
+  ggplot(aes(x = region, y = n, fill = region)) +
+  geom_col(width = 0.75) +
   scale_fill_manual(values = artis_palette(6)) +
-  scale_y_continuous(labels = scales::percent_format()) +
+  # scale_y_continuous(labels = scales::percent_format()) +
   labs(
     x = "",
-    y = "Share of countries (%)",
-    fill = "Quadrant"
+    y = "Number of countries",
+    fill = "Region"
   ) +
   theme_minimal(base_size = 8) +
   theme(
@@ -1524,6 +1771,7 @@ ggsave("../images/terr_aquatic_consumption.png", plot = plot, device = "png", un
     panel.grid.minor.x = element_blank(),
     panel.grid.major.y = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
     panel.grid.minor.y = element_blank(),
+    axis.text.x = element_blank(),
 
     # Transparent export
     panel.background = element_rect(fill = "transparent", color = NA),
@@ -1544,7 +1792,125 @@ ggsave("../images/terr_aquatic_consumption.png", plot = plot, device = "png", un
     legend.box.margin     = margin(t = -2, b = -2),
     legend.background     = element_rect(fill = "transparent", color = NA),
     legend.box.background = element_rect(fill = "transparent", color = NA)
-  ))
+  ) +
+    facet_wrap(~ quadrant))
+
+quad_df <- plot_df %>%
+  mutate(
+    quad_raw = case_when(
+      aquatic_estimate > 0 & terrestrial_estimate > 0 ~ "Q1",
+      aquatic_estimate < 0 & terrestrial_estimate > 0 ~ "Q2",
+      aquatic_estimate < 0 & terrestrial_estimate < 0 ~ "Q3",
+      aquatic_estimate > 0 & terrestrial_estimate < 0 ~ "Q4"
+    )
+  ) %>%
+  group_by(region, quad_raw) %>%
+  summarise(n = n_distinct(iso3c), .groups = "drop") %>%
+  group_by(region) %>%
+  mutate(
+    prop = n / sum(n),
+
+    # compute direction HERE
+    x = case_when(
+      quad_raw %in% c("Q1", "Q4") ~ 1,
+      quad_raw %in% c("Q2", "Q3") ~ -1
+    ),
+    y = case_when(
+      quad_raw %in% c("Q1", "Q2") ~ 1,
+      quad_raw %in% c("Q3", "Q4") ~ -1
+    ),
+
+    xend = x * prop,
+    yend = y * prop
+  ) %>%
+  ungroup() %>%
+  mutate(
+    quadrant = factor(
+      quad_raw,
+      levels = c("Q1","Q2","Q3","Q4"),
+      labels = c("Aquatic + / Terrestrial +",
+                 "Aquatic - / Terrestrial +",
+                 "Aquatic - / Terrestrial -",
+                 "Aquatic + / Terrestrial -")
+    )
+  )
+
+library(scales)
+
+# Compute max proportion for symmetric axis limits
+max_val <- max(abs(c(quad_df$xend, quad_df$yend)))
+
+pos_percent_labels <- function(x) {
+  scales::percent_format(accuracy = 1)(abs(x))
+}
+
+# Plot
+plot <- ggplot(quad_df) +
+  # Quadrant bars
+  geom_segment(aes(x = 0, y = 0,
+                   xend = xend, yend = yend,
+                   color = quadrant),
+               linewidth = 4, lineend = "round") +
+  
+  # Axes at zero
+  geom_hline(yintercept = 0, linewidth = 0.4, colour = "black") +
+  geom_vline(xintercept = 0, linewidth = 0.4, colour = "black") +
+  
+  # Facets by region
+  facet_wrap(~ region) +
+  
+  # Equal scaling
+  coord_equal() +
+  
+  # Symmetric axes with only min/max labels
+  scale_x_continuous(
+  limits = c(-max_val, max_val),
+  breaks = c(-max_val, max_val),
+  labels = pos_percent_labels,
+  expand = c(0, 0)
+) +
+scale_y_continuous(
+  limits = c(-max_val, max_val),
+  breaks = c(-max_val, max_val),
+  labels = pos_percent_labels,
+  expand = c(0, 0)
+) +
+  
+  # Color palette
+  scale_color_viridis_d(option = "plasma", end = 0.95) +
+  
+  # Legend: two rows
+  guides(color = guide_legend(nrow = 2, byrow = TRUE)) +
+  
+  # Labels
+  labs(
+    x = "Proportion of countries",
+    y = "Proportion of countries",
+    color = "Quadrant"
+  ) +
+  
+  # Clean, publication-ready theme
+  theme_minimal(base_size = 8) +
+  theme(
+    panel.grid = element_blank(),  
+    panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 7, face = "bold"),
+    axis.text = element_text(size = 6, color = "black"),
+    axis.title = element_text(size = 7, face = "bold"),
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.title = element_text(size = 7, face = "bold"),
+    legend.text = element_text(size = 6),
+    legend.key.size = unit(0.35, "cm"),
+    legend.spacing = unit(0.1, "cm"),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.box.background = element_rect(fill = "transparent", color = NA),
+    panel.spacing = unit(1, "lines")
+  )
+
+ggsave("../images/quadrant_bar_region.jpg", plot = plot, device = "jpg", units = "in", width = 5, height = 3.5)
 
 hist(plot_df$aquatic_estimate)
 hist(plot_df$terrestrial_estimate)
@@ -1566,10 +1932,205 @@ ansari.test(plot_df$terrestrial_estimate, plot_df$aquatic_estimate, alternative 
 t_centered <- plot_df$terrestrial_estimate - median(plot_df$terrestrial_estimate, na.rm=TRUE)
 a_centered <- plot_df$aquatic_estimate - median(plot_df$aquatic_estimate, na.rm=TRUE)
 
-# Run the test again on the centered data
-ansari.test(t_centered, a_centered, alternative = "two.sided")
+# ggsave("../images/quadrant_region_counts.png", plot = plot, device = "png", units = "in", width = 5, height = 3.5, bg = "transparent")
+```
 
-ggsave("../images/quadrant_region_counts.png", plot = plot, device = "png", units = "in", width = 5, height = 3.5, bg = "transparent")
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(patchwork)
+library(cowplot)
+library(grid)
+
+# ============================================================
+# 0. REGION LEGEND FROM BAR PLOT
+# ============================================================
+
+p_bar <- plot_df %>%
+  mutate(quadrant = case_when(
+    aquatic_estimate > 0 & terrestrial_estimate > 0 ~ "Q1",
+    aquatic_estimate < 0 & terrestrial_estimate > 0 ~ "Q2",
+    aquatic_estimate < 0 & terrestrial_estimate < 0 ~ "Q3",
+    aquatic_estimate > 0 & terrestrial_estimate < 0 ~ "Q4"
+  )) %>%
+  group_by(quadrant, region) %>%
+  summarize(n = n_distinct(iso3c), .groups = "drop") %>%
+  mutate(quadrant = factor(quadrant, levels = c("Q2","Q1","Q3","Q4"))) %>%
+  ggplot(aes(x = region, y = n, fill = region)) +
+  geom_col(width = 0.75) +
+  scale_fill_manual(values = artis_palette(6)) +
+  labs(x = "", y = "Number of countries", fill = "Region") +
+  theme_minimal(base_size = 7) +
+  theme(
+    axis.text.x = element_blank(),
+    legend.position = "bottom",
+    legend.title = element_text(size = 6, face = "bold"),
+    legend.text  = element_text(size = 5),
+    legend.key.size = unit(0.6, "lines")
+  ) +
+  facet_wrap(~ quadrant)
+
+legend_regions <- get_plot_component(p_bar, "guide-box-bottom", return_all = TRUE)
+
+# ============================================================
+# 1. SCATTERPLOT (KEEP AQUATIC RELIANCE LEGEND)
+# ============================================================
+
+p_scatter_base <- plot_df %>%
+  filter(iso3c != "MDV") %>%
+  ggplot(aes(
+    x = aquatic_estimate,
+    y = terrestrial_estimate,
+    fill = aquatic_reliance_estimate,
+    label = iso3c
+  )) +
+  geom_point(shape = 21, size = 1.8, color = "black", stroke = 0.2) +
+  geom_hline(yintercept = 0) +
+  geom_vline(xintercept = 0) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  geom_text_repel(size = 2.4) +
+  scale_fill_gradient2(
+  low = "#ca0020",     # muted red
+  mid = "#f7f7f7",     # very light grey
+  high = "#0571b0",    # muted blue
+  midpoint = 0
+) +
+  labs(
+    x = expression(bold(Delta[2010-2020] ~ "Aquatic animal protein (kg/cap/day)")),
+    y = expression(bold(Delta[2010-2020] ~ "Terrestrial animal protein (kg/cap/day)")),
+    fill = expression(atop(bold(Delta[2010-2020]), bold("Aquatic animal reliance")))
+  ) +
+  theme_minimal(base_size = 8) +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 6, color = "black"),
+    axis.title = element_text(size = 7, face = "bold"),
+    legend.position = "bottom",
+    legend.title = element_text(size = 6),
+    legend.text = element_text(size = 5, angle = 35),
+    legend.key.size = unit(.8, "lines")
+  )
+
+# Extract aquatic reliance legend
+legend_reliance <- get_plot_component(p_scatter_base, "guide-box-bottom", return_all = TRUE)
+
+# Remove legend from scatter for main panel
+p_scatter <- p_scatter_base + theme(legend.position = "none")
+
+x_max <- max(abs(plot_df$aquatic_estimate), na.rm = TRUE)
+y_max <- max(abs(plot_df$terrestrial_estimate), na.rm = TRUE)
+
+p_scatter <- p_scatter +
+  coord_cartesian(
+    xlim = c(-x_max, x_max),
+    ylim = c(-y_max, y_max)
+  )
+
+# ============================================================
+# 2. QUADRANT COUNTS + INSETS
+# ============================================================
+
+quad_counts <- plot_df %>%
+  mutate(quadrant = case_when(
+    aquatic_estimate > 0 & terrestrial_estimate > 0 ~ "Q1",
+    aquatic_estimate < 0 & terrestrial_estimate > 0 ~ "Q2",
+    aquatic_estimate < 0 & terrestrial_estimate < 0 ~ "Q3",
+    aquatic_estimate > 0 & terrestrial_estimate < 0 ~ "Q4"
+  )) %>%
+  group_by(quadrant, region) %>%
+  summarise(n = n_distinct(iso3c), .groups = "drop")
+
+max_count <- max(quad_counts$n)
+
+make_inset <- function(q) {
+  quad_counts %>%
+    filter(quadrant == q) %>%
+    ggplot(aes(x = region, y = n, fill = region)) +
+    geom_col(width = 0.75) +
+    scale_fill_manual(values = artis_palette(6)) +
+    scale_y_continuous(limits = c(0, max_count)) +
+    theme_minimal(base_size = 6) +
+    theme(
+      axis.title = element_blank(),
+      axis.text = element_blank(),
+      panel.grid = element_blank(),
+      legend.position = "none",
+      plot.margin = margin(0, 0, 0, 0)
+    )
+}
+
+p_q1 <- make_inset("Q1")
+p_q2 <- make_inset("Q2")
+p_q3 <- make_inset("Q3")
+p_q4 <- make_inset("Q4")
+
+# ============================================================
+# 3. ADD TRUE INSETS INSIDE SCATTERPLOT
+# ============================================================
+
+shrink_x <- 0.18
+shrink_y <- 0.18
+
+p_with_insets <- p_scatter +
+  inset_element(p_q1, left = 1 - shrink_x, right = 1, bottom = 1 - shrink_y, top = 1) +
+  inset_element(p_q2, left = 0, right = shrink_x, bottom = 1 - shrink_y, top = 1) +
+  inset_element(p_q3, left = 0, right = shrink_x, bottom = 0, top = shrink_y) +
+  inset_element(p_q4, left = 1 - shrink_x, right = 1, bottom = 0, top = shrink_y)
+
+# ============================================================
+# 4. RIGHT-HAND AXIS
+# ============================================================
+
+fake_axis <- ggplot() +
+  scale_y_continuous(
+    limits = c(0, max_count),
+    breaks = seq(0, max_count, by = 5)
+  ) +
+  theme_void() +
+  theme(
+    axis.text.y  = element_text(size = 6),
+    axis.title.y = element_text(size = 7, face = "bold", angle = 90),
+    axis.line.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    plot.margin  = margin(0, 5, 0, 0)
+  ) +
+  labs(y = "Number of countries")
+
+scatter_with_axis <- plot_grid(
+  p_with_insets,
+  fake_axis,
+  ncol = 2,
+  rel_widths = c(1, 0.10)
+)
+
+# ============================================================
+# 5. SIDE-BY-SIDE LEGENDS
+# ============================================================
+
+legend_row <- plot_grid(
+  legend_reliance,
+  legend_regions,
+  ncol = 2,
+  rel_widths = c(1, 1)
+)
+
+# ============================================================
+# 6. FINAL COMPOSITION
+# ============================================================
+
+final_plot <- plot_grid(
+  scatter_with_axis,
+  legend_row,
+  ncol = 1,
+  rel_heights = c(1, 0.18)
+)
+
+final_plot
+
+
+# ggsave("../images/scatter_bar_overlay.jpg", plot = final_plot, device = "png", units = "in", width = 5, height = 3.5)
 ```
 
 
