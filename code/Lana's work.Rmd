@@ -1,0 +1,193 @@
+---
+title: "ROC_method_habitat"
+output: html_document
+date: "2026-03-03"
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setup packages and load data}
+library(tidyverse)
+library(cowplot)
+library(exploreARTIS)
+library(cowplot)
+library(ggrepel)
+library(countrycode)
+library(gridExtra)
+library(ggpubr)
+population<- read.csv("../output/population_fao_wb.csv")
+aquatic_reliance <- read.csv("../output/fao_aquatic_reliance_source.csv")%>%
+  left_join(population,by=c("year","iso3c"))%>%
+  mutate(protein_consumed_kg_percap=protein_consumed_t*1000/population_fao)
+```
+
+
+```{r calculate rate of change in aquatic reliance}
+roc_aquatic_separated <- aquatic_reliance %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         data_source == "new FBS", food_group == "aquatic") %>%
+  group_by(iso3c, method, habitat, year) %>%
+  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE), .groups = "drop") %>%
+  distinct() %>%
+  split(list(.$iso3c, .$method, .$habitat), drop = TRUE) %>%
+  map(~lm(protein_consumed_kg_percap~year, data = .x)) %>%
+  map_df(broom::tidy, .id = 'combined_id') %>%
+  filter(term == 'year') %>%
+  separate(combined_id, into = c("iso3c", "method", "habitat"), sep = "\\.")%>%
+  select(c("iso3c", "method", "habitat", "roc" = "estimate"))%>%
+  mutate(direction = case_when(roc > 0 ~ "inc", roc < 0 ~ "dec"))%>%
+  add_region(col = "iso3c", region.col.name = "continent")
+
+
+roc_aquatic_separated$method_habitat<-paste(roc_aquatic_separated$method,roc_aquatic_separated$habitat,sep=".")
+
+
+roc_aquatic_total <- aquatic_reliance %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         data_source == "new FBS", food_group == "aquatic") %>%
+  group_by(iso3c, year) %>%
+  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE), .groups = "drop") %>%
+  distinct() %>%
+  split(list(.$iso3c), drop = TRUE) %>%
+  map(~lm(protein_consumed_kg_percap~year, data = .x)) %>%
+  map_df(broom::tidy, .id = 'combined_id') %>%
+  filter(term == 'year') %>%
+  select(c("iso3c"="combined_id", "roc" = "estimate"))%>%
+  mutate(direction = case_when(roc > 0 ~ "inc", roc < 0 ~ "dec"))%>%
+  mutate(method_habitat = "total")%>%
+  add_region(col = "iso3c", region.col.name = "continent")
+
+
+roc_total <- bind_rows(roc_aquatic_separated, roc_aquatic_total)%>%
+  select(c("iso3c", "roc", "direction", "method_habitat"))%>%
+  add_region(col = "iso3c", region.col.name = "continent")
+
+roc_aquatic_separated %>%
+  group_by(iso3c) %>%
+  summarize(roc = round(sum(roc),1)) %>%
+  pull(roc) ==
+
+roc_aquatic_total %>%
+  select(iso3c, roc) %>%
+  mutate(roc = round(roc, 1)) %>%
+  pull(roc)
+```
+## Calculate rate of change in aquatic reliance
+dataframe roc_aquatic_separated: this calculates the rate of change in aquatic protein reliance by country and separated out by production method (aquaculture or capture) and habitat (inland or marine). The "direction" column indicates if the rate of change is positive or negative (did aquatic reliance increase or decrease over this time period). 
+dataframe roc_aquatic_total: this calculates the rate of change in aquatic protein reliance by country but does NOT separate out by production method or habitat. Rates of change are additive, so the total rate of change for each country should be the sum of the aquaculture inland + aquaculture marine + capture inland + capture marine + unknown. Consider running a test on this later. 
+dataframe roc_total: this just binds the rows of the two above dataframes so that the rates of change for each production method/habitat combination and the total rates of change per country are shown. This produces a data set where each country has 6 rows with 6 different rate of change values: total aquatic protein, inland aquaculture, marine aquaculture, inland capture, marine capture, and unknown.
+```{r obtain counts}
+Counts_separated<-roc_aquatic_separated%>%
+  group_by(method_habitat)%>%
+  count(direction)%>%
+  pivot_wider(names_from = direction, values_from = n) %>%
+  rename(decreasing = dec, increasing = inc)%>%
+  pivot_longer(cols = c(decreasing, increasing), names_to = "direction",values_to = "count")
+Counts_total<-roc_aquatic_total%>%
+  group_by(method_habitat)%>%
+  count(direction)%>%
+  pivot_wider(names_from = direction, values_from = n) %>%
+  rename(decreasing = dec, increasing = inc)%>%
+  pivot_longer(cols = c(decreasing, increasing), names_to = "direction",values_to = "count")
+Counts_separated_continent<-roc_aquatic_separated%>%
+  group_by(continent, method_habitat)%>%
+  count(direction)%>%
+  pivot_wider(names_from = direction, values_from = n) %>%
+  rename(decreasing = dec, increasing = inc)%>%
+  pivot_longer(cols = c(decreasing, increasing), names_to = "direction",values_to = "count")
+Counts_total_continent<-roc_aquatic_total%>%
+  group_by(continent, method_habitat)%>%
+  count(direction)%>%
+  pivot_wider(names_from = direction, values_from = n) %>%
+  rename(decreasing = dec, increasing = inc)%>%
+  pivot_longer(cols = c(decreasing, increasing), names_to = "direction",values_to = "count")
+Counts_by_method_habitat <- bind_rows(Counts_separated, Counts_total)%>%
+  select(c( "method_habitat", "direction", "count"))
+Counts_by_continent <- bind_rows(Counts_separated_continent, Counts_total_continent)%>%
+  select(c("continent", "method_habitat", "direction", "count"))
+```
+### obtain counts
+Dataframe Counts_by_method_habitat: shows the number of countries with an increasing vs. decreasing rate of change separated by the production method and habitat
+Dataframe Counts_by_continent: shows the number of countries with increasing vs. decreasing rate of change separated by both production method and habitat as well as by continent 
+```{r ROC trends of all countries by method and habitat}
+ggplot(Counts_by_method_habitat, aes(x = method_habitat, y = count, fill = direction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "ROC Trends of all Countries by Method and Habitat", x = "Method & Habitat", y = "number of countries", fill = "Direction of Change") +
+  coord_flip()
+```
+## ROC Trends of all Countries by method and habitat
+This figure shows the number of countries (n=184) with a positive rate of change versus with a negative rate of change, by production method and habitat (as well as total = sum of all methods and habitats).
+  - The highest proportion of countries have an increase in marine aquaculture
+  - The lowest proportion of countries have an increase in capture inland 
+  - Just over half of countries have an increase in total aquatic reliance 
+  - Not sure what the unknown category is 
+```{r Rate of Change By Method and Habitat per Continent, fig.width=10}
+p1<-ggplot(data=(filter(Counts_by_continent, continent == "Africa")), aes(x = fct_relevel(method_habitat, "total"), y = count, fill = direction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Africa", x = "Method & Habitat", y = "number of countries", fill = "Direction of Change") +
+  coord_flip()
+p2<-ggplot(data=(filter(Counts_by_continent, continent == "Asia")), aes(x = fct_relevel(method_habitat, "total"), y = count, fill = direction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Asia", x = "Method & Habitat", y = "number of countries", fill = "Direction of Change") +
+  coord_flip()
+p3<-ggplot(data=(filter(Counts_by_continent, continent == "Europe")), aes(x = fct_relevel(method_habitat, "total"), y = count, fill = direction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Europe", x = "Method & Habitat", y = "number of countries", fill = "Direction of Change") +
+  coord_flip()
+p4<-ggplot(data=(filter(Counts_by_continent, continent == "North America")), aes(x = fct_relevel(method_habitat, "total"), y = count, fill = direction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "N America", x = "Method & Habitat", y = "number of countries", fill = "Direction of Change") +
+  coord_flip()
+p5<-ggplot(data=(filter(Counts_by_continent, continent == "South America")), aes(x = fct_relevel(method_habitat, "total"), y = count, fill = direction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "S America", x = "Method & Habitat", y = "number of countries", fill = "Direction of Change") +
+  coord_flip()
+p6<-ggplot(data=(filter(Counts_by_continent, continent == "Oceania")), aes(x = fct_relevel(method_habitat, "total"), y = count, fill = direction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Oceania", x = "Method & Habitat", y = "number of countries", fill = "Direction of Change") +
+  coord_flip()
+  
+plot<-ggarrange(p1, p2, p3, p4, p5, p6, ncol=2, nrow=3, common.legend = TRUE, legend="bottom")
+annotate_figure(plot, top = text_grob("Rate of Change By Method and Habitat per Continent", face = "bold", size = 14))
+```
+## Rate of Change By Method and Habitat per Continent
+This figure shows the number of countries with increasing and decreasing aquatic reliance per continent, separated by production method and habitat along with the total (sum of all production methods and habitats). It is worth noting that this figure sets all bars equal length, which is for the purposes of proportional comparison within the continent. Every continent has a different number of countries, as indicated on the x axis scales. 
+```{r Rate of Change By Continent per Method and Habitat, fig.width=10}
+p7<-ggplot(data=(filter(Counts_by_continent,  method_habitat== "aquaculture.inland")), aes(x = continent, y = count, fill = direction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Inland Aquaculture", x = "Continent", y = "number of countries", fill = "Direction of Change") +
+  coord_flip()
+p8<-ggplot(data=(filter(Counts_by_continent,  method_habitat== "aquaculture.marine")), aes(x = continent, y = count, fill = direction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Marine Aquaculture", x = "Continent", y = "number of countries", fill = "Direction of Change") +
+  coord_flip()
+p9<-ggplot(data=(filter(Counts_by_continent,  method_habitat== "capture.inland")), aes(x = continent, y = count, fill = direction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Inland Capture", x = "Continent", y = "number of countries", fill = "Direction of Change") +
+  coord_flip()
+p10<-ggplot(data=(filter(Counts_by_continent,  method_habitat== "capture.marine")), aes(x = continent, y = count, fill = direction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Marine Capture", x = "Continent", y = "number of countries", fill = "Direction of Change") +
+  coord_flip()
+p11<-ggplot(data=(filter(Counts_by_continent,  method_habitat== "unknown.unknown")), aes(x = continent, y = count, fill = direction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Unknown", x = "Continent", y = "number of countries", fill = "Direction of Change") +
+  coord_flip()
+p12<-ggplot(data=(filter(Counts_by_continent,  method_habitat== "total")), aes(x = continent, y = count, fill = direction)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Total", x = "Continent", y = "number of countries", fill = "Direction of Change") +
+  coord_flip()
+  
+plot<-ggarrange(p7, p8, p9, p10, p11, p12, ncol=2, nrow=3, common.legend = TRUE, legend="bottom")
+annotate_figure(plot, top = text_grob("Rate of Change By Continent per Method and Habitat", face = "bold", size = 14))
+```
+## Rate of Change By Continent per Method and Habitat
+This figure shows the number of countries per continent with increasing and decreasing rates of change in aquatic protein reliance separated by production method and habitat. 
+  - Inland Aquaculture: Majority of countries in S America, N America, Africa and Asia increased reliance on inland aquaculture. In Oceania and Europe, a majority of countries decreased their reliance on inland aquaculture.
+  
+  - Marine Aquaculture: Majority of countries in every continent except Oceania increased reliance on marine aquaculture.In Oceania,   most countries decreased their reliance on marine aquaculture.
+  
+  - Inland Capture: Majority of countries in every continent except N America decreased reliance on inland capture. In N America, more countries increased reliance on inland capture than decreased. 
+  
+  - Marine capture: Trends are scattered, Africa and Europe have about a 50/50 split. Asia and Oceania had the highest proportion of decrease. N and S America had the highest proportion of increase.
