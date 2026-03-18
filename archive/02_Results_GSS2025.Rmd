@@ -39,7 +39,7 @@ aa_reliance_mean_global_trends_alt <- aquatic_reliance %>%
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) # Remove overlapping years, prioritizing new years
 
 aa_reliance_mean_global_trends <- aa_reliance_mean_global_trends_alt %>%
-  mutate(food_group = factor(food_group, levels = c("terrestrial", "aquatic"))) %>%
+  mutate(food_group = factor(food_group, levels = c("Terrestrial", "Aquatic"))) %>%
   ggplot(aes(x = year, y = prop_animal_protein, fill = food_group)) +
   geom_area(size = 0.4) +  # adds subtle separation between layers
   scale_fill_manual(values = c(desaturate("#AA3C3B", 0.4), "#3D8A8D")) +
@@ -121,7 +121,7 @@ artis_colors <- artis_colors[c(2,1)]
 aa_reliance_multiple_trends <- aa_reliance_multiple_trends_alt_1 %>%
   ggplot(aes(x = year, y = prop_animal_protein, fill = consumption_source)) +
   geom_area(size = 0.75) +  # clean separation between areas
-  scale_fill_manual(values = artis_colors) +
+  scale_fill_manual(values = c("#1179be", "#b1d0ed")) +
   facet_wrap(~ habitat_method) +
   labs(
     fill = "Consumption source",
@@ -360,7 +360,7 @@ b <- aquatic_plot_data %>%
 
     # Axis and text styling
     axis.text = element_text(size = 6, color = "black"),
-    axis.title.x = element_text(size = 10, margin = margin(t = 5), face = "bold"),
+    axis.title.x = element_text(size = 7, margin = margin(t = 5), face = "bold"),
     axis.title.y = element_text(size = 7, margin = margin(r = 5)),
     axis.text.y = element_text(size = 6),
 
@@ -448,131 +448,29 @@ panel.background = element_rect(fill = "transparent", color = NA),
 aa_reliance_chloropleth <- plot_grid(
   a + theme(legend.position = "none"),
   b + theme(legend.position = "none"),
-  align = "v",
-  nrow =
+  align = "v"
 )
 
 # extract one shared legend and append it below
 legend <- get_legend(a)
-(aa_reliance_chloropleth <- plot_grid(aa_reliance_chloropleth, legend, ncol = 2, rel_heights = c(1, 0.1)))
+(aa_reliance_chloropleth <- plot_grid(aa_reliance_chloropleth, legend, ncol = 1, rel_heights = c(1, 0.1)))
 
 ggsave("../images/GSS/aa_reliance_chloropleth.png", plot = aa_reliance_chloropleth, device = "png", units = "in", width = 5, height = 2.5, bg = "transparent")
 
-ggsave("../images/GSS/aa_reliance_chloropleth_a.png", plot = a, device = "png", units = "in", width = 5, height = 2.5, bg = "transparent")
 
-ggsave("../images/GSS/aa_reliance_chloropleth_b.png", plot = b, device = "png", units = "in", width = 5, height = 2.5, bg = "transparent")
-
-ggsave("../images/GSS/aa_reliance_chloropleth_legend.png", plot = legend, device = "png", units = "in", width = 5, height = 2.5, bg = "transparent")
-```
-# Plots to go with the world plots
-
-```{r}
-library(dplyr)
-library(forcats)
-library(ggplot2)
-
-# Inland aquaculture
-(aa_reliance_top_inland_aqua <- aquatic_reliance %>%
+?fct_reorder(iso3c, .fun = prop_animal_protein)
+# Add ranked bar plots
+aquatic_reliance %>%
   filter(year == 2019,
          food_group == "aquatic",
          habitat == "inland",
          method == "aquaculture") %>%
   group_by(iso3c) %>%
-  summarize(prop_animal_protein = 100 * sum(prop_animal_protein, na.rm = TRUE)) %>%
-  top_n(10, prop_animal_protein) %>%
-  add_region(col = "iso3c", region.col.name = "region") %>%
-  mutate(
-    iso3c = countrycode(iso3c, origin = "iso3c", destination = "country.name"),
-    iso3c = fct_reorder(iso3c, prop_animal_protein)
-  ) %>%
-  ggplot(aes(x = prop_animal_protein, y = iso3c, fill = region)) +
-  geom_col(width = 0.7) +
-  scale_fill_manual(values = artis_palette(3)) +
-  labs(
-    x = "",
-    y = "",
-    fill = "Region"
-  ) +
-  theme_minimal(base_size = 8) +
-  theme(
-    # Grid and background
-    panel.grid.major.x = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor = element_blank(),
-    panel.background = element_rect(fill = "transparent", color = NA),
-    plot.background = element_rect(fill = "transparent", color = NA),
-
-    # Axis styling
-    axis.text.y = element_text(size = 6, color = "black"),
-    axis.text.x = element_text(size = 6, color = "black"),
-    axis.title.x = element_text(size = 7, face = "bold", margin = margin(t = 4)),
-
-    # Legend styling
-    legend.position = "bottom",
-    legend.title = element_text(size = 7, face = "bold"),
-    legend.text = element_text(size = 6),
-    legend.key.size = unit(0.3, "cm"),
-    legend.box = "vertical",
-    legend.spacing = unit(0.1, "cm"),
-    legend.margin = margin(t = 0, b = 0),
-    legend.box.margin = margin(t = -2, b = -2),
-    legend.background = element_rect(fill = "transparent", color = NA),
-    legend.box.background = element_rect(fill = "transparent", color = NA)
-  ))
-
-# Marine capture
-(aa_reliance_top_marine_cap <- aquatic_reliance %>%
-  filter(year == 2019,
-         food_group == "aquatic",
-         habitat == "marine",
-         method == "capture") %>%
-  group_by(iso3c) %>%
-  summarize(prop_animal_protein = 100 * sum(prop_animal_protein, na.rm = TRUE)) %>%
-  top_n(10, prop_animal_protein) %>%
-  add_region(col = "iso3c", region.col.name = "region") %>%
-  mutate(
-    iso3c = countrycode(iso3c, origin = "iso3c", destination = "country.name"),
-    iso3c = fct_reorder(iso3c, prop_animal_protein)
-  ) %>%
-  ggplot(aes(x = prop_animal_protein, y = iso3c, fill = region)) +
-  geom_col(width = 0.7) +
-  scale_fill_manual(values = artis_palette(3)) +
-  labs(
-    x = "Aquatic Animal Protein Reliance (%)",
-    y = "",
-    fill = "Region"
-  ) +
-  theme_minimal(base_size = 8) +
-  theme(
-    # Grid and background
-    panel.grid.major.x = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor = element_blank(),
-    panel.background = element_rect(fill = "transparent", color = NA),
-    plot.background = element_rect(fill = "transparent", color = NA),
-
-    # Axis styling
-    axis.text.y = element_text(size = 6, color = "black"),
-    axis.text.x = element_text(size = 6, color = "black"),
-    axis.title.x = element_text(size = 10, face = "bold", margin = margin(t = 4)),
-
-    # Legend styling
-    legend.position = "bottom",
-    legend.title = element_text(size = 7, face = "bold"),
-    legend.text = element_text(size = 6),
-    legend.key.size = unit(0.3, "cm"),
-    legend.box = "vertical",
-    legend.spacing = unit(0.1, "cm"),
-    legend.margin = margin(t = 0, b = 0),
-    legend.box.margin = margin(t = -2, b = -2),
-    legend.background = element_rect(fill = "transparent", color = NA),
-    legend.box.background = element_rect(fill = "transparent", color = NA)
-  ))
-
-ggsave("../images/GSS/aa_reliance_top_inland_aqua.png", plot = aa_reliance_top_inland_aqua, device = "png", units = "in", width = 5, height = 2.5, bg = "transparent")
-
-ggsave("../images/GSS/aa_reliance_top_marine_cap.png", plot = aa_reliance_top_marine_cap, device = "png", units = "in", width = 5, height = 2.5, bg = "transparent")
-
+  summarize(prop_animal_protein = 100 * sum(prop_animal_protein)) %>%
+  mutate(iso3c = fct_reorder(iso3c, prop_animal_protein)) %>%
+  top_n(10) %>%
+  ggplot(aes(x = prop_animal_protein, y = iso3c)) +
+  geom_col()
 ```
 
 
@@ -661,55 +559,55 @@ ggsave("../images/GSS/aquatic_reliance_rank_change.png", plot = aquatic_reliance
 
 
 ```{r compare population data}
-# library(scales)  # for comma_format
-# 
-# (pop_comparisons <- absolute_diff_dataset %>%
-#   ggplot(aes(x = population_fao, y = population_wb, color = data_source)) +
-#   geom_point(size = 1.8, alpha = 0.8) +
-#   geom_abline(slope = 1, intercept = 0, color = "gray30", linetype = "dashed", linewidth = 0.4) +
-#   scale_color_manual(values = c(
-#     "new FBS" = "#1b60a9ff",
-#     "old FBS" = "#fa504cff"
-#   )) +
-#   # 👇 Add comma formatting for both axes
-#   scale_x_continuous(labels = comma_format(accuracy = 1)) +
-#   scale_y_continuous(labels = comma_format(accuracy = 1)) +
-#   labs(
-#     x = "FAO Population Estimate",
-#     y = "World Bank Population Estimate",
-#     color = "Data Source"
-#   ) +
-#   theme_minimal(base_size = 8) +
-#   theme(
-#     # Grid and background
-#     panel.grid.major = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
-#     panel.grid.minor = element_blank(),
-#     panel.background = element_rect(fill = "transparent", color = NA),
-#     plot.background = element_rect(fill = "transparent", color = NA),
-# 
-#     # Axis and text styling
-#     axis.text = element_text(size = 6, color = "black"),
-#     axis.title = element_text(size = 7, margin = margin(t = 2), face = "bold"),
-#     
-#     # Titles (optional)
-#     plot.title = element_text(size = 8, face = "bold", hjust = 0),
-#     plot.subtitle = element_text(size = 7, color = "gray30", hjust = 0, margin = margin(b = 3)),
-#     
-#     # Legend styling
-#     legend.position = "bottom",
-#     legend.title = element_text(size = 7, face = "bold"),
-#     legend.text = element_text(size = 6),
-#     legend.key.size = unit(0.3, "cm"),
-#     legend.box = "horizontal",
-#     legend.margin = margin(t = 0, b = 0),
-#     legend.box.margin = margin(t = -2, b = -2),
-#     legend.background = element_rect(fill = "transparent", color = NA),
-#     legend.box.background = element_rect(fill = "transparent", color = NA)
-#   ) +
-#     guides(color = "none"))
-# 
-# 
-# ggsave("../images/GSS/pop_comparisons.png", plot = pop_comparisons, device = "png", units = "in", width = 5, height = 4, bg = "transparent")
+library(scales)  # for comma_format
+
+(pop_comparisons <- absolute_diff_dataset %>%
+  ggplot(aes(x = population_fao, y = population_wb, color = data_source)) +
+  geom_point(size = 1.8, alpha = 0.8) +
+  geom_abline(slope = 1, intercept = 0, color = "gray30", linetype = "dashed", linewidth = 0.4) +
+  scale_color_manual(values = c(
+    "new FBS" = "#1b60a9ff",
+    "old FBS" = "#fa504cff"
+  )) +
+  # 👇 Add comma formatting for both axes
+  scale_x_continuous(labels = comma_format(accuracy = 1)) +
+  scale_y_continuous(labels = comma_format(accuracy = 1)) +
+  labs(
+    x = "FAO Population Estimate",
+    y = "World Bank Population Estimate",
+    color = "Data Source"
+  ) +
+  theme_minimal(base_size = 8) +
+  theme(
+    # Grid and background
+    panel.grid.major = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA),
+
+    # Axis and text styling
+    axis.text = element_text(size = 6, color = "black"),
+    axis.title = element_text(size = 7, margin = margin(t = 2), face = "bold"),
+    
+    # Titles (optional)
+    plot.title = element_text(size = 8, face = "bold", hjust = 0),
+    plot.subtitle = element_text(size = 7, color = "gray30", hjust = 0, margin = margin(b = 3)),
+    
+    # Legend styling
+    legend.position = "bottom",
+    legend.title = element_text(size = 7, face = "bold"),
+    legend.text = element_text(size = 6),
+    legend.key.size = unit(0.3, "cm"),
+    legend.box = "horizontal",
+    legend.margin = margin(t = 0, b = 0),
+    legend.box.margin = margin(t = -2, b = -2),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.box.background = element_rect(fill = "transparent", color = NA)
+  ) +
+    guides(color = "none"))
+
+
+ggsave("../images/GSS/pop_comparisons.png", plot = pop_comparisons, device = "png", units = "in", width = 5, height = 4, bg = "transparent")
 ```
 
 ```{r}
@@ -790,6 +688,82 @@ plot_df<- aquatic_protein_quant %>%
     theme(legend.position = "bottom",
           legend.text = element_text(size = 6)))
 
+
+# global chart (not faceted by region)
+(reliance_roc <- plot_df %>%
+  filter(iso3c != "MDV") %>%
+  ggplot(aes(
+    x = aquatic_estimate,
+    y = terrestrial_estimate,
+    color = aquatic_reliance_estimate,
+    label = iso3c
+  )) +
+  geom_point(size = 0.8) +
+  geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.5, alpha = 0.5) +
+  geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.5, alpha = 0.5) +
+  geom_text_repel(size = 2) +
+  geom_rug(alpha = 0.6, linewidth = 0.2) +
+  scale_color_viridis_c(option = "plasma") +
+  labs(
+    x = "Rate of change in aquatic animal\nprotein consumption (kg/cap/day)",
+    y = "Rate of change in terrestrial\nprotein consumption (kg/cap/day)",
+    color = "Rate of change in aquatic animal reliance"
+  ) +
+  theme_minimal(base_size = 8) +
+  theme(
+    # Grid and background
+    panel.grid.major.x = element_line(color = scales::alpha("black", 0.1), linewidth = 0.3),
+    panel.grid.major.y = element_line(color = scales::alpha("black", 0.1), linewidth = 0.3),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA),
+
+    # Axis styling
+    axis.text = element_text(size = 6, color = "black"),
+    axis.title = element_text(size = 7),
+    axis.title.y = element_text(margin = margin(r = 5)),
+    axis.title.x = element_text(margin = margin(t = 5)),
+
+    # Legend styling (to match previous)
+    legend.position = "bottom",
+    legend.title = element_text(size = 7, face = "bold"),
+    legend.text = element_text(size = 6),
+    legend.key.size = unit(0.3, "cm"),
+    legend.box = "vertical",
+    legend.spacing = unit(0.1, "cm"),
+    legend.margin = margin(t = 0, b = 0),
+    legend.box.margin = margin(t = -2, b = -2),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.box.background = element_rect(fill = "transparent", color = NA),
+
+    # Text and labels
+    plot.title = element_text(size = 8, face = "bold", hjust = 0),
+    plot.subtitle = element_text(size = 7),
+    plot.caption = element_text(size = 6)
+  ))
+
+(
+  reliance_roc <- plot_df %>% filter(iso3c != "MDV") %>% ggplot(
+    aes(
+      x = aquatic_estimate,
+      y = terrestrial_estimate,
+      color = aquatic_reliance_estimate,
+      label = iso3c
+    )
+  ) + geom_point(size = 0.8) + geom_hline(
+    yintercept = 0,
+    linetype = "dashed",
+    lwd = 0.75,
+    alpha = 0.6
+  ) + geom_vline(
+    xintercept = 0,
+    linetype = "dashed",
+    lwd = 0.75,
+    alpha = 0.6
+  ) + geom_text_repel(size = 2) + geom_rug() + labs(x = "Rate of change in aquatic animal\nprotein consumption (kg/cap/day)", y = "Rate of change in terrestrial\nprotein consumption (kg/cap/day)", color = "Rate of change in aquatic animal reliance") + theme_light() + theme(axis.text = element_text(size = 5)) + scale_color_viridis_c(option = "plasma") + theme(legend.position = "bottom", legend.text = element_text(size = 6))
+)
+
+
 (reliance_roc_pres <- plot_df %>%
   filter(iso3c != "MDV") %>%
   ggplot(aes(
@@ -801,72 +775,96 @@ plot_df<- aquatic_protein_quant %>%
   geom_point(size = 1.6) +
   geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.7, alpha = 0.7) +
   geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.7, alpha = 0.7) +
-  geom_text_repel(size = 3.3) +
-  
-  # Diverging color palette centered at 0
-  scale_color_gradient2(
-    high = "#2c7bb6",   # blue for negative
-    mid = "white",     # neutral at 0
-    low = "#d7191c",  # red for positive
-    midpoint = 0,
-    name = "Rate of change in\naquatic animal reliance"
-  ) +
-
+  geom_text_repel(
+    size = 3.3) +
+  scale_color_viridis_c(option = "inferno") +
   labs(
-    x = "Rate of change in aquatic animal\nprotein consumption (kg/cap/day)",
-    y = "Rate of change in terrestrial\nprotein consumption (kg/cap/day)"
+    x = "Change in aquatic animal\nprotein consumption (kg/cap/day)",
+    y = "Change in terrestrial\nprotein consumption (kg/cap/day)",
+    color = "Change in aquatic animal reliance"
   ) +
   theme_classic(base_size = 13) +
   theme(
+    # Transparent backgrounds
     panel.background = element_rect(fill = "transparent", color = NA),
     plot.background = element_rect(fill = "transparent", color = NA),
+    
+    # Axes and text
     axis.text = element_text(size = 11, color = "black"),
-    axis.title = element_text(size = 13, face = "bold", color = "white"),
+    axis.title = element_text(size = 13, face = "bold", color = "black"),
     axis.line = element_line(color = "black", linewidth = 0.6),
     axis.ticks = element_line(color = "black", linewidth = 0.5),
+    
+    # Legend
     legend.position = "bottom",
-    legend.title = element_text(size = 12, face = "bold", color = "white"),
-    legend.text = element_text(size = 7.5, color = "white"),
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 7.5),
     legend.key.size = unit(0.8, "cm"),
     legend.background = element_rect(fill = "transparent", color = NA),
     legend.box.background = element_rect(fill = "transparent", color = NA),
+    
+    # Optional: larger margins for slide readability
     plot.margin = margin(5, 5, 5, 5)
   ))
 
-legend <- get_legend(reliance_roc_pres)
-
-reliance_roc_pres <- reliance_roc_pres +
-  guides(color = "none")
-# top left quadrant (aquatic decreasing, terrestrial increasing)
-top_left<-plot_df %>%
-  filter(aquatic_estimate<0, terrestrial_estimate>0) %>%
-  select(iso3c, region, roc_aquatic=aquatic_estimate, roc_terrestrial=terrestrial_estimate, aquatic_reliance_estimate)%>%
-  mutate(score=abs(roc_aquatic/mean(roc_aquatic))+abs(roc_terrestrial/mean(roc_terrestrial)))%>%
-  arrange(desc(score))
-  
-# top right quadrant (aquatic and terrestrial both increasing)
-top_right<-plot_df %>%
-  filter(aquatic_estimate>0, terrestrial_estimate>0) %>%
-  select(iso3c, region, roc_aquatic=aquatic_estimate, roc_terrestrial=terrestrial_estimate, aquatic_reliance_estimate)%>%
-  mutate(score=abs(roc_aquatic/mean(roc_aquatic))+abs(roc_terrestrial/mean(roc_terrestrial)))%>%
-  arrange(desc(score))
-# bottom left quadrant (aquatic and terrestrial both decreasing)
-bottom_left<-plot_df %>%
-  filter(aquatic_estimate<0, terrestrial_estimate<0) %>%
-  select(iso3c, region, roc_aquatic=aquatic_estimate, roc_terrestrial=terrestrial_estimate, aquatic_reliance_estimate)%>%
-  mutate(score=abs(roc_aquatic/mean(roc_aquatic))+abs(roc_terrestrial/mean(roc_terrestrial)))%>%
-  arrange(desc(score))
-# bottom right quadrant (aquatic increasing, terrestrial decreasing)
-bottom_right<-plot_df %>%
-  filter(aquatic_estimate>0, terrestrial_estimate<0) %>%
-  select(iso3c, region, roc_aquatic=aquatic_estimate, roc_terrestrial=terrestrial_estimate, aquatic_reliance_estimate)%>%
-  mutate(score=abs(roc_aquatic/mean(roc_aquatic))+abs(roc_terrestrial/mean(roc_terrestrial)))%>%
-  arrange(desc(score))
-
+ 
 
 ggsave("../images/GSS/terr_aquatic.png", plot = reliance_roc_pres, device = "png", units = "in", width = 7, height = 5, bg = "transparent")
+```
 
-ggsave("../images/GSS/terr_aquatic_legend.png", plot = legend, device = "png", units = "in", width = 7, height = 5, bg = "transparent")
+```{r}
+  lm(aquatic_reliance_estimate ~ aquatic_estimate * region + terrestrial_estimate * region, data = plot_df) %>%
+    summary()
+  library(lme4)
+  
+model <- lmer(aquatic_reliance_estimate ~ aquatic_estimate + terrestrial_estimate +
+       (aquatic_estimate + terrestrial_estimate | region),
+     data = plot_df)
 
+re <- ranef(model, condVar = TRUE)  # condVar=TRUE lets us extract uncertainty later
+re_region <- re$region
+
+
+df_re <- as_tibble(re_region, rownames = "region")
+df_long <- df_re %>%
+  pivot_longer(cols = c(aquatic_estimate, terrestrial_estimate),
+               names_to = "slope_type",
+               values_to = "slope_value")
+
+
+ggplot(df_long,
+       aes(x = region, y = slope_value, fill = slope_type, group = slope_type)) +
+  geom_col() +
+  theme_minimal() +
+  labs(title = "Random Slopes by Region",
+       x = "Region", y = "Random Slope Value",
+       color = "Slope Type") +
+    scale_fill_manual(values = c("blue", "red"))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+```{r}
+pre_df <- aquatic_reliance %>%
+  group_by(year, iso3c, data_source, food_group) %>%
+  summarize(protein_consumed_t = sum(protein_consumed_t)) %>%
+  pivot_wider(values_from = "protein_consumed_t", names_from = "food_group") %>%
+  mutate(aquatic_reliance = Aquatic / (Aquatic + Terrestrial)) %>%
+  add_region(col = "iso3c", region.col.name = "region")
+
+dataset <- {lmer(aquatic_reliance ~ Aquatic + Terrestrial +
+       (Aquatic + Terrestrial | region),
+     data = pre_df) %>%
+  ranef()}$region
+
+ dataset%>%
+  mutate(iso3c = rownames(.)) %>%
+  add_region(col = "iso3c", region.col.name = "region") %>%
+  group_by(region) %>%
+  summarize(`(Intercept)` = mean(`(Intercept)`),
+           Aquatic = mean(Aquatic),
+           Terrestrial = mean(Terrestrial)) %>%
+  pivot_longer(cols = c("Aquatic", "Terrestrial")) %>%
+  ggplot(aes(x = region, y = value, fill = name)) +
+    geom_col()
 ```
 

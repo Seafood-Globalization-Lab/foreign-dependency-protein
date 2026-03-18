@@ -107,6 +107,32 @@ Counts_by_method_habitat <- bind_rows(Counts_separated, Counts_total)%>%
 Counts_by_continent <- bind_rows(Counts_separated_continent, Counts_total_continent)%>%
   select(c("continent", "method_habitat", "direction", "count"))
 ```
+
+```{r delete}
+roc_aquatic_total <- aquatic_reliance %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         data_source == "new FBS", food_group == "aquatic") %>%
+  group_by(iso3c, year) %>%
+  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE), .groups = "drop") %>%
+  distinct() %>%
+  split(list(.$iso3c), drop = TRUE) %>%
+  map(~lm(protein_consumed_kg_percap~year, data = .x)) %>%
+  map_df(broom::tidy, .id = 'combined_id') %>%
+  filter(term == 'year') %>%
+  select(c("iso3c"="combined_id", "roc" = "estimate"))%>%
+  mutate(direction = case_when(roc > 0 ~ "inc", roc < 0 ~ "dec"))%>%
+  mutate(method_habitat = "total")%>%
+  add_region(col = "iso3c", region.col.name = "continent")
+
+Counts_total_continent<-roc_aquatic_total%>%
+  group_by(continent, method_habitat)%>%
+  count(direction)%>%
+  pivot_wider(names_from = direction, values_from = n) %>%
+  rename(decreasing = dec, increasing = inc)%>%
+  pivot_longer(cols = c(decreasing, increasing), names_to = "direction",values_to = "count")
+```
+
+
 ### obtain counts
 Dataframe Counts_by_method_habitat: shows the number of countries with an increasing vs. decreasing rate of change separated by the production method and habitat
 Dataframe Counts_by_continent: shows the number of countries with increasing vs. decreasing rate of change separated by both production method and habitat as well as by continent 

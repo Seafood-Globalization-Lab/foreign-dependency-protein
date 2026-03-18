@@ -1,0 +1,147 @@
+---
+title: "Lana / Connor working document"
+author: "Lana Huang and Connor Quiroz"
+date: "2025-09-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+```{r}
+
+
+## Data Frames ##
+df <- read.csv("supply_importance_long.csv")
+USA.aqct.fs <- filter(df, method=="aquaculture", consumer_iso3c=="USA", element=="Food supply (kcal/capita/day)")
+USA.aqct.fs <- filter(df, method=="aquaculture", consumer_iso3c=="USA", element=="Food supply (kcal/capita/day)")
+USA.aqct.fs.for.m <- filter(df, method=="aquaculture", consumer_iso3c=="USA", element=="Food supply (kcal/capita/day)", consumption_source=="foreign", habitat=="marine")
+USA.aqct.fs.dom.m <- filter(df, method=="aquaculture", consumer_iso3c=="USA", element=="Food supply (kcal/capita/day)", consumption_source=="domestic", habitat=="marine")
+USA.aqct.fs.for.i <- filter(df, method=="aquaculture", consumer_iso3c=="USA", element=="Food supply (kcal/capita/day)", consumption_source=="foreign", habitat=="inland")
+USA.aqct.fs.dom.i <- filter(df, method=="aquaculture", consumer_iso3c=="USA", element=="Food supply (kcal/capita/day)", consumption_source=="domestic", habitat=="inland")
+
+#### AQUATIC VS TOTAL ANIMAL AMT 
+ggplot()+
+  geom_line(data=USA.aqct.fs, aes(x=year, y=aquatic_animal_amount), color="blue", size=1.25)+
+  geom_line(data=USA.aqct.fs, aes(x=year, y=total_animal_amount*0.03), color="red", size=1.25)+
+  scale_y_continuous(name = 'aquatic animal amount', breaks=seq(20,40, by=2), sec.axis = sec_axis(~./0.027,name = "total animal amount"))+
+  ggtitle("Aquatic vs Total Animal Amt USA")+
+  theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank())+
+  theme(axis.text.y  = element_text(color = 'blue'),
+        axis.title.y = element_text(color= 'blue'),
+        axis.text.y.right =  element_text(color = 'red'),
+        axis.title.y.right = element_text(color='red'), axis.text.x = element_text(color="black"))+
+  theme(panel.background = element_rect(fill = "white"), axis.line = element_line(color = "black"))
+
+```
+
+
+```{r}
+aquatic_fbs <- read.csv("../data/fao_aquatic_reliance_source.csv")
+
+# ac.for.m <- aquatic_fbs %>% 
+#   filter(method == "aquaculture", 
+#          iso3c == "USA", 
+#          consumption_source == "foreign", 
+#          habitat == "marine")
+# 
+# ac.dom.m <- aquatic_fbs %>% 
+#   filter(method == "aquaculture", 
+#          iso3c == "USA", 
+#          consumption_source == "domestic", 
+#          habitat == "marine")
+# 
+# ac.for.i <- aquatic_fbs %>% 
+#   filter(method == "aquaculture", 
+#          iso3c == "USA", 
+#          consumption_source == "foreign", 
+#          habitat == "inland")
+# 
+# ac.dom.i <- aquatic_fbs %>% 
+#   filter(method == "aquaculture", 
+#          iso3c == "USA", 
+#          consumption_source == "foreign", 
+#          habitat == "inland")
+
+# USA.aqct <- aquatic_fbs %>% 
+#   filter(method == "aquaculture", 
+#          iso3c == "USA")
+
+# aquatic_fbs %>%
+#   filter(iso3c == "ESP",
+#          !(year %in% c(2010, 2011, 2012, 2013) & 
+#              data_source == "old FBS")) %>%
+#   group_by(food_group, year, consumption_source, habitat, data_source) %>%
+#   summarize(prop_animal_protein = case_when(
+#     food_group == "Aquatic" ~ sum(prop_animal_protein, na.rm = TRUE),
+#     food_group == "Terrestrial" ~ mean(prop_animal_protein, na.rm = TRUE)
+#   )) %>%
+#   summarize(mean = mean(prop_animal_protein)) %>%
+#   filter(consumption_source != "unknwon",
+#          habitat != "unknown") %>%
+#   ggplot(aes(x = year, y = mean, color = food_group, linetype = data_source)) +
+#   geom_line(size = 0.9) +
+#   theme_light() +
+#   labs(x = "", y = "Animal protein Reliance (%)", color = "Food group", linetype = "Data source") +
+#   facet_wrap(consumption_source ~ habitat) +
+#   theme(axis.text = element_text(size = 7, angle = 45),
+#         legend.position = "bottom") +
+#   scale_color_manual(values = artis_palette(3)) 
+
+
+for (i in c("USA", "CHN", "FRA", "ESP", "JPN")) {
+  plot <- aquatic_fbs %>%
+  filter(
+    iso3c == i,
+    !(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")
+  ) %>%
+  mutate(
+    sourcing_type = case_when(
+      food_group == "Terrestrial" ~ "Terrestrial",
+      food_group == "Aquatic" ~ paste(consumption_source, habitat, sep = " - ")
+    )
+  ) %>%
+  filter(
+    consumption_source != "unknown",
+    habitat != "unknown"
+  ) %>%
+  group_by(food_group, year, sourcing_type, data_source) %>%
+  summarize(
+    prop_animal_protein = case_when(
+      food_group == "Aquatic" ~ sum(prop_animal_protein, na.rm = TRUE),
+      food_group == "Terrestrial" ~ mean(prop_animal_protein, na.rm = TRUE)
+    ),
+    .groups = "drop"
+  ) %>%
+  ggplot(aes(x = year, y = prop_animal_protein, color = sourcing_type, linetype = data_source)) +
+  geom_line() +
+  theme_light() +
+  labs(
+    x = "",
+    y = "Animal Protein Reliance (%)",
+    color = "Sourcing Type",
+    linetype = "Data Source",
+    title = i
+  ) +
+  theme(
+    legend.position = "bottom",
+    legend.text = element_text(size = 6),          # Adjust text size as needed
+    legend.key.width = unit(0.5, "cm"),
+    legend.title = element_text(size = 8),
+    plot.title = element_text(hjust = 0.5)
+  ) +
+  scale_color_manual(values = artis_palette(5)) +
+  guides(
+    # color = guide_legend(nrow = 3, byrow = TRUE),  # Wrap legend into 2 rows
+    # linetype = guide_legend(nrow = 2, byrow = TRUE),
+    color = "none",
+    linetype = "none"
+  )
+  
+  ggsave(filename = paste0("../images/Lana_Connor_work/",i,".jpg"), plot = plot, device = "jpg", width = 5, height = 2.75, units = "in")
+}
+
+```
+

@@ -468,4 +468,630 @@ supply_importance_long %>%
   theme(strip.text = element_text(size = 8))
 ```
 
+```{r}
+# Calculate total protein consumed by country
+total_protein <- aquatic_reliance %>%
+  filter(data_source == "new FBS") %>%
+  group_by(year, iso3c) %>%
+  summarize(total_animal_protein_t = sum(protein_consumed_t))
+
+# Count the number of countries that have increased aquaculture / marine capture reliance
+aquatic_reliance %>%
+  filter(data_source == "new FBS") %>%
+  group_by(year, iso3c, method) %>%
+  summarize(protein_consumed_t = sum(protein_consumed_t), .groups = "drop") %>%
+  filter(method %in% c("aquaculture", "capture")) %>%
+  left_join(total_protein, by = c("iso3c", "year")) %>%
+  mutate(prop_animal_protein = protein_consumed_t / total_animal_protein_t) %>%
+  group_by(iso3c, method) %>%      # <-- keep method here
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
+    tidy  = map(model, tidy)
+  ) %>%
+  unnest(tidy) %>%
+  filter(term == "year") %>%
+  select(iso3c, method, estimate) %>%
+  ungroup() %>%
+  mutate(positive = estimate > 0) %>%
+  group_by(method) %>%
+  count(positive)
+```
+
+### Simple Bayesian Model
+
+```{r simple bayesian model}
+for (i in seq_along(response_vars)) {
+joined_df <- get(response_vars[i]) %>%
+  left_join(ac_df, by = "iso3c") %>%
+  left_join(ecoregion, by = "iso3c") %>%
+  ungroup() %>%
+  add_region(col = "iso3c", region.col.name = "region") %>%
+  left_join(dsfi_df, by = "iso3c") %>%
+  # left_join(imports_df %>% rename(iso3c = consumer_iso3c), by = "iso3c") %>%
+  # mutate(log_gdp = log(gdp),
+  #        log_imports = log(consumption_t)) %>%
+  mutate(log_gdp = log(gdp)) %>%
+  left_join(indicator_df %>%
+  select("eez_total", "iso3c", "inundation_area_log1000km2" = "inland_water_max"), by = "iso3c") %>%
+  left_join(coastline_df, by = "iso3c")
+
+df <- joined_df %>%
+  select(
+    names(.)[2], log_gdp, gdp_trade, eez_total,
+    inundation_area_log1000km2,
+    coastline_km, realm
+  ) %>%
+    mutate( # Impute NA values with 0
+      coastline_km = case_when(
+      is.na(coastline_km) & str_detect(realm, "Landlocked") ~ 0,
+      TRUE ~ coastline_km
+    ),
+    
+    eez_total = case_when(
+      is.na(eez_total) & str_detect(realm, "Landlocked") ~ 0,
+      TRUE ~ eez_total
+    )
+    ) %>% 
+  drop_na() %>%
+  filter(realm != "") %>%
+    mutate(
+    across(
+      c(log_gdp, gdp_trade, eez_total,
+        inundation_area_log1000km2, coastline_km),
+      ~ (.x - min(.x, na.rm = TRUE)) /
+        (max(.x, na.rm = TRUE) - min(.x, na.rm = TRUE)),
+      .names = "{.col}"
+    ))
+
+# Separate explanatory variables (no realm, no random effect)
+X <- df %>%
+  select(-names(.)[1], -realm) %>%
+  scale()
+
+# Response
+y <- scale(df %>% pull(1))[, 1]
+
+N <- nrow(X)
+K <- ncol(X)
+
+# Save X and y (for diagnostic statistics to be used later on)
+  saveRDS(X, paste0("../output/bayesian_output/", model_type, "/X_",response_vars[i],".rds"))
+  saveRDS(y, paste0("../output/bayesian_output/", model_type, "/y_",response_vars[i],".rds"))
+
+inits <- function() {
+  list(
+    beta_0 = 0,
+    sigma = 1,
+    beta = rep(0, K)
+  )
+}
+
+stan_data <- list(
+  N = N,
+  K = K,
+  X = as.matrix(X),
+  y = y
+)
+
+assign(
+  paste0("fit_", response_vars[i]),
+  stan(
+    file = "../R/social_bayesian_model_simple.stan",
+    data = stan_data,
+    init = inits,
+    chains = 3,
+    iter = 10000,
+    warmup = 2000
+  )
+)
+
+saveRDS(
+  get(paste0("fit_", response_vars[i])),
+  paste0("../output/bayesian_output/simple/fit_", response_vars[i], ".stan")
+)
+
+}
+```
+
+```{r hierarchical model for non landlocked countries (old data cleaning process)}
+model_type <- "realm"
+
+for (i in seq_along(response_vars)) {
+  # Join target response to its explanatory variables
+  joined_df <- get(response_vars[i]) %>%
+  left_join(ac_df, by = "iso3c") %>%
+  left_join(ecoregion, by = "iso3c") %>%
+  ungroup() %>%
+  add_region(col = "iso3c", region.col.name = "region") %>%
+  left_join(dsfi_df, by = "iso3c") %>%
+  # left_join(imports_df %>% rename(iso3c = consumer_iso3c), by = "iso3c") %>%
+  mutate(log_gdp = log(gdp),
+         log_imports = log(consumption_t)) %>%
+  mutate(log_gdp = log(gdp)) %>%
+  left_join(indicator_df %>%
+  select("eez_total", "iso3c", "inundation_area_log1000km2" = "inland_water_max"), by = "iso3c") %>%
+  left_join(coastline_df, by = "iso3c") 
+  
+  # Clean joined data to be used in Bayesian model
+  
+  if (model_type == "continental") {
+    joined_df <- joined_df %>%
+    select(-realm) %>%
+    rename(realm = region)
+  }
+  
+  df <- joined_df %>%
+  select(
+    names(.)[2], log_gdp, gdp_trade, eez_total,
+    inundation_area_log1000km2,
+    coastline_km, realm
+  ) %>%
+    mutate( # Impute NA values with 0
+      coastline_km = case_when(
+      is.na(coastline_km) & str_detect(realm, "Landlocked") ~ 0,
+      TRUE ~ coastline_km
+    ),
+    
+    eez_total = case_when(
+      is.na(eez_total) & str_detect(realm, "Landlocked") ~ 0,
+      TRUE ~ eez_total
+    )
+    ) %>% 
+  drop_na() %>%
+  filter(realm != "") %>%
+    mutate(
+    across(
+      c(log_gdp, gdp_trade, eez_total,
+        inundation_area_log1000km2, coastline_km),
+      ~ (.x - min(.x, na.rm = TRUE)) /
+        (max(.x, na.rm = TRUE) - min(.x, na.rm = TRUE)),
+      .names = "{.col}"
+    ))
+
+
+ # Separate explanatory variables (not including the factor level)
+  X <- df %>%
+  select(-names(.)[1], -realm) %>%
+             scale()
+
+ # Separate response variable
+  y_raw <- df %>% pull(1)
+  y <- scale(y_raw)[,1]
+
+  # Create province index
+  realm_ids <- as.numeric(factor(df$realm))
+  n_realms <- length(unique(realm_ids))
+  
+  # Save Realm IDs (to be used in exploratory plots)
+  realm_levels <- levels(factor(df$realm))
+  saveRDS(
+  realm_levels,
+  paste0("../output/bayesian_output/", model_type, "/realms_", response_vars[i], ".rds")
+)
+  
+  # Save Realm IDs
+  saveRDS(
+  realm_ids,
+  paste0("../output/bayesian_output/", model_type, "/ids_", response_vars[i], ".rds")
+)
+  
+  
+  # Save X and y (for diagnostic statistics to be used later on)
+  saveRDS(X, paste0("../output/bayesian_output/", model_type, "/X_",response_vars[i],".rds"))
+  saveRDS(y, paste0("../output/bayesian_output/", model_type, "/y_",response_vars[i],".rds"))
+ 
+  
+  N <- nrow(X)
+  K <- ncol(X)
+  
+  inits <- function() {
+    list(
+      beta_0       = 0,
+      sigma_beta_0 = 1,
+      z_beta_0     = rnorm(n_realms, 0, 0.1),
+      beta         = rep(0, K),
+      sigma        = 1
+    )
+  }
+  
+  stan_data <- list(
+    N = N,
+    K = K,
+    J = n_realms,  # number of provinces
+    X = as.matrix(X),
+    y = y,
+    province = realm_ids  # province indicator for each observation
+  )
+  
+  # Fit Bayesian model
+  assign(
+    paste0("fit_",response_vars[i]),
+    stan(
+    file = "../R/social_bayesian_model_hierarchical.stan",
+    data = stan_data,
+    init = inits,
+    chains = 3,
+    iter = 4000,
+    warmup = 1000,
+    control = list(adapt_delta = 0.95, max_treedepth = 12)
+  )
+  )
+  
+  
+  # Save Bayesian model
+  saveRDS(
+    get(paste0("fit_", response_vars[i])),
+    paste0("../output/bayesian_output/", model_type, "/fit_", response_vars[i],".stan")
+  )
+}
+
+
+continental_levels <- c("Africa", "Asia", "Europe", "North America", "Oceania", "South America")
+realm_levels <- c("Arctic", "Central Indo-Pacific", "Eastern Indo-Pacific", "Landlocked, Africa", "Landlocked, Asia", "Landlocked, Europe", "Landlocked, South America", "Southern Ocean", "Temperate Australasia", "Temperate Northern Atlantic", "Temperate Northern Pacific", "Temperate South America", "Temperate Southern Africa", "Tropical Atlantic", "Tropical Eastern Pacific", "Western Indo-Pacific")
+```
+
+```{r old function for setting plot themes}
+theme_tile_pub <- function() {
+  theme_minimal(base_size = 8) +
+    theme(
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      panel.grid.major.y = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
+      panel.grid.minor.y = element_blank(),
+      panel.background = element_rect(fill = "transparent", color = NA),
+      plot.background = element_rect(fill = "transparent", color = NA),
+      axis.text.x = element_text(size = 6,angle = 45, vjust = 0.5, color = "black"),
+      axis.text.y = element_text(size = 6, color = "black"),
+      axis.title = element_text(size = 7, face = "bold"),
+      legend.title = element_text(size = 7, face = "bold"),
+      legend.text = element_text(size = 6),
+      legend.key.size = unit(0.3, "cm"),
+      legend.box = "vertical",
+      legend.spacing = unit(0.1, "cm"),
+      legend.margin = margin(t = 0, b = 0),
+      legend.box.margin = margin(t = -2, b = -2),
+      legend.background = element_rect(fill = "transparent", color = NA),
+      legend.box.background = element_rect(fill = "transparent", color = NA),
+      plot.title = element_text(size = 8, face = "bold", hjust = 0.5)
+    )
+}
+```
+
+> Posterior predictive distributions
+
+```{r ppd}
+# Combined posterior predictive plot (all models together)
+draw_sample <- sample(unique(ppd_all_models$draw), size = 30)
+
+(plot <- ppd_all_models %>%
+  filter(
+    !str_detect(model, "animal_cons_cap"),
+    str_detect(clean_name, "capita") |
+    str_detect(clean_name, "Aquatic reliance") |
+    str_detect(clean_name, "reliance")
+  ) %>%
+  filter(draw %in% draw_sample) %>%
+  ggplot(aes(x = ppd, group = draw)) +
+  geom_density(alpha = 0.08, color = "grey60") +
+  geom_density(aes(x = y_obs), color = "black", linewidth = 1.1) +
+  facet_wrap(
+    ~ clean_name,
+    scales = "free",
+    labeller = label_wrap_gen(width = 18)   # wrap facet labels so they don't stay on one line
+  ) +
+  labs(
+    x = "Response value",
+    y = "Density"
+  ) +
+  theme_minimal(base_size = 8) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
+    panel.grid.minor.y = element_blank(),
+    panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 7, face = "bold"),
+    axis.text = element_text(size = 6, color = "black"),
+    axis.title.y = element_text(size = 7, margin = margin(r = 5), face = "bold"),
+    axis.text.x = element_text(size = 5.5, angle = 30, hjust = 1),
+    legend.position = "bottom",
+    legend.title = element_text(size = 7, face = "bold"),
+    legend.text = element_text(size = 6),
+    legend.key.size = unit(0.3, "cm"),
+    legend.box = "vertical",
+    legend.spacing = unit(0.1, "cm"),
+    legend.margin = margin(t = 0, b = 0),
+    legend.box.margin = margin(t = -2, b = -2),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.box.background = element_rect(fill = "transparent", color = NA)
+  ))
+
+# Save ppd plot
+ggsave(paste0("../images/bayesian plots/", model_type, "/ppd.jpg"), plot = plot, device = "jpg", width = 7, height = 5, units = "in", dpi = 300)
+```
+
+### Posterior Predictive Checks (didn't use this version for ppd checks)
+
+```{r posterior predictive check}
+model_type = "simple"
+ppc_df <- purrr::map_dfr(seq_along(response_vars), \(i)
+  bayesplot::ppc_data(
+    readRDS(paste0("../output/bayesian_output/", model_type,
+                   "/y_", response_vars[i], ".rds")),
+    extract(
+      readRDS(paste0("../output/bayesian_output/", model_type,
+                     "/fit_", response_vars[i], ".stan")),
+      permuted = TRUE
+    )$y_pred[sample(8000, 200), ]
+  ) |>
+    mutate(model = response_vars[i])
+)
+
+plot <- ggplot(ppc_df, ggplot2::aes(value)) +
+  geom_density(
+    data = filter(ppc_df, !is_y),
+    aes(group = interaction(model, rep_id)),
+    linewidth = .25, alpha = .6
+  ) +
+  geom_density(
+    data = filter(ppc_df, is_y),
+    linewidth = 1
+  ) +
+  facet_wrap(~ model, scales = "free_y", ncol = 4) +
+  bayesplot_theme_get()
+
+ggsave(paste0("../images/bayesian plots/", model_type, "/posterior_predictive.jpg"), plot = plot, device = "jpg", width = 15, height = 10, units = "in", dpi = 300)
+```
+
+### Simple bayesian model R^
+
+```{r simple bayesian model R^2}
+response_vars = response_vars
+model_type = "simple"
+
+#######################
+#### Simple R^2    ####
+#######################
+
+R2_matrix <- matrix(nrow = 3000, ncol = length(response_vars))
+for (i in seq_along(1:23)) {
+
+# Extract posterior draws
+fit <- rstan::extract(readRDS(paste0("../output/bayesian_output/", model_type, "/fit_", response_vars[i],".stan")), permuted = T)
+
+# y_pred is iterations x N
+y_pred <- fit$y_pred[1:3000,]
+
+# y_pred: iterations × N
+mu_s <- y_pred   # each row is mu_s for that iteration
+
+var_mu_s <- apply(mu_s, 1, var)   # length = iterations
+post_var_obs <- apply(y_pred, 2, var)   # length N
+
+sigma_s <- fit$sigma[1:3000]   # length = iterations
+var_resid_s <- sigma_s^2
+
+
+R2_s <- var_mu_s / (var_mu_s + var_resid_s)
+# print((hist(R2_s,main = response_vars[i])))
+R2_matrix[,i] <- R2_s
+}
+
+colnames(R2_matrix) <- response_vars
+
+plot_df <- R2_matrix %>%
+  data.frame() %>%
+  pivot_longer(everything()) %>%
+  mutate(
+    value  = as.numeric(value),
+    suffix = sub(".*_", "", name)
+  )
+
+# compute the order of model names by suffix
+ordered_names <- plot_df %>%
+  distinct(name, suffix) %>%
+  arrange(suffix) %>%
+  pull(name)
+
+(plot <- plot_df %>%
+  mutate(name = factor(name, levels = ordered_names)) %>%
+  ggplot(aes(x = value, y = name)) +
+  ggridges::geom_density_ridges(fill = "lightblue") +
+  theme_pubclean() +
+  labs(x = bquote("Posterior" ~ R^2), y = "Model"))
+
+
+ggsave("../images/bayesian plots/simple/r2.jpg", plot = plot, device = "jpg", width = 6, height = 4, units = "in", dpi = 300)
+
+```
+
+### Create trace plots for the simple Bayesian model
+
+```{r}
+# Simple Trace
+model_type = "simple"
+trace_df <- data.frame()
+
+for (i in seq_along(response_vars))  {
+  
+  # Load in Stan data
+  fit <- rstan::extract(readRDS(paste0("../output/bayesian_output/", model_type, "/fit_", response_vars[i],".stan")), permuted = T)
+
+  chain_1 <- data.frame(beta0 = fit$beta[1:3000,1],
+           beta = fit$beta_0[1:3000],
+           sigma = fit$sigma[1:3000],
+           model = response_vars[i],
+           iteration = 1:3000,
+           chain = "1")
+  
+  chain_2 <- data.frame(beta0 = fit$beta[1:3000,1],
+           beta = fit$beta_0[3001:6000],
+           sigma = fit$sigma[3001:6000],
+           model = response_vars[i],
+           iteration = 1:3000,
+           chain = "2")
+  
+  chain_3 <- data.frame(beta0 = fit$beta[1:3000,1],
+           beta = fit$beta_0[6001:9000],
+           sigma = fit$sigma[6001:9000],
+           model = response_vars[i],
+           iteration = 1:3000,
+           chain = "3")
+  
+  chains <- chain_1 %>% bind_rows(chain_2) %>% bind_rows(chain_3)
+  
+  trace_df <- bind_rows(trace_df, chains)
+    
+}
+```
+
+### Country level trends in delta 2010-2020 aquatic animal reliance
+
+```{r Country level trends in delta 2010-2020 aquatic animal reliance}
+# Fit linear models to estimate the average annual change in disaggregated
+# aquatic animal reliance (2010-2020) by production source (habitat x method)
+# for each country
+disagg <- aquatic_reliance %>%
+  filter(data_source == "new FBS", food_group == "aquatic") %>%
+  group_by(iso3c) %>%
+  mutate(n = n_distinct(year)) %>%
+  filter(n >= 3) %>%
+  group_by(iso3c, habitat, method) %>%
+  filter(n() >= 3) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
+    tidy  = map(model, broom::tidy)
+  ) %>%
+  unnest(tidy) %>%
+  filter(term == "year") %>%
+  mutate(
+    consource_habitat_method = paste(habitat, method),
+    group_label = consource_habitat_method
+  ) %>%
+  drop_na(estimate) %>%
+  filter(!str_detect(consource_habitat_method, "unknown")) %>%
+  group_by(group_label) %>%
+  mutate(pct_above = mean(estimate > 0) * 100) %>%
+  ungroup()
+
+# Fit linear models to estimate the average annual change in aggregate
+# aquatic animal reliance (2010-2020)
+agg <- aquatic_reliance %>%
+  filter(data_source == "new FBS", food_group == "aquatic") %>%
+  group_by(iso3c) %>%
+  mutate(n = n_distinct(year)) %>%
+  filter(n >= 3) %>% # Get countries with only 3 years or more of data (so lm can properly fit points)
+  group_by(iso3c, year, data_source, food_group) %>%
+  summarise(prop_animal_protein = sum(prop_animal_protein)) %>%
+  group_by(iso3c) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
+    tidy  = map(model, broom::tidy)
+  ) %>%
+  unnest(tidy) %>%
+  filter(term == "year") %>%
+  mutate(
+    group_label = "aggregate"
+  ) %>%
+  drop_na(estimate) %>%
+  group_by(group_label) %>%
+  mutate(pct_above = mean(estimate > 0) * 100) %>%
+  ungroup()
+
+# Combine aggregate and disaggregate slopes
+all_slopes <- bind_rows(agg, disagg)
+
+# Calculate the percent of countries that have slopes above and below 0.
+all_slopes <- all_slopes %>%
+  mutate(
+    pct_below = 100 - pct_above,
+    label_majority = if_else(
+      pct_above >= 50,
+      sprintf("%.0f%%", pct_above),
+      sprintf("%.0f%%", pct_below)
+    ),
+    label_x = if_else(
+      pct_above >= 50,
+      0.002,   # right side, close to center
+      -0.002   # left side, close to center
+    ),
+    label_hjust = if_else(pct_above >= 50, 0, 1),
+    color = case_when(pct_above >= 50 ~ "#2166ac",
+                      TRUE ~ "#b2182b")
+  )
+
+# Plot data
+(plot <- ggplot(all_slopes, aes(
+  x = estimate,
+  y = fct_reorder(group_label, pct_above)
+)) +
+  geom_density_ridges_gradient(
+    aes(fill = after_stat(x > 0)),
+    scale = 1.4,
+    rel_min_height = 0.01,
+    color = "black"
+  ) +
+  scale_fill_manual(
+    values = c(`TRUE` = "#2166ac", `FALSE` = "#b2182b")
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_text(
+    aes(x = label_x, label = label_majority, hjust = label_hjust),
+    color = all_slopes$color,
+    vjust = -2,
+    size = 2.5
+  ) +
+  guides(fill = "none") +
+  labs(x = expression(bold(Delta[2010-2020] ~ "Aquatic animal protein reliance %")), y = "Production source") +
+  # xlim(c(-0.0105, 0.0105)) +
+
+  # --- Matching theme from aa_reliance_multiple_trends ---
+  theme_minimal(base_size = 8) +
+  theme(
+    # Grid and background
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
+    panel.grid.minor.y = element_blank(),
+    panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA),
+
+    # Axis styling
+    axis.text = element_text(size = 6, color = "black"),
+    axis.title.x = element_text(size = 7, face = "bold", margin = margin(t = 5)),
+    axis.title.y = element_text(size = 7, face = "bold"),
+
+    # Ridge spacing
+    axis.text.y = element_text(size = 6),
+
+    # No legend
+    legend.position = "none"
+  ))
+
+
+
+# ggsave("../images/pct_ichange_reliance.jpg", plot = plot, device = "jpg", units = "in", width = 5, height = 4)
+```
+
+```{r old color palette for bayesian posterior distribution plot}
+# Old color palette
+# 1. Base colors per model
+# 1. Base colors per model
+# model_colors <- c(
+#   "Terrestrial animal consumption consumption per capita" = "#b15928",
+#   "Aquatic animal consumption consumption per capita"     = "#1f78b4",
+#   "Aquatic reliance"                                      = "#e31a1c",
+#   "Capture consumption per capita"                        = "#ff7f00",
+#   "Aquaculture consumption per capita"                    = "#6a3d9a",
+#   "Domestic consumption per capita"                       = "#33a02c",
+#   "Foreign consumption per capita"                        = "#a6cee3",
+#   "Marine consumption per capita"                         = "#b2df8a",
+#   "Inland consumption per capita"                         = "#fb9a99"
+# )
+```
 

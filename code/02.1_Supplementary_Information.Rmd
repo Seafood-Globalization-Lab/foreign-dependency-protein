@@ -1,9 +1,13 @@
 ---
 title: "02.1_Supplementary_Information"
-author: "Connor Quiroz and Jessica Gephart"
+authors: "Connor Quiroz, Lana Huang, Christopher D. Golden, Sarah Glaser, and Jessica A. Gephart"
 date: "2026-03-04"
 output: html_document
 ---
+
+# Chapter 1 Supplementary information
+
+# Load in packages
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -27,9 +31,7 @@ library(patchwork)
 library(reshape2)
 ```
 
-# Chapter 1 Supplementary information
-
-## Read in data
+# Read in data
 
 ### Read in aquatic reliance data & FAO population data
 
@@ -44,15 +46,16 @@ aquatic_reliance <- read.csv("../output/fao_aquatic_reliance_source.csv") %>%
 
 # Read in FAO sourcing data
 aquatic_fbs <- read.csv("../output/fao_fbs_aquatic_source.csv")
-
-# Read in list of response variables used in Bayesian models
-response_vars <- readRDS("../output/response_vars.rds")
 ```
 
-### Get list of response variables
+## Get list of response variables (models)
+
+This code chunk is also in the main results. This code chunk extracts the name of each model name used in the Bayesian model. In code lines further down, we call the "response_vars" object to generate statistics and figures. This code chunk will only run if the response_vars object has not been created.
 
 ```{r acquire animal consumption data to be fed through analysis}
-# Calculate animal consumption
+if ( file.exists("../output/response_vars.rds") ) {
+  
+  # Calculate animal consumption
 terr_animal_cons_cap <- aquatic_reliance %>%
   filter(year == 2019) %>%
   group_by(iso3c) %>%
@@ -162,13 +165,33 @@ terrestrial_protein_roc <- aquatic_reliance %>%
   map_df(broom::tidy, .id = 'iso3c') %>%
   filter(term == 'year') %>%
   select(c("iso3c", "terrestrial_estimate" = "estimate"))
+
+# Save response_vars to RDS format
+saveRDS(response_vars, "../output/response_vars.rds")
+}
 ```
 
-# RQ 1
+## Read in list of response variables (models)
 
-## 1A
+```{r read in response variables}
+# Read in list of response variables used in Bayesian models
+response_vars <- readRDS("../output/response_vars.rds")
+```
 
-### Individual continent production contribution (i.e., disaggregate reliance) to rate of change in aggregate reliance + other exploratory metrics.
+# RQ 1a: How do aquatic food reliance trends disaggregated by source differ from aggregate aquatic food reliance?
+
+## SI figure: Multi metric plot with 4 panels created for each individual region
+
+The first row of the figure has 2 panels, and the following two rows have 1 panel, making a 4 panel plot. The regions include Africa, Asia, South America, North America, Europe, and Oceania.
+
+The top left panel highlights the number of countries with increasing / decreasing *aggregate* aquatic animal reliance
+
+The top right panel highlights the number of countries with increasing / decreasing *disaggregate* aquatic animal reliance. Where the y-axis represents the disaggregated production sources for aquatic foods.
+
+The middle panel measures the 2020 aggregate aquatic animal reliance for each country.
+
+The bottom panel visualizes for each country in each region the average annual change in their aggregate aquatic animal reliance, with separate colors as stacked bars representing the disaggregate reliance.
+
 
 ```{r individual continent production contribution}
 # Fit linear models to estimate the average annual change in disaggregated
@@ -176,13 +199,9 @@ terrestrial_protein_roc <- aquatic_reliance %>%
 # for each country
 disagg <- aquatic_reliance %>%
   filter(data_source == "new FBS", food_group == "aquatic") %>%
-  # group_by(iso3c) %>%
-  # mutate(n = n_distinct(year)) %>%
-  # filter(n >= 3) %>%
   group_by(year, iso3c, habitat, method) %>%
-  mutate(prop_animal_protein = sum(prop_animal_protein)) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein)) %>%
   group_by(iso3c, habitat, method) %>%
-  # filter(n() >= 3) %>%
   nest() %>%
   mutate(
     model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
@@ -192,22 +211,22 @@ disagg <- aquatic_reliance %>%
   filter(term == "year") %>%
   mutate(
     consource_habitat_method = paste(habitat, method),
-    group_label = consource_habitat_method
+    group_label = consource_habitat_method,
+    group_label = case_when(
+      group_label == "unknown unknown" ~ "unknown",
+      TRUE ~ group_label
+    )
   ) %>%
   drop_na(estimate) %>%
-  filter(!str_detect(consource_habitat_method, "unknown")) %>%
   group_by(group_label) %>%
   mutate(pct_above = mean(estimate > 0) * 100) %>%
-  # mutate(estimate = round(estimate, 2)) %>%
   ungroup()
 
 # Fit linear models to estimate the average annual change in aggregate
 # aquatic animal reliance (2010-2020)
+
 agg <- aquatic_reliance %>%
   filter(data_source == "new FBS", food_group == "aquatic") %>%
-  # group_by(iso3c) %>%
-  # mutate(n = n_distinct(year)) %>%
-  # filter(n >= 3) %>%
   group_by(iso3c, year) %>%
   summarise(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
   group_by(iso3c) %>%
@@ -239,6 +258,8 @@ agg_estimate <- bind_rows(agg, disagg) %>%
 
 # Set plot title size
 axis.title.size <- 8
+
+# Iterate through each region (i.e., i = region) and produce a plot to be saved for each region
 for (i in c("Asia", "Africa", "Europe", "North America", "South America", "Oceania")) {
 
 # Plot disaggregated aquatic animal reliance by production source (2010-2020)
@@ -256,7 +277,7 @@ plot <- disagg %>%
   geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.4) +
   scale_alpha_identity() +
   scale_size_identity() +
-  scale_fill_manual(values = c("#D8C84A","#E68A2E", "#7A5FA3", "#3A77B5")) +
+  scale_fill_manual(values = c("#D8C84A","#E68A2E", "#7A5FA3", "#3A77B5", "gray")) +
   guides(fill = guide_legend(ncol = 2)) +
   theme(axis.text.y = element_text(size = 4.75),
         axis.title.x = element_text(size = axis.title.size, face = "bold"),
@@ -271,9 +292,9 @@ plot <- disagg %>%
     legend.position = "bottom",
     legend.title = element_text(size = 7, face = "bold"),
     legend.text = element_text(size = 6),
-    legend.key.size = unit(0.3, "cm"),
+    legend.key.size = unit(0.25, "cm"),
     legend.box = "vertical",
-    legend.spacing = unit(0.1, "cm"),
+    legend.spacing = unit(.05, "cm"),
     legend.margin = margin(t = 0, b = 0),
     legend.box.margin = margin(t = -2, b = -2),
     legend.background = element_rect(fill = "transparent", color = NA),
@@ -312,19 +333,18 @@ Counts_by_continent<-roc_aquatic_total%>%
 # Plot counts by target continent
 region_counts <- Counts_by_continent %>%
   filter(method_habitat == "total", continent == i) %>%
-  ggplot(aes(y = continent, x = prop, fill = direction)) +
+  ggplot(aes(y = continent, x = count, fill = direction)) +
   geom_bar(stat = "identity") +
   scale_fill_manual(values = c("#b2182b", "#2166ac"),
                     labels  = c("decreasing" = "Declining reliance",
               "increasing" = "Increasing reliance")) +
   guides(fill = guide_legend(nrow = 2)) +
-  labs(x = "Proportion of countries with increasing\nor decreasing reliance (aggregate)", fill = "Direction of change") +
-  # scale_y_continuous(labels = scales::label_number(accuracy = 1)) +
+  labs(x = "Number of countries with increasing\nor decreasing reliance (aggregate)", fill = "Direction of change") +
   theme(axis.text.y = element_blank(),
         axis.ticks.y = element_blank(),
         axis.text = element_text(size = 4.75),
         axis.title.y = element_blank(),
-        axis.title.x = element_text(size = axis.title.size-2, face = "bold"),
+        axis.title.x = element_text(size = axis.title.size-2.5, face = "bold"),
     panel.grid.minor.y = element_blank(),
     panel.grid.minor.x = element_blank(),
     panel.grid.major.y = element_blank(),
@@ -334,32 +354,36 @@ region_counts <- Counts_by_continent %>%
     legend.position = "bottom",
     legend.title = element_text(size = 7, face = "bold"),
     legend.text = element_text(size = 6),
-    legend.key.size = unit(0.3, "cm"),
+    legend.key.size = unit(0.25, "cm"),
     legend.box = "vertical",
-    legend.spacing = unit(0.1, "cm"),
+    legend.spacing = unit(.05, "cm"),
     legend.margin = margin(t = 0, b = 0),
     legend.box.margin = margin(t = -2, b = -2),
     legend.background = element_rect(fill = "transparent", color = NA),
     legend.box.background = element_rect(fill = "transparent", color = NA),
     aspect.ratio = 0.15)
 
+num_regional_countries <- disagg %>%
+  add_region("iso3c", "region") %>%
+  filter(region == i) %>%
+  distinct(iso3c) %>% 
+  nrow()
+
 # Proportion of countries with increasing reliance by production source for each region
 (disagg_props <- disagg %>%
   add_region("iso3c", "region") %>%
   filter(region == i) %>%
   group_by(region, group_label) %>%
-  summarize(prop_greater_0 = mean(estimate > 0)) %>%
-  mutate(other_prop = 1 - prop_greater_0) %>%
-  pivot_longer(cols = c("other_prop", "prop_greater_0")) %>%
-  ggplot(aes(y = group_label, x = value, fill = name)) +
+    count(count = estimate > 0) %>%
+    group_by(group_label) %>%
+  ggplot(aes(y = group_label, x = n, fill = count)) +
   geom_col() +
-  # geom_vline(xintercept = 0.5, linetype = "dashed") +
   scale_fill_manual(values = c("#b2182b", "#2166ac")) +
   guides(fill = "none")  +
-  labs(x = "Proportion of countries with increasing\nor decreasing reliance (disaggregate)") +
+  labs(x = paste0("Number of countries with increasing\nor decreasing reliance (disaggregate) (n = ", num_regional_countries, ")")) +
   theme(axis.title.y = element_blank(),
       axis.text = element_text(size = 4.75),
-      axis.title.x = element_text(size = axis.title.size-2, face = "bold"),
+      axis.title.x = element_text(size = axis.title.size-2.5, face = "bold"),
       panel.grid.minor.y = element_blank(),
       panel.grid.minor.x = element_blank(),
       panel.grid.major.y = element_blank(),
@@ -445,152 +469,188 @@ top_plot_panel <- cowplot::plot_grid(region_counts_nolegend, disagg_props)
   plot_nolegend,
   legend_row,
   ncol        = 1,
-  rel_heights = c(0.15, 0.05, 0.65, 0.85, 2.5, 0.25)  # very small height for divider
+  rel_heights = c(0.15, 0.05, 0.65, 0.85, 2.5, 0.35)  # very small height for divider
 ))
 
 # Save plot
 ggsave(paste0("../images/SI/multi_metrics_",i,"_SI.jpg"), plot = final_plot, device = "jpg", units = "in", width = 5, height = 7, dpi = 500)
-
 }
 ```
 
-### Country level trends in delta 2010-2020 aquatic animal reliance
+# RQ 1b: How does aquatic animal reliance change with the relative contribution of aquatic versus terrestrial animal consumption
 
-```{r Country level trends in delta 2010-2020 aquatic animal reliance}
-# Fit linear models to estimate the average annual change in disaggregated
-# aquatic animal reliance (2010-2020) by production source (habitat x method)
-# for each country
-disagg <- aquatic_reliance %>%
-  filter(data_source == "new FBS", food_group == "aquatic") %>%
-  group_by(iso3c) %>%
-  mutate(n = n_distinct(year)) %>%
-  filter(n >= 3) %>%
-  group_by(iso3c, habitat, method) %>%
-  filter(n() >= 3) %>%
-  nest() %>%
+## SI Figure: Proportion of countries in each quadrant by region
+
+This plot identifies the proportion of countries that reside in each quadrant by region. The top right quadrant indicates an increasing terrestrial animal & aquatic animal consumption. The top left quadrant indicates an increasing terrestrial animal & decreasing aquatic animal consumption. The bottom left indicates both decreasing terrestrial & aquatic animal consumption. The bottom right quadrant indicates a decreasing terrestrial & increasing aquatic animal consumption.
+
+```{r proportion of countries in each quadrant by region}
+# Calculate rate of change in aquatic protein quantity
+aquatic_protein_quant <- aquatic_reliance %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         data_source == "new FBS", food_group == "aquatic") %>%
+  group_by(iso3c, year) %>%
+  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE)) %>%
+  distinct() %>%
+  split(.$iso3c) %>%
+  map(~lm(protein_consumed_kg_percap ~ year, data = .x)) %>%
+  map_df(broom::tidy, .id = 'iso3c') %>%
+  filter(term == 'year') %>%
+  select(iso3c, aquatic_estimate = estimate)
+
+# Calculate rate of change in terrestrial protein quantity
+terrestrial_protein_quant <- aquatic_reliance %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         data_source == "new FBS", food_group == "terrestrial") %>%
+  group_by(iso3c, year) %>%
+  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE)) %>%
+  distinct() %>%
+  split(.$iso3c) %>%
+  map(~lm(protein_consumed_kg_percap ~ year, data = .x)) %>%
+  map_df(broom::tidy, .id = 'iso3c') %>%
+  filter(term == 'year') %>%
+  select(iso3c, terrestrial_estimate = estimate)
+
+# Calculate rate of change in aquatic reliance
+aquatic_protein_reliance <- aquatic_reliance %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         data_source == "new FBS", food_group == "aquatic") %>%
+  group_by(iso3c, year) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein, na.rm = TRUE)) %>%
+  distinct() %>%
+  split(.$iso3c) %>%
+  map(~lm(prop_animal_protein ~ year, data = .x)) %>%
+  map_df(broom::tidy, .id = 'iso3c') %>%
+  filter(term == 'year') %>%
+  select(iso3c, aquatic_reliance_estimate = estimate)
+
+# Join and compute quadrant proportions per region
+quad_df <- aquatic_protein_quant %>%
+  full_join(terrestrial_protein_quant, by = "iso3c") %>%
+  full_join(aquatic_protein_reliance, by = "iso3c") %>%
+  add_region(col = "iso3c", region.col.name = "region") %>%
   mutate(
-    model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
-    tidy  = map(model, broom::tidy)
+    quad_raw = case_when(
+      aquatic_estimate > 0 & terrestrial_estimate > 0 ~ "Q1",
+      aquatic_estimate < 0 & terrestrial_estimate > 0 ~ "Q2",
+      aquatic_estimate < 0 & terrestrial_estimate < 0 ~ "Q3",
+      aquatic_estimate > 0 & terrestrial_estimate < 0 ~ "Q4"
+    )
   ) %>%
-  unnest(tidy) %>%
-  filter(term == "year") %>%
+  group_by(region, quad_raw) %>%
+  summarise(n = n_distinct(iso3c), .groups = "drop") %>%
+  group_by(region) %>%
   mutate(
-    consource_habitat_method = paste(habitat, method),
-    group_label = consource_habitat_method
+    prop = n / sum(n),
+    quadrant = factor(
+      quad_raw,
+      levels = c("Q1", "Q2", "Q3", "Q4"),
+      labels = c("Aquatic + / Terrestrial +",
+                 "Aquatic - / Terrestrial +",
+                 "Aquatic - / Terrestrial -",
+                 "Aquatic + / Terrestrial -")
+    )
   ) %>%
-  drop_na(estimate) %>%
-  filter(!str_detect(consource_habitat_method, "unknown")) %>%
-  group_by(group_label) %>%
-  mutate(pct_above = mean(estimate > 0) * 100) %>%
   ungroup()
 
-# Fit linear models to estimate the average annual change in aggregate
-# aquatic animal reliance (2010-2020)
-agg <- aquatic_reliance %>%
-  filter(data_source == "new FBS", food_group == "aquatic") %>%
-  group_by(iso3c) %>%
-  mutate(n = n_distinct(year)) %>%
-  filter(n >= 3) %>% # Get countries with only 3 years or more of data (so lm can properly fit points)
-  group_by(iso3c, year, data_source, food_group) %>%
-  summarise(prop_animal_protein = sum(prop_animal_protein)) %>%
-  group_by(iso3c) %>%
-  nest() %>%
-  mutate(
-    model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
-    tidy  = map(model, broom::tidy)
-  ) %>%
-  unnest(tidy) %>%
-  filter(term == "year") %>%
-  mutate(
-    group_label = "aggregate"
-  ) %>%
-  drop_na(estimate) %>%
-  group_by(group_label) %>%
-  mutate(pct_above = mean(estimate > 0) * 100) %>%
-  ungroup()
+# Plot parameters
+max_val   <- 0.75
+half_width <- 0.2
 
-# Combine aggregate and disaggregate slopes
-all_slopes <- bind_rows(agg, disagg)
-
-# Calculate the percent of countries that have slopes above and below 0.
-all_slopes <- all_slopes %>%
+# Build spike polygons
+# r = prop * max_val * sqrt(2) ensures that at prop=1, the spike tip's
+# x and y components each equal max_val (the axis limit)
+spike_df <- quad_df %>%
   mutate(
-    pct_below = 100 - pct_above,
-    label_majority = if_else(
-      pct_above >= 50,
-      sprintf("%.0f%%", pct_above),
-      sprintf("%.0f%%", pct_below)
+    center_angle = case_when(
+      quad_raw == "Q1" ~ pi / 4,
+      quad_raw == "Q2" ~ 3 * pi / 4,
+      quad_raw == "Q3" ~ 5 * pi / 4,
+      quad_raw == "Q4" ~ 7 * pi / 4
     ),
-    label_x = if_else(
-      pct_above >= 50,
-      0.002,   # right side, close to center
-      -0.002   # left side, close to center
-    ),
-    label_hjust = if_else(pct_above >= 50, 0, 1),
-    color = case_when(pct_above >= 50 ~ "#2166ac",
-                      TRUE ~ "#b2182b")
+    r       = prop * max_val * sqrt(2),
+    x_left  = r * cos(center_angle - half_width),
+    y_left  = r * sin(center_angle - half_width),
+    x_right = r * cos(center_angle + half_width),
+    y_right = r * sin(center_angle + half_width)
+  ) %>%
+  rowwise() %>%
+  reframe(
+    region   = region,
+    quadrant = quadrant,
+    prop     = prop,
+    x        = c(0, x_left, x_right),
+    y        = c(0, y_left, y_right),
+    group    = paste(region, quadrant)
   )
 
-# Plot data
-(plot <- ggplot(all_slopes, aes(
-  x = estimate,
-  y = fct_reorder(group_label, pct_above)
-)) +
-  geom_density_ridges_gradient(
-    aes(fill = after_stat(x > 0)),
-    scale = 1.4,
-    rel_min_height = 0.01,
-    color = "black"
-  ) +
-  scale_fill_manual(
-    values = c(`TRUE` = "#2166ac", `FALSE` = "#b2182b")
-  ) +
-  geom_vline(xintercept = 0, linetype = "dashed") +
-  geom_text(
-    aes(x = label_x, label = label_majority, hjust = label_hjust),
-    color = all_slopes$color,
-    vjust = -2,
-    size = 2.5
-  ) +
-  guides(fill = "none") +
-  labs(x = expression(bold(Delta[2010-2020] ~ "Aquatic animal protein reliance %")), y = "Production source") +
-  # xlim(c(-0.0105, 0.0105)) +
+# Set color scale for plot
+quad_colors <- c(
+  "Aquatic + / Terrestrial +" = "#2a9d8f",
+  "Aquatic - / Terrestrial +" = "#e76f51",
+  "Aquatic - / Terrestrial -" = "#6d3b47",
+  "Aquatic + / Terrestrial -" = "#457b9d" 
+)
 
-  # --- Matching theme from aa_reliance_multiple_trends ---
+# Create plot
+(plot <- ggplot(spike_df) +
+  geom_polygon(
+    aes(x = x, y = y, fill = quadrant, group = group),
+    alpha = 0.85
+  ) +
+  geom_hline(yintercept = 0, linewidth = 0.4, colour = "black") +
+  geom_vline(xintercept = 0, linewidth = 0.4, colour = "black") +
+  facet_wrap(~ region) +
+  coord_equal(xlim = c(-max_val, max_val), ylim = c(-max_val, max_val)) +
+  scale_x_continuous(
+    breaks = c(-max_val, max_val),
+    labels = c("75%", "75%"),
+    expand = c(0, 0)
+  ) +
+  scale_y_continuous(
+    breaks = c(-max_val, max_val),
+    labels = c("75%", "75%"),
+    expand = c(0, 0)
+  ) +
+  scale_fill_manual(values = quad_colors) +
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE)) +
+  labs(
+    x    = "Percentage of countries",
+    y    = "Percentage of countries",
+    fill = "Quadrant"
+  ) +
   theme_minimal(base_size = 8) +
   theme(
-    # Grid and background
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor.x = element_blank(),
-    panel.grid.major.y = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
-    panel.grid.minor.y = element_blank(),
-    panel.background = element_rect(fill = "transparent", color = NA),
-    plot.background = element_rect(fill = "transparent", color = NA),
-
-    # Axis styling
-    axis.text = element_text(size = 6, color = "black"),
-    axis.title.x = element_text(size = 7, face = "bold", margin = margin(t = 5)),
-    axis.title.y = element_text(size = 7, face = "bold"),
-
-    # Ridge spacing
-    axis.text.y = element_text(size = 6),
-
-    # No legend
-    legend.position = "none"
+    panel.grid            = element_blank(),
+    panel.background      = element_rect(fill = "transparent", color = NA),
+    plot.background       = element_rect(fill = "transparent", color = NA),
+    strip.background      = element_blank(),
+    strip.text            = element_text(size = 7, face = "bold"),
+    axis.text             = element_text(size = 6, color = "black"),
+    axis.title            = element_text(size = 7, face = "bold"),
+    legend.position       = "bottom",
+    legend.box            = "vertical",
+    legend.title          = element_text(size = 7, face = "bold"),
+    legend.text           = element_text(size = 6),
+    legend.key.size       = unit(0.35, "cm"),
+    legend.spacing        = unit(0.1, "cm"),
+    legend.background     = element_rect(fill = "transparent", color = NA),
+    legend.box.background = element_rect(fill = "transparent", color = NA),
+    panel.spacing         = unit(1, "lines")
   ))
 
-
-
-# ggsave("../images/pct_ichange_reliance.jpg", plot = plot, device = "jpg", units = "in", width = 5, height = 4)
-
-cor(joined_df$eez_total,joined_df$coastline_km)
+# Save plot
+ggsave("../images/SI/quadrant_bar_region_SI.jpg", plot = plot, device = "jpg", units = "in", width = 5, height = 3.5)
 ```
 
-# RQ 2
+# RQ 2: What biophysical and socioeconomic factors are associated with reliance on farmed and wild aquatic animals for protein and overall consumption?
 
-## What biophysical and socioeconomic factors are associated with reliance on farmed and wild aquatic animals for protein and overall consumption?
+## SI Figure: Directed Acylcic Diagram (DAG). The DAG was not created in R, but in LucidChart.
 
-```{r}
+## SI Figure: Extra posterior distributions that show the partial slopes for models that use disaggregated reliance as the response.
+
+Posterior distributions are displayed with 90%, 80%, and 50% credibility intervals, represented by the lightest, darker, and darkest colors respectively. The point represents the posterior median.
+
+```{r read in and visualize posterior distributional data}
 model_type = "realm"
 
 # Create data frame to hold all posteriors across variables
@@ -638,6 +698,7 @@ slopes_df <- slopes_df %>%
 
 }
 
+# Clean model names
 clean_model_name <- function(x) {
 
   # Suffix dictionary
@@ -709,6 +770,7 @@ clean_model_name <- function(x) {
   }
 }
 
+# Clean input variable names to publication friendly text
 var_labels <- c(
   coastline_km = "Coastline length (km)",
   gdp_trade = "GDP from trade (%)",
@@ -718,40 +780,7 @@ var_labels <- c(
   supermarkets = "Supermarkets per 100,000 people"
 )
 
-theme_tile_pub <- function() {
-  theme_minimal(base_size = 8) +
-    theme(
-      panel.grid.major.x = element_blank(),
-      panel.grid.minor.x = element_blank(),
-      panel.grid.major.y = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
-      panel.grid.minor.y = element_blank(),
-      panel.background = element_rect(fill = "transparent", color = NA),
-      plot.background = element_rect(fill = "transparent", color = NA),
-      axis.text.x = element_text(size = 6,angle = 45, vjust = 0.5, color = "black"),
-      axis.text.y = element_text(size = 6, color = "black"),
-      axis.title = element_text(size = 7, face = "bold"),
-      legend.title = element_text(size = 7, face = "bold"),
-      legend.text = element_text(size = 6),
-      legend.key.size = unit(0.3, "cm"),
-      legend.box = "vertical",
-      legend.spacing = unit(0.1, "cm"),
-      legend.margin = margin(t = 0, b = 0),
-      legend.box.margin = margin(t = -2, b = -2),
-      legend.background = element_rect(fill = "transparent", color = NA),
-      legend.box.background = element_rect(fill = "transparent", color = NA),
-      plot.title = element_text(size = 8, face = "bold", hjust = 0.5)
-    )
-}
-
-library(colorspace)
-library(dplyr)
-library(ggplot2)
-library(stringr)
-library(colorspace)
-
-
-# 1. Base colors per model
-# 1. Base colors per model
+# Base colors per model
 model_colors <- c(
   "Aquatic reliance" = "#1f78b4",
   "Aquaculture reliance"                                      = "#e31a1c",
@@ -766,11 +795,11 @@ col_95 <- lighten(model_colors, 0.65)
 col_80 <- lighten(model_colors, 0.4)
 col_50 <- lighten(model_colors, 0.10)
 
-# 2. Add clean_name once
+# Add clean_name once
 slopes_df <- slopes_df %>%
   mutate(clean_name = sapply(model, clean_model_name))
 
-# 3. Build plotting data
+# Build plotting data
 df_plot <- slopes_df %>%
   mutate(
     clean_name = sapply(model, clean_model_name),
@@ -804,7 +833,7 @@ library(patchwork)
 panel_tags <- letters[1:9] 
 
 
-# --- 1. Function to draw a single panel ---
+# Function to draw a single panel
 make_panel <- function(df, show_yaxis = FALSE, tag = "") {
   ggplot(df, aes(y = var)) +
     geom_segment(aes(x = lo95, xend = hi95, color = col95),
@@ -854,14 +883,14 @@ panels <- lapply(seq_along(panel_names), function(i) {
 library(ggplot2)
 library(patchwork)
 
-# --- x-axis label plot ---
+# x-axis label plot
 xlab_plot <- ggplot() +
   theme_void() +
   annotate("text", x = 0.5, y = 0.5,
            label = "Posterior slope estimate",
            size = 2, fontface = "bold")
 
-# --- empty spacer ---
+# empty spacer
 empty <- ggplot() + theme_void()
 
 # --- assemble ---
@@ -879,218 +908,138 @@ row4 <- (empty | xlab_plot | empty) + plot_layout(widths = c(1, 1, 1))
 #   plot_layout(heights = c(3, 0.12))
 
 
-# ggsave(paste0("../images/SI/",model_type,"_posteriors_SI.jpg"), plot = final_plot_with_xlab, device = "jpg", width = 5, height = 3, units = "in", dpi = 300)
+ggsave(paste0("../images/SI/",model_type,"_posteriors_SI.jpg"), plot = final_plot_with_xlab, device = "jpg", width = 5, height = 3, units = "in", dpi = 300)
 ```
 
-## SI Figure 2: Proportion of countries in each quadrant by region
+## SI Figure: Multicollinearity check
 
-```{r proportion of countries in each quadrant by region}
-# Calculate rate of change in aquatic protein quantity
-aquatic_protein_quant <- aquatic_reliance %>%
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
-         data_source == "new FBS", food_group == "aquatic") %>%
-  group_by(iso3c, year) %>%
-  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE)) %>%
-  distinct() %>%
-  split(.$iso3c) %>%
-  map(~lm(protein_consumed_kg_percap ~ year, data = .x)) %>%
-  map_df(broom::tidy, .id = 'iso3c') %>%
-  filter(term == 'year') %>%
-  select(iso3c, aquatic_estimate = estimate)
-
-# Calculate rate of change in terrestrial protein quantity
-terrestrial_protein_quant <- aquatic_reliance %>%
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
-         data_source == "new FBS", food_group == "terrestrial") %>%
-  group_by(iso3c, year) %>%
-  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE)) %>%
-  distinct() %>%
-  split(.$iso3c) %>%
-  map(~lm(protein_consumed_kg_percap ~ year, data = .x)) %>%
-  map_df(broom::tidy, .id = 'iso3c') %>%
-  filter(term == 'year') %>%
-  select(iso3c, terrestrial_estimate = estimate)
-
-# Calculate rate of change in aquatic reliance
-aquatic_protein_reliance <- aquatic_reliance %>%
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
-         data_source == "new FBS", food_group == "aquatic") %>%
-  group_by(iso3c, year) %>%
-  summarize(prop_animal_protein = sum(prop_animal_protein, na.rm = TRUE)) %>%
-  distinct() %>%
-  split(.$iso3c) %>%
-  map(~lm(prop_animal_protein ~ year, data = .x)) %>%
-  map_df(broom::tidy, .id = 'iso3c') %>%
-  filter(term == 'year') %>%
-  select(iso3c, aquatic_reliance_estimate = estimate)
-
-# Join and compute quadrant proportions per region
-quad_df <- aquatic_protein_quant %>%
-  full_join(terrestrial_protein_quant, by = "iso3c") %>%
-  full_join(aquatic_protein_reliance, by = "iso3c") %>%
-  add_region(col = "iso3c", region.col.name = "region") %>%
-  mutate(
-    quad_raw = case_when(
-      aquatic_estimate > 0 & terrestrial_estimate > 0 ~ "Q1",
-      aquatic_estimate < 0 & terrestrial_estimate > 0 ~ "Q2",
-      aquatic_estimate < 0 & terrestrial_estimate < 0 ~ "Q3",
-      aquatic_estimate > 0 & terrestrial_estimate < 0 ~ "Q4"
-    )
-  ) %>%
-  group_by(region, quad_raw) %>%
-  summarise(n = n_distinct(iso3c), .groups = "drop") %>%
-  group_by(region) %>%
-  mutate(
-    prop = n / sum(n),
-    quadrant = factor(
-      quad_raw,
-      levels = c("Q1", "Q2", "Q3", "Q4"),
-      labels = c("Aquatic + / Terrestrial +",
-                 "Aquatic - / Terrestrial +",
-                 "Aquatic - / Terrestrial -",
-                 "Aquatic + / Terrestrial -")
-    )
-  ) %>%
-  
-  
-  ungroup()
-
-# Plot parameters
-max_val   <- 0.75
-half_width <- 0.2
-
-# Build spike polygons
-# r = prop * max_val * sqrt(2) ensures that at prop=1, the spike tip's
-# x and y components each equal max_val (the axis limit)
-spike_df <- quad_df %>%
-  mutate(
-    center_angle = case_when(
-      quad_raw == "Q1" ~ pi / 4,
-      quad_raw == "Q2" ~ 3 * pi / 4,
-      quad_raw == "Q3" ~ 5 * pi / 4,
-      quad_raw == "Q4" ~ 7 * pi / 4
-    ),
-    r       = prop * max_val * sqrt(2),
-    x_left  = r * cos(center_angle - half_width),
-    y_left  = r * sin(center_angle - half_width),
-    x_right = r * cos(center_angle + half_width),
-    y_right = r * sin(center_angle + half_width)
-  ) %>%
-  rowwise() %>%
-  reframe(
-    region   = region,
-    quadrant = quadrant,
-    prop     = prop,
-    x        = c(0, x_left, x_right),
-    y        = c(0, y_left, y_right),
-    group    = paste(region, quadrant)
-  )
-
-quad_colors <- c(
-  "Aquatic + / Terrestrial +" = "#2a9d8f",  # teal green
-  "Aquatic - / Terrestrial +" = "#e76f51",  # burnt orange
-  "Aquatic - / Terrestrial -" = "#6d3b47",  # dark plum
-  "Aquatic + / Terrestrial -" = "#457b9d"   # steel blue
+Create a correlation matrix for the explanatory variables to test for collinearity. On the plot, the upper triangle represents the shade of correlation on the color scale, while the bottom triangle displays the correlation between variables.
+ 
+```{r multicollinearity check}
+# clean variable names
+var_labels <- c(
+  eez_area = "EEZ area",
+  gdp_trade = "GDP from trade (%)",
+  inundation_area_log1000km2 = "Inundated area (log 1000 km²)",
+  log_gdp = "GDP (log scale)",
+  pop_10k_pct_coast = "Population within 10 km of coast (%)",
+  supermarkets = "Supermarkets per 100,000 people"
 )
 
-# Plot
-(plot <- ggplot(spike_df) +
-  geom_polygon(
-    aes(x = x, y = y, fill = quadrant, group = group),
-    alpha = 0.85
-  ) +
-  geom_hline(yintercept = 0, linewidth = 0.4, colour = "black") +
-  geom_vline(xintercept = 0, linewidth = 0.4, colour = "black") +
-  facet_wrap(~ region) +
-  coord_equal(xlim = c(-max_val, max_val), ylim = c(-max_val, max_val)) +
-  scale_x_continuous(
-    breaks = c(-max_val, max_val),
-    labels = c("75%", "75%"),
-    expand = c(0, 0)
-  ) +
-  scale_y_continuous(
-    breaks = c(-max_val, max_val),
-    labels = c("75%", "75%"),
-    expand = c(0, 0)
-  ) +
-  scale_fill_manual(values = quad_colors) +
-  guides(fill = guide_legend(nrow = 2, byrow = TRUE)) +
-  labs(
-    x    = "Percentage of countries",
-    y    = "Percentage of countries",
-    fill = "Quadrant"
-  ) +
-  theme_minimal(base_size = 8) +
-  theme(
-    panel.grid            = element_blank(),
-    panel.background      = element_rect(fill = "transparent", color = NA),
-    plot.background       = element_rect(fill = "transparent", color = NA),
-    strip.background      = element_blank(),
-    strip.text            = element_text(size = 7, face = "bold"),
-    axis.text             = element_text(size = 6, color = "black"),
-    axis.title            = element_text(size = 7, face = "bold"),
-    legend.position       = "bottom",
-    legend.box            = "vertical",
-    legend.title          = element_text(size = 7, face = "bold"),
-    legend.text           = element_text(size = 6),
-    legend.key.size       = unit(0.35, "cm"),
-    legend.spacing        = unit(0.1, "cm"),
-    legend.background     = element_rect(fill = "transparent", color = NA),
-    legend.box.background = element_rect(fill = "transparent", color = NA),
-    panel.spacing         = unit(1, "lines")
-  ))
+# use the realm model setup
+model_type = "realm"
 
-ggsave("../images/SI/quadrant_bar_region_SI.jpg", plot = plot, device = "jpg", units = "in", width = 5, height = 3.5)
-```
+# Read in list of explanatory variables to assess collinearity of
+X <- readRDS(paste0("../output/bayesian_output/", model_type,
+                     "/X_", response_vars[1], ".rds"))
+# Create correlation matrix
+cor_mat <- cor(X, use = "pairwise.complete.obs")
 
-## Bayesian model assessment
-
-### Trace Plot
-
-```{r trace plot}
-######################
-#### Simple Trace ####
-######################
-model_type = "simple"
-trace_df <- data.frame()
-
-for (i in seq_along(response_vars))  {
-  
-  # Load in Stan data
-  fit <- rstan::extract(readRDS(paste0("../output/bayesian_output/", model_type, "/fit_", response_vars[i],".stan")), permuted = T)
-
-  chain_1 <- data.frame(beta0 = fit$beta[1:3000,1],
-           beta = fit$beta_0[1:3000],
-           sigma = fit$sigma[1:3000],
-           model = response_vars[i],
-           iteration = 1:3000,
-           chain = "1")
-  
-  chain_2 <- data.frame(beta0 = fit$beta[1:3000,1],
-           beta = fit$beta_0[3001:6000],
-           sigma = fit$sigma[3001:6000],
-           model = response_vars[i],
-           iteration = 1:3000,
-           chain = "2")
-  
-  chain_3 <- data.frame(beta0 = fit$beta[1:3000,1],
-           beta = fit$beta_0[6001:9000],
-           sigma = fit$sigma[6001:9000],
-           model = response_vars[i],
-           iteration = 1:3000,
-           chain = "3")
-  
-  chains <- chain_1 %>% bind_rows(chain_2) %>% bind_rows(chain_3)
-  
-  trace_df <- bind_rows(trace_df, chains)
-    
+# helper functions
+get_lower_tri <- function(cormat){
+  cormat[upper.tri(cormat)] <- NA
+  cormat
 }
 
+get_upper_tri <- function(cormat){
+  cormat[lower.tri(cormat)] <- NA
+  cormat
+}
 
+get_diag <- function(cormat){
+  cormat[!diag(nrow(cormat))] <- NA
+  cormat
+}
 
-##################################
-####### Hierarchical Trace #######
-##################################
+# split matrix parts
+lower_tri <- get_lower_tri(cor_mat)
+upper_tri <- get_upper_tri(cor_mat)
+diag_mat  <- get_diag(cor_mat)
+
+# melt
+lower_melt <- melt(lower_tri, na.rm = TRUE)
+upper_melt <- melt(upper_tri, na.rm = TRUE)
+diag_melt  <- melt(diag_mat,  na.rm = TRUE) %>%
+  mutate(clean_names= c("GDP (log scale)",
+                        "GDP from trade (%)",
+                        "EEZ area",
+                        "Inundated area (log 1000 km²)",
+                        "Supermarkets per 100,000 people",
+                        "Population within 10 km of coast (%)"),
+         clean_names = str_wrap(clean_names, width = 12))
+
+# remove diagonal values from upper triangle
+upper_melt <- upper_melt[upper_melt$Var1 != upper_melt$Var2, ]
+
+# Create collinearity plot
+(plot <- ggplot() +
+  # lower triangle heatmap
+  geom_tile(
+    data = lower_melt,
+    aes(Var2, Var1, fill = value)
+  ) +
+  # diagonal white tiles
+  geom_tile(
+    data = diag_melt,
+    aes(Var2, Var1),
+    fill = "white",
+    color = "black"
+  ) +
+  # upper triangle correlation numbers
+  geom_text(
+    data = upper_melt,
+    aes(Var2, Var1, label = sprintf("%.2f", value), color = value),
+    size = 4
+  ) +
+
+  # diagonal variable names
+  geom_text(
+    data = diag_melt,
+    aes(Var2, Var1, label = clean_names),
+    fontface = "bold",
+    family = "Arial Black",
+    size = 2
+  ) +
+  scale_fill_gradient2(
+  low = "darkcyan",
+  high = "salmon",
+  mid = "gold",
+  midpoint = 0,
+  limits = c(-1,1),
+  guide = guide_colorbar(
+    barheight = unit(.94, "npc"),
+    barwidth = unit(0.8, "lines")
+  )
+) +
+  scale_color_gradient2(
+    low = "darkcyan",
+    high = "salmon",
+    mid = "gold",
+    midpoint = 0,
+    limit = c(-1,1),
+    guide = "none"
+  ) +
+  coord_fixed() +
+  scale_x_discrete(limits = rev) +
+  theme_minimal() +
+  theme(
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    panel.grid = element_blank(),
+    legend.title = element_blank(),
+    legend.ticks = element_line(hjust = 5)
+  ))
+
+# Save plot
+ggsave("../images/SI/collinearity_plot_SI.jpg", plot = plot, device = "jpg", units = "in", width = 5, height = 3.5)
+```
+
+# Bayesian model assessment
+
+## Trace Plot
+
+```{r trace plot}
+# Create trace plots for the hierarchcical Bayesian model
 
 # Create separate datasets for each chain
 model_type = "realm"
@@ -1147,70 +1096,10 @@ plot <- trace_df %>%
 ggsave(paste0("../images/bayesian plots/", model_type, "/trace.jpg"), plot = plot, device = "jpg", width = 18, height = 30, units = "in", dpi = 300)
 ```
 
-### R\^2
+## Hierarchical Bayesian model R^2
 
-```{r}
-response_vars = response_vars
-model_type = "simple"
-
-#######################
-#### Simple R^2    ####
-#######################
-
-R2_matrix <- matrix(nrow = 3000, ncol = length(response_vars))
-for (i in seq_along(1:23)) {
-
-# Extract posterior draws
-fit <- rstan::extract(readRDS(paste0("../output/bayesian_output/", model_type, "/fit_", response_vars[i],".stan")), permuted = T)
-
-# y_pred is iterations x N
-y_pred <- fit$y_pred[1:3000,]
-
-# y_pred: iterations × N
-mu_s <- y_pred   # each row is mu_s for that iteration
-
-var_mu_s <- apply(mu_s, 1, var)   # length = iterations
-post_var_obs <- apply(y_pred, 2, var)   # length N
-
-sigma_s <- fit$sigma[1:3000]   # length = iterations
-var_resid_s <- sigma_s^2
-
-
-R2_s <- var_mu_s / (var_mu_s + var_resid_s)
-# print((hist(R2_s,main = response_vars[i])))
-R2_matrix[,i] <- R2_s
-}
-
-colnames(R2_matrix) <- response_vars
-
-plot_df <- R2_matrix %>%
-  data.frame() %>%
-  pivot_longer(everything()) %>%
-  mutate(
-    value  = as.numeric(value),
-    suffix = sub(".*_", "", name)
-  )
-
-# compute the order of model names by suffix
-ordered_names <- plot_df %>%
-  distinct(name, suffix) %>%
-  arrange(suffix) %>%
-  pull(name)
-
-(plot <- plot_df %>%
-  mutate(name = factor(name, levels = ordered_names)) %>%
-  ggplot(aes(x = value, y = name)) +
-  ggridges::geom_density_ridges(fill = "lightblue") +
-  theme_pubclean() +
-  labs(x = bquote("Posterior" ~ R^2), y = "Model"))
-
-
-ggsave("../images/bayesian plots/simple/r2.jpg", plot = plot, device = "jpg", width = 6, height = 4, units = "in", dpi = 300)
-
-######################################
-########## Hierarchical R^2 ##########
-######################################
-
+```{r calculate and visualize R^2}
+# Calcualte the hierarchical R^2 across models where we disaggregate the total R^2 to the fixed and random effects. We will also include a combined effect. 
 R2_df <- data.frame(
   fixed_r2    = numeric(0),
   random_r2   = numeric(0),
@@ -1218,8 +1107,10 @@ R2_df <- data.frame(
   model       = character(0)
 )
 
-# Change to either continental / realm
+# use the realm model setup
 model_type = "realm"
+
+# Iterate through each model to extract R^2
 for (i in seq_along(response_vars))  {
   
 fit <- rstan::extract(readRDS(paste0("../output/bayesian_output/", model_type, "/fit_", response_vars[i],".stan")), permuted = T)
@@ -1280,7 +1171,44 @@ R2_df <- bind_rows(R2_df, new_data)
 ggsave(paste0("../images/bayesian plots/", model_type, "/r2.jpg"), plot = plot, device = "jpg", width = 9, height = 5, units = "in", dpi = 300)
 ```
 
-### Divergent transitions
+## R hat
+
+```{r r hat}
+model_type = "continental"
+rhat_df <- data.frame()
+for (i in seq_along(response_vars)) {
+  fit <- readRDS(paste0("../output/bayesian_output/", model_type,
+                     "/fit_", response_vars[i], ".stan"))
+  
+
+  if (model_type == "simple") {
+    
+    vals <- rstan::summary(fit, pars = c("beta", "beta_0", "sigma", "lp__"))$summary[, "Rhat"]
+    
+  } else if (model_type != "simple") {
+    
+    vals <- rstan::summary(fit, pars = c("beta_0", "beta", "sigma", "beta_0i", "sigma_beta_0", "z_beta_0", "lp__"))$summary[, "Rhat"]
+    
+  }
+  # Add iteration i rhat values to total dataframe for plotting
+  new_data <- data.frame(rhat = vals, model = response_vars[i])
+  rhat_df <- bind_rows(rhat_df, new_data)
+}
+
+# Create rhat plot
+(plot <- rhat_df %>%
+  ggplot(aes(x = rhat)) +
+  geom_histogram() +
+  facet_wrap(~ model) +
+  labs(x = "R-hat", y = "# parameters") +
+  theme_pubclean() +
+    theme(axis.text = element_text(size = 7)))
+
+# Save plot
+ggsave(paste0("../images/bayesian plots/", model_type, "/rhat.jpg"), plot = plot, device = "jpg", width = 7, height = 5, units = "in", dpi = 300)
+```
+
+## Divergent transitions
 
 ```{r divergent transitions}
 # Change to either continental / realm
@@ -1326,210 +1254,20 @@ ordered_names <- plot_df %>%
     theme(legend.position = "bottom"))
 
 ggsave(paste0("../images/bayesian plots/", model_type, "/divergent_samples.jpg"), plot = plot, device = "jpg", width = 7, height = 5, units = "in", dpi = 300)
-```
+``` 
 
-### Posterior Predictive Checks
+## Generate Posterior Predictive distribuitons
 
-```{r posterior predictive check}
-model_type = "simple"
-ppc_df <- purrr::map_dfr(seq_along(response_vars), \(i)
-  bayesplot::ppc_data(
-    readRDS(paste0("../output/bayesian_output/", model_type,
-                   "/y_", response_vars[i], ".rds")),
-    extract(
-      readRDS(paste0("../output/bayesian_output/", model_type,
-                     "/fit_", response_vars[i], ".stan")),
-      permuted = TRUE
-    )$y_pred[sample(8000, 200), ]
-  ) |>
-    mutate(model = response_vars[i])
-)
-
-plot <- ggplot(ppc_df, ggplot2::aes(value)) +
-  geom_density(
-    data = filter(ppc_df, !is_y),
-    aes(group = interaction(model, rep_id)),
-    linewidth = .25, alpha = .6
-  ) +
-  geom_density(
-    data = filter(ppc_df, is_y),
-    linewidth = 1
-  ) +
-  facet_wrap(~ model, scales = "free_y", ncol = 4) +
-  bayesplot_theme_get()
-
-ggsave(paste0("../images/bayesian plots/", model_type, "/posterior_predictive.jpg"), plot = plot, device = "jpg", width = 15, height = 10, units = "in", dpi = 300)
-```
-
-### R hat
-
-```{r r hat}
-model_type = "continental"
-rhat_df <- data.frame()
-for (i in seq_along(response_vars)) {
-  fit <- readRDS(paste0("../output/bayesian_output/", model_type,
-                     "/fit_", response_vars[i], ".stan"))
-  
-
-  if (model_type == "simple") {
-    
-    vals <- rstan::summary(fit, pars = c("beta", "beta_0", "sigma", "lp__"))$summary[, "Rhat"]
-    
-  } else if (model_type != "simple") {
-    
-    vals <- rstan::summary(fit, pars = c("beta_0", "beta", "sigma", "beta_0i", "sigma_beta_0", "z_beta_0", "lp__"))$summary[, "Rhat"]
-    
-  }
-  # Get R_hat values
-  
-  
-  # Add iteration i rhat values to total dataframe for plotting
-  new_data <- data.frame(rhat = vals, model = response_vars[i])
-  rhat_df <- bind_rows(rhat_df, new_data)
-}
-
-(plot <- rhat_df %>%
-  ggplot(aes(x = rhat)) +
-  geom_histogram() +
-  facet_wrap(~ model) +
-  labs(x = "R-hat", y = "# parameters") +
-  theme_pubclean() +
-    theme(axis.text = element_text(size = 7)))
-
-ggsave(paste0("../images/bayesian plots/", model_type, "/rhat.jpg"), plot = plot, device = "jpg", width = 7, height = 5, units = "in", dpi = 300)
-
-
-
-```
-
-### Multicollinearity check
-
-```{r}
-var_labels <- c(
-  eez_area = "EEZ area",
-  gdp_trade = "GDP from trade (%)",
-  inundation_area_log1000km2 = "Inundated area (log 1000 km²)",
-  log_gdp = "GDP (log scale)",
-  pop_10k_pct_coast = "Population within 10 km of coast (%)",
-  supermarkets = "Supermarkets per 100,000 people"
-)
-
-model_type = "realm"
-
-X <- readRDS(paste0("../output/bayesian_output/", model_type,
-                     "/X_", response_vars[1], ".rds"))
-# correlation matrix
-cor_mat <- cor(X, use = "pairwise.complete.obs")
-
-# helper functions
-get_lower_tri <- function(cormat){
-  cormat[upper.tri(cormat)] <- NA
-  cormat
-}
-
-get_upper_tri <- function(cormat){
-  cormat[lower.tri(cormat)] <- NA
-  cormat
-}
-
-get_diag <- function(cormat){
-  cormat[!diag(nrow(cormat))] <- NA
-  cormat
-}
-
-# split matrix parts
-lower_tri <- get_lower_tri(cor_mat)
-upper_tri <- get_upper_tri(cor_mat)
-diag_mat  <- get_diag(cor_mat)
-
-# melt
-lower_melt <- melt(lower_tri, na.rm = TRUE)
-upper_melt <- melt(upper_tri, na.rm = TRUE)
-diag_melt  <- melt(diag_mat,  na.rm = TRUE) %>%
-  mutate(clean_names= c("GDP (log scale)","GDP from trade (%)","EEZ area","Inundated area (log 1000 km²)","Supermarkets per 100,000 people","Population within 10 km of coast (%)"),
-         clean_names = str_wrap(clean_names, width = 12))
-
-# remove diagonal values from upper triangle
-upper_melt <- upper_melt[upper_melt$Var1 != upper_melt$Var2, ]
-
-(plot <- ggplot() +
-
-  # lower triangle heatmap
-  geom_tile(
-    data = lower_melt,
-    aes(Var2, Var1, fill = value)
-  ) +
-
-  # diagonal white tiles
-  geom_tile(
-    data = diag_melt,
-    aes(Var2, Var1),
-    fill = "white",
-    color = "black"
-  ) +
-
-  # upper triangle correlation numbers
-  geom_text(
-    data = upper_melt,
-    aes(Var2, Var1, label = sprintf("%.2f", value), color = value),
-    size = 4
-  ) +
-
-  # diagonal variable names
-  geom_text(
-    data = diag_melt,
-    aes(Var2, Var1, label = clean_names),
-    fontface = "bold",
-    family = "Arial Black",
-    size = 2
-  ) +
-
-  scale_fill_gradient2(
-  low = "darkcyan",
-  high = "salmon",
-  mid = "gold",
-  midpoint = 0,
-  limits = c(-1,1),
-  guide = guide_colorbar(
-    barheight = unit(.94, "npc"),
-    barwidth = unit(0.8, "lines")
-  )
-) +
-
-  scale_color_gradient2(
-    low = "darkcyan",
-    high = "salmon",
-    mid = "gold",
-    midpoint = 0,
-    limit = c(-1,1),
-    guide = "none"
-  ) +
-
-  coord_fixed() +
-  scale_x_discrete(limits = rev) +
-  # scale_y_discrete(limits = rev) +
-
-  theme_minimal() +
-  theme(
-    axis.title = element_blank(),
-    axis.text = element_blank(),
-    panel.grid = element_blank(),
-    legend.title = element_blank(),
-    legend.ticks = element_line(hjust = 5)
-  ))
-
-
-ggsave("../images/SI/collinearity_plot_SI.jpg", plot = plot, device = "jpg", units = "in", width = 5, height = 3.5)
-```
-
-# Posterior Predictive distribuitons
+This code chunk will only run if not run before as it takes awhile to run.
 
 ```{r ppd distributions}
-model_type = "realm"
+if ( !file.exists(paste0("../output/bayesian_output/", model_type, "/posterior_predictive_all_models.parquet")) ) {
+  
+  model_type = "realm"
+# Load in function to clean the model output names from snake case to a publication-friendly read
 source("../R/clean_model_name.R")
-# =========================================================
-# 1. Helper: extract posterior predictive draws for a model
-# =========================================================
+
+# Function to extract posterior predictive draws for a model.
 extract_ppd <- function(model_name, model_type) {
 
   # Load fitted Stan model
@@ -1576,9 +1314,8 @@ extract_ppd <- function(model_name, model_type) {
   return(ppd_long)
 }
 
-# =========================================================
-# 2. Loop over all models and bind results
-# =========================================================
+
+# Loop over all models and bind results
 ppd_all_models <- map_dfr(response_vars, ~ extract_ppd(.x, model_type)) %>%
   mutate(clean_name = clean_model_name(model)) # Add column for clean model names
 
@@ -1597,83 +1334,22 @@ write_parquet(
   ppd_all_models,
   paste0("../output/bayesian_output/", model_type, "/posterior_predictive_all_models.parquet")
 )
+  
+}
+```
 
-# Read in PPD data
+## Plot posterior predictive distributions
+
+```{r create ppd plot}
+# Read in posterior predictive distrbituion data
 ppd_all_models <- read_parquet(
   paste0("../output/bayesian_output/", model_type, "/posterior_predictive_all_models.parquet")
 )
 
-# =========================================================
-# 3. Combined posterior predictive plot (all models together)
-# =========================================================
-
-library(ggplot2)
-library(stringr)
-
-draw_sample <- sample(unique(ppd_all_models$draw), size = 30)
-
-(plot <- ppd_all_models %>%
-  filter(
-    !str_detect(model, "animal_cons_cap"),
-    str_detect(clean_name, "capita") |
-    str_detect(clean_name, "Aquatic reliance") |
-    str_detect(clean_name, "reliance")
-  ) %>%
-  filter(draw %in% draw_sample) %>%
-  ggplot(aes(x = ppd, group = draw)) +
-  geom_density(alpha = 0.08, color = "grey60") +
-  geom_density(aes(x = y_obs), color = "black", linewidth = 1.1) +
-  facet_wrap(
-    ~ clean_name,
-    scales = "free",
-    labeller = label_wrap_gen(width = 18)   # <-- WRAPS facet labels
-  ) +
-  labs(
-    x = "Response value",
-    y = "Density"
-  ) +
-  theme_minimal(base_size = 8) +
-  theme(
-    # Gridlines
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor.x = element_blank(),
-    panel.grid.major.y = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
-    panel.grid.minor.y = element_blank(),
-
-    # Backgrounds
-    panel.background = element_rect(fill = "transparent", color = NA),
-    plot.background = element_rect(fill = "transparent", color = NA),
-
-    # Facet strips
-    strip.background = element_blank(),
-    strip.text = element_text(size = 7, face = "bold"),
-
-    # Axes
-    axis.text = element_text(size = 6, color = "black"),
-    axis.title.y = element_text(size = 7, margin = margin(r = 5), face = "bold"),
-    axis.text.x = element_text(size = 5.5, angle = 30, hjust = 1),
-
-    # No legend here, but keep consistent styling
-    legend.position = "bottom",
-    legend.title = element_text(size = 7, face = "bold"),
-    legend.text = element_text(size = 6),
-    legend.key.size = unit(0.3, "cm"),
-    legend.box = "vertical",
-    legend.spacing = unit(0.1, "cm"),
-    legend.margin = margin(t = 0, b = 0),
-    legend.box.margin = margin(t = -2, b = -2),
-    legend.background = element_rect(fill = "transparent", color = NA),
-    legend.box.background = element_rect(fill = "transparent", color = NA)
-  ))
-
-ggsave(paste0("../images/bayesian plots/", model_type, "/ppd.jpg"), plot = plot, device = "jpg", width = 7, height = 5, units = "in", dpi = 300)
-```
-
-```{r}
 # Get letters for panel numbers
 panel_tags <- letters[1:15] 
 
-# --- 1. Function to draw a single panel ---
+# Function to draw a single panel ---
 make_ppd_panel <- function(df, title, tag = "") {
   ggplot(df, aes(x = ppd, group = draw)) +
     geom_density(alpha = 0.08, color = "grey60") +
@@ -1703,8 +1379,7 @@ make_ppd_panel <- function(df, title, tag = "") {
     )
 }
 
-# --- 2. Split df_plot into 9 panels ---
-
+#  Split df_plot into 9 panels
 xlab_plot <- ggplot() +
   theme_void() +
   annotate("text", x = 0.5, y = 0.5,
@@ -1737,16 +1412,18 @@ panel_tags <- letters[1:15]
 tags_by_panel_index <- rep("", length(panel_names))
 tags_by_panel_index[layout_order] <- panel_tags
 
+# Create panel plots
 panels <- lapply(seq_along(panel_names), function(i) {
   nm <- panel_names[i]
   df_sub <- df_plot %>% filter(clean_name == nm)
   make_ppd_panel(df_sub, nm, tag = tags_by_panel_index[i])
 })
 
-library(patchwork)
 
+# Create empty plots for bottom row in the combined plot (so final plot that sits alone at the bottom can be centered)
 empty <- ggplot() + theme_void()
 
+# Create panels that will display in the ppd plot
 row1 <- panels[[15]]  | panels[[3]]  | panels[[5]]
 row2 <- panels[[1]]  | panels[[7]]  | panels[[9]]
 row3 <- panels[[13]]  | panels[[11]]  | panels[[4]]
