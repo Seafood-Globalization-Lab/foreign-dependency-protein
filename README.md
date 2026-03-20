@@ -4,9 +4,7 @@ This is a repository for my first chapter, where I am analyzing trends in foreig
 
 ------------------------------------------------------------------------
 
-# Repository Layout
-
-## Folders
+# Repository folders
 
 * `R`: This folder contains the scripts and functions related to the Bayesian modeling process, as well as any other scripts used for data analysis in the study.
 * `code`: **Analysis, Results, and Supplementary Information.** This folder includes the main analysis scripts, code for generating results, and any supplementary material that supports or elaborates on the findings from the primary analysis.
