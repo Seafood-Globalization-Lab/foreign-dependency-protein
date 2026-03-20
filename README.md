@@ -4,6 +4,16 @@ This is a repository for my first chapter, where I am analyzing trends in foreig
 
 ------------------------------------------------------------------------
 
+# Repository Layout
+
+## Folders
+
+* `R`: This folder contains the scripts and functions related to the Bayesian modeling process, as well as any other scripts used for data analysis in the study.
+* `code`: **Analysis, Results, and Supplementary Information.** This folder includes the main analysis scripts, code for generating results, and any supplementary material that supports or elaborates on the findings from the primary analysis.
+* `archive`: This folder includes documents and code that was not used in the final study.
+
+
+
 # Outputs
 
 The final data in the output folder **`supply_importance_wide.csv`** and **`supply_importance_long.csv`**, has percentage contributions that aquatic animals have towards (1) protein consumption and (2) overall food consumption. We define aquatic animals as any animal that resides in an aquatic habitat that is not a marine mammal (e.g., cephalopods, crustaceans, fish). The data leverages both the Aquatic Resource Trade in Species database (Gephart et al. 2024) and Food and Agricultural Organization Food Balance Sheets (FBS; FAO 2023; FAO 2013). With the ARTIS database, we can derive the % consumption contributing different methods (i.e, capture, aquaculture) and habitats (i.e., inland, marine) by country. With the FBS, we can derive the % proportion that aquatic animals represent a country's consumed animal protein and overall food supply. Multiplying these proportions together can produce the % contribution that aquatic animals contribute by method and by habitat towards protein and food consumption (See `01_Analysis.Rmd` for calculations).
