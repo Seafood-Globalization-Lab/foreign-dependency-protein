@@ -29,6 +29,8 @@ The desired final file should have the following columns:
 * source (foreign/domestic/error, capture/aquaculture/error)
 * supply_percap_kg (from FAO 'Food supply quantity (kg/capita/yr)')
 
+# Load in ARTIS Data
+
 ```{r load artis data}
 # Read in consumption data
 # Set parquet database folder location
@@ -89,6 +91,7 @@ fao_historical <- read_csv("../data/FoodBalanceSheetsHistoric_E_All_Data/FoodBal
 write_parquet(fao_historical, "../output/fao_historical.parquet")
 }
 ```
+# Read in FAO/WB data
 
 ```{r load fao and wb data}
 # Read in and clean new FAO food balance sheet data
@@ -214,6 +217,8 @@ world_bank_long <- world_bank %>%
   arrange(iso3c, year)
 ```
 
+## Comparison: Population values from FAO/WB 
+
 ```{r compare population data}
 # # Join the population data (for visualization / t test)
 joined_population <- population_fbs %>%
@@ -266,6 +271,8 @@ tmp <- absolute_diff_dataset %>%
 
 > Result: Differences between FAO-FBS and WorldBank data are very large. As seen from the boxplot that are log transformed, the median is around 11 for both datasets, which e^11 = 59874 difference in people per country per year. Moving forward, we will include both FBS and WorldBank population columns in the final dataset, but will only calculate per capita values using FAO-FBS columns.
 
+## Standardize country names
+
 ```{r go forth running country standardization}
 # Standardize country names
 standardized_country_iso3c <- standardize_country_data() %>%
@@ -306,6 +313,8 @@ fao_old_raw <- fao_old_raw %>%
   filter(!(value == 0 & str_detect(Element, "Protein") & Item == "Animal Products"))
 
 ```
+
+# 
 
 ```{r create select data frames from FBS data}
 # Set elements to keep 
@@ -381,6 +390,8 @@ fao_combined_food_groups <- bind_rows(
 )
 ```
 
+# Clean consumption data
+
 ```{r clean consumption data}
 consumption_props <- consumption_full %>%
   group_by(year, consumer_iso3c, consumption_source, habitat, method) %>%
@@ -406,6 +417,8 @@ if(nrow(test) > 0){
 
 rm(list = c("consumption_full"))
 ```
+
+# Calaculate % protein from aquatic animals
 
 ```{r calculate percent of protein from aquatic animals}
 fao_new_prop_aquatic <- fao_new_raw %>%
@@ -500,6 +513,7 @@ fao_aquatic_reliance <- fao_new_prop_aquatic %>%
 rm(list = c("fao_new_aquatic", "fao_old_aquatic", "fao_new_prop_aquatic", "fao_old_prop_aquatic"))
 ```
 
+## Disaggregate values by production source
 
 ```{r disaggregate by source + create final output datasets}
 #######################################
@@ -562,6 +576,8 @@ population_fao_wb <- fao_aquatic_source %>%
          population_wb) %>%
   distinct()
 ```
+
+# QC checks
 
 ```{r run quality checks on data}
 #######################################
@@ -674,6 +690,8 @@ keep <- c("fao_aquatic_source", "fao_aquatic_reliance_source", "population_fao_w
 rm(list = setdiff(ls(), keep))
 gc(full = TRUE) # Clean up memory usage
 ```
+
+# Export output files
 
 ```{r write files to .csv}
 # Write aquatic reliance source file to csv
