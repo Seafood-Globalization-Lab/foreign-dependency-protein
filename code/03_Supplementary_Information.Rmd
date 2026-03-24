@@ -7,7 +7,7 @@ output: html_document
 
 # Chapter 1 Supplementary information
 
-# Load in packages
+# Load in packages & functions
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -29,6 +29,10 @@ library(bayesplot)
 library(purrr)
 library(patchwork)
 library(reshape2)
+library(loo)
+
+# Load script to convert model name strings to readable labels
+source("../R/clean_model_name.R")
 ```
 
 # Read in data
@@ -177,6 +181,36 @@ saveRDS(response_vars, "../data/response_vars.rds")
 # Read in list of response variables used in Bayesian models
 response_vars <- readRDS("../data/response_vars.rds")
 ```
+
+## Instantiate Bayesian model used
+
+This code chunk establishes the directory to pull Bayesian output from to generate statistics & fiugres
+
+```{r}
+# Declare model type
+model_type = "realm"
+
+# Variable list with coastline_km area instead of EEZ area
+predictors <- c(
+  "coastline_km",
+  "log_gdp",
+  "gdp_trade",
+  "inundation_area_log1000km2",
+  "supermarkets",
+  "pop_10k_pct_coast"
+)
+
+# Get which variable is selected (for unique file path)
+var_used = "all"
+
+# Create file path to save files to
+base_path <- file.path(
+  "..", "output", "bayesian_output",
+  paste0("random_effect_", model_type),
+  paste0("var_", var_used)
+)
+```
+
 
 # RQ 1a: How do aquatic food reliance trends disaggregated by source differ from aggregate aquatic food reliance?
 
@@ -668,7 +702,7 @@ circle_df <- expand.grid(
   theta  = seq(0, 2 * pi, length.out = 200)
 ) %>%
   as_tibble() %>%
-  crossing(r_frac = c(0.5, 1.0)) %>%
+  crossing(r_frac = c(0.33, 1.0)) %>%
   mutate(
     x = r_frac * max_val * cos(theta),
     y = r_frac * max_val * sin(theta)
@@ -687,9 +721,9 @@ ref_label_df <- tibble(
 ) %>%
   bind_rows(
     tibble(region = unique(spike_df$region)) %>%
-      mutate(x = -max_val * 0.5 * cos(pi/4) - 0.3,
-             y =  max_val * 0.5 * sin(pi/4) + 0.03,
-             label = "37.5%"),
+      mutate(x = -max_val * 0.5 * cos(pi/4) - 0.2,
+             y =  max_val * 0.5 * sin(pi/4),
+             label = "25%"),
     tibble(region = unique(spike_df$region)) %>%
       mutate(x =  max_val * cos(pi/4) + 0.04,
              y =  max_val * sin(pi/4) + 0.04,
@@ -708,7 +742,7 @@ plot <- ggplot() +
     linetype  = "dashed"
   ) +
   geom_path(
-    data    = circle_df %>% filter(r_frac == 0.5),
+    data    = circle_df %>% filter(r_frac == 0.33),
     aes(x = x, y = y, group = interaction(region, r_frac)),
     colour    = "grey80",
     linewidth = 0.18,
@@ -797,28 +831,6 @@ ggsave(
 Posterior distributions are displayed with 90%, 80%, and 50% credibility intervals, represented by the lightest, darker, and darkest colors respectively. The point represents the posterior median.
 
 ```{r Extra posteriors}
-model_type = "realm"
-
-# Variable list with coastline_km area instead of EEZ area
-predictors <- c(
-  "coastline_km",
-  "log_gdp",
-  "gdp_trade",
-  "inundation_area_log1000km2",
-  "supermarkets",
-  "pop_10k_pct_coast"
-)
-
-# Get which variable is selected (for unique file path)
-var_used = predictors[1]
-
-# Create file path to save files to
-base_path <- file.path(
-  "..", "output", "bayesian_output",
-  paste0("random_effect_", model_type),
-  paste0("var_", var_used)
-)
-
 # Create data frame to hold all posteriors across variables
 slopes_df <- data.frame()
 
@@ -858,9 +870,6 @@ for (i in seq_along(response_vars)) {
   slopes_df <- bind_rows(slopes_df, ci_df)
 }
 
-# Load script to convert model name strings to readable labels
-source("../R/clean_model_name.R")
-
 # Clean variable names for axis labels
 var_labels <- c(
   coastline_km               = "Coastline length (km)",
@@ -868,7 +877,8 @@ var_labels <- c(
   inundation_area_log1000km2 = "Inundated area (log 1000 km²)",
   log_gdp                    = "GDP (log scale)",
   pop_10k_pct_coast          = "Pop. within 10 km of coast (%)",
-  supermarkets               = "Supermarkets per 100,000"
+  supermarkets               = "Supermarkets per 100,000",
+  eez_total                  = "Log EEZ area km²"
 )
 
 # Model colours — harmonized palette, reliance models only
@@ -927,34 +937,14 @@ make_panel <- function(df, show_yaxis = FALSE, title = "", tag = "",
   tag_pos <- if (left_col) c(0.52, 1) else c(0.01, 1)
 
   ggplot(df, aes(y = var)) +
-
-    # Non-significant rows — reduced opacity, drawn behind
-    geom_segment(data = df_nsig,
-                 aes(x = lo95, xend = hi95, color = col95),
-                 linewidth = 2.2, lineend = "butt", alpha = 0.3) +
-    geom_segment(data = df_nsig,
-                 aes(x = lo80, xend = hi80, color = col80),
-                 linewidth = 2.2, lineend = "butt", alpha = 0.3) +
-    geom_segment(data = df_nsig,
-                 aes(x = lo50, xend = hi50, color = col50),
-                 linewidth = 2.2, lineend = "butt", alpha = 0.3) +
-    geom_point(data = df_nsig,
-               aes(x = med), shape = 21, size = 1.6,
-               fill = "white", color = "grey60", stroke = 0.3, alpha = 0.5) +
-
-    # Significant rows — full opacity, drawn on top
-    geom_segment(data = df_sig,
-                 aes(x = lo95, xend = hi95, color = col95),
+    geom_segment(aes(x = lo95, xend = hi95, color = col95),
                  linewidth = 2.2, lineend = "butt", alpha = 1) +
-    geom_segment(data = df_sig,
-                 aes(x = lo80, xend = hi80, color = col80),
+    geom_segment(aes(x = lo80, xend = hi80, color = col80),
                  linewidth = 2.2, lineend = "butt", alpha = 1) +
-    geom_segment(data = df_sig,
-                 aes(x = lo50, xend = hi50, color = col50),
+    geom_segment(aes(x = lo50, xend = hi50, color = col50),
                  linewidth = 2.2, lineend = "butt", alpha = 1) +
-    geom_point(data = df_sig,
-               aes(x = med), shape = 21, size = 1.6,
-               fill = "white", color = "grey20", stroke = 0.4) +
+    geom_point(aes(x = med), shape = 21, size = 1.6,
+               fill = "white", color = "grey20", stroke = 0.4)
 
     geom_vline(xintercept = 0, linetype = "dashed",
                linewidth = 0.35, color = "grey40") +
@@ -1038,29 +1028,21 @@ ggsave(
 ```
 
 
-## SI Figure: Multicollinearity check
+## SI Figure: Collinearity check
 
 Create a correlation matrix for the explanatory variables to test for collinearity. On the plot, the upper triangle represents the shade of correlation on the color scale, while the bottom triangle displays the correlation between variables.
  
-```{r multicollinearity check}
+```{r collinearity check}
 # Clean variable names
 var_labels <- c(
-  coastline_km               = "Coastline distance (km)",
+  coastline_km               = "Coastline length (km)",
   gdp_trade                  = "GDP from trade (%)",
   inundation_area_log1000km2 = "Inundated area (log 1000 km²)",
   log_gdp                    = "GDP (log scale)",
   pop_10k_pct_coast          = "Pop. within 10 km of coast (%)",
-  supermarkets               = "Supermarkets per 100,000"
+  supermarkets               = "Supermarkets per 100,000",
+  eez_total                  = "Log EEZ area km²"
 )
-
-# var_labels <- c(
-#   eez_total                   = "EEZ area",
-#   gdp_trade                  = "GDP from trade (%)",
-#   inundation_area_log1000km2 = "Inundated area (log 1000 km²)",
-#   log_gdp                    = "GDP (log scale)",
-#   pop_10k_pct_coast          = "Pop. within 10 km of coast (%)",
-#   supermarkets               = "Supermarkets per 100,000"
-# )
 
 # Use the realm model setup
 model_type = "realm"
@@ -1183,19 +1165,18 @@ ggsave(
 
 # Bayesian model assessment
 
-## Trace Plot
+## Model convergence checks
+
+### Trace Plot
 
 ```{r trace plot}
-# Create trace plots for the hierarchcical Bayesian model
-
-# Create separate datasets for each chain
-model_type = "realm"
+# Create separate datasets that combines Markov chains
 trace_df <- data.frame()
 
 for (i in seq_along(response_vars))  {
   
   # Load in Stan data
-  fit <- rstan::extract(readRDS(paste0("../output/bayesian_output/", model_type, "/fit_", response_vars[i],".stan")), permuted = T)
+  fit <- rstan::extract(readRDS(file.path(base_path, paste0("fit_", response_vars[i], ".rds"))), permuted = T)
   
   chain_1 <- data.frame(beta = fit$beta[1:3000,1],
            beta_0 = fit$beta_0[1:3000],
@@ -1230,145 +1211,100 @@ for (i in seq_along(response_vars))  {
     
 }
 
-(plot <- trace_df %>%
+plot <- trace_df %>%
   pivot_longer(cols = -c(model, iteration, chain), names_to = "parameter") %>%
   ggplot(aes(x = iteration, y = value, color = chain)) +
-  geom_line() +
+  geom_line(linewidth = 0.05) +
   scale_color_viridis_d(option = "plasma", end = 0.95) +
   facet_grid(model ~ parameter) +
   guides(color = "none") +
   labs(x = "Parameter", y = "Parameter value") +
-  theme_pubclean())
+  theme_pubclean()
 
-# ggsave(paste0("../images/bayesian plots/", model_type, "/trace.jpg"), plot = plot, device = "jpg", width = 18, height = 30, units = "in", dpi = 300)
-```
-
-## Hierarchical Bayesian model R^2
-
-```{r calculate and visualize R^2}
-# Calcualte the hierarchical R^2 across models where we disaggregate the total R^2 to the fixed and random effects. We will also include a combined effect. 
-R2_df <- data.frame(
-  fixed_r2    = numeric(0),
-  random_r2   = numeric(0),
-  combined_r2 = numeric(0),
-  model       = character(0)
+ggsave(
+  filename = paste0("../images/SI/trace.pdf"),
+  plot     = plot,
+  device   = cairo_pdf,
+  width    = 9,
+  height   = 5,
+  units    = "in"
 )
 
-# use the realm model setup
-model_type = "realm"
-
-# Iterate through each model to extract R^2
-for (i in seq_along(response_vars))  {
-  
-fit <- rstan::extract(readRDS(paste0("../output/bayesian_output/", model_type, "/fit_", response_vars[i],".stan")), permuted = T)
-  
-  # Z: N x 16 realm indicator matrix (1 for realm membership)
-b_s <- fit$beta_0i[1:3000,]   # iterations x 16
-
-realm_ids <- readRDS(paste0("../output/bayesian_output/", model_type, "_ids.rds"))
-
-X <- readRDS(paste0("../output/bayesian_output/", model_type, "/X_",response_vars[i],".rds"))
-realm_ids <- readRDS(paste0("../output/bayesian_output/", model_type, "/ids_",response_vars[i],".rds"))
-
-Z <- model.matrix(~ 0 + factor(realm_ids))
-
-# random-only linear predictor: iterations x N
-mu_random <- b_s %*% t(Z)
-
-
-beta_s <- fit$beta[1:3000, ]   # 8000 × K
-mu_fixed <- beta_s %*% t(X)    # 8000 × N
-
-var_fixed_s  <- apply(mu_fixed,  1, var)   # length = iterations
-var_random_s <- apply(mu_random, 1, var)   # length = iterations
-var_resid_s  <- fit$sigma^2               # or fit$sigma^2 depending on your model
-
-mu_total     <- mu_fixed + mu_random
-var_total_s  <- apply(mu_total, 1, var)
-
-R2_fixed_s   <- var_fixed_s  / (var_total_s + var_resid_s)
-R2_random_s  <- var_random_s / (var_total_s + var_resid_s)
-R2_cond_s    <- var_total_s  / (var_total_s + var_resid_s)
-
-# Create new data frame with Current iteration R2 values
-new_data <- data.frame(fixed_r2 = R2_fixed_s, random_r2 = R2_random_s, combined_r2 = R2_cond_s, model = response_vars[i])
-
-# Add on R2 values to R2 data frame
-R2_df <- bind_rows(R2_df, new_data)
-  
-}
-
-# Plot all model R^2
-(plot <- R2_df %>%
-  pivot_longer(cols = c("fixed_r2", "random_r2", "combined_r2")) %>%
-  mutate(model = factor(model, levels = ordered_names),
-         name = case_when(name == "combined_r2" ~ "combined",
-                          name == "fixed_r2" ~ "fixed",
-                          name == "random_r2" ~ "random")) %>%
-  ggplot(aes(x = value, fill = name)) +
-  geom_histogram(position = "identity", alpha = 0.7) +
-  facet_wrap(~ model) +
-  theme_pubclean() +
-  scale_fill_viridis_d(option = "plasma", end = 0.95) +
-  labs(x = bquote("Posterior" ~ R^2), y = "# iterations", fill = "Effect type") +
-  theme(legend.position = "bottom",
-        strip.text.x = element_text(margin = margin(0.05,0,0.05,0, "cm"), size = 6),
-        axis.text = element_text(size = 6)))
-
-ggsave(paste0("../images/bayesian plots/", model_type, "/r2.jpg"), plot = plot, device = "jpg", width = 9, height = 5, units = "in", dpi = 300)
 ```
 
-## R hat
+> Result: All parameters have overlap on the Markov Chain, indicating model convergence
+
+
+### R hat
 
 ```{r r hat}
-model_type = "continental"
-rhat_df <- data.frame()
-for (i in seq_along(response_vars)) {
-  fit <- readRDS(paste0("../output/bayesian_output/", model_type,
-                     "/fit_", response_vars[i], ".stan"))
-  
+library(dplyr)
+library(rstan)
 
-  if (model_type == "simple") {
-    
-    vals <- rstan::summary(fit, pars = c("beta", "beta_0", "sigma", "lp__"))$summary[, "Rhat"]
-    
-  } else if (model_type != "simple") {
-    
-    vals <- rstan::summary(fit, pars = c("beta_0", "beta", "sigma", "beta_0i", "sigma_beta_0", "z_beta_0", "lp__"))$summary[, "Rhat"]
-    
-  }
-  # Add iteration i rhat values to total dataframe for plotting
-  new_data <- data.frame(rhat = vals, model = response_vars[i])
+# Initialize empty data frame
+rhat_df <- data.frame()
+
+# Parameters we care about for convergence
+params_to_check <- c("beta_0", "beta", "sigma", "beta_0i", "sigma_beta_0", "z_beta_0", "lp__")
+
+for (i in seq_along(response_vars)) {
+  # Load the fitted model
+  fit <- readRDS(file.path(base_path, paste0("fit_", response_vars[i], ".rds")))
+  
+  # Get summary for only the parameters of interest
+  fit_summary <- rstan::summary(fit, pars = params_to_check)$summary
+  
+  # Extract Rhat values
+  vals <- fit_summary[, "Rhat"]
+  
+  # Extract parameter names
+  param_names <- rownames(fit_summary)
+  
+  # Combine into a data frame
+  new_data <- data.frame(
+    rhat = vals,
+    param = param_names,
+    model = response_vars[i],
+    stringsAsFactors = FALSE
+  )
+  
+  # Append to main data frame
   rhat_df <- bind_rows(rhat_df, new_data)
 }
 
+# Optional: view summary
+summary(rhat_df$rhat)
+
 # Create rhat plot
 (plot <- rhat_df %>%
+    mutate(clean_name = clean_model_name(model)) %>%
+    filter(
+    model != "animal_cons_cap",
+    str_detect(clean_name, "capita")         |
+      str_detect(clean_name, "Aquatic reliance") |
+      str_detect(clean_name, "reliance")
+  ) %>%
   ggplot(aes(x = rhat)) +
   geom_histogram() +
   facet_wrap(~ model) +
   labs(x = "R-hat", y = "# parameters") +
   theme_pubclean() +
     theme(axis.text = element_text(size = 7)))
-
-# Save plot
-ggsave(paste0("../images/bayesian plots/", model_type, "/rhat.jpg"), plot = plot, device = "jpg", width = 7, height = 5, units = "in", dpi = 300)
 ```
 
-## Divergent transitions
+> Result: No R hat values exceed 1.01 - The Markov Chains have converged
+
+### Divergent transitions
 
 ```{r divergent transitions}
-# Change to either continental / realm
-model_type = "simple"
-
 # Rename the divergent transition column names to model names
-divergent_transitions <- matrix(nrow = 3, ncol = 23)
+divergent_transitions <- matrix(nrow = 3, ncol = length(response_vars))
 colnames(divergent_transitions) <- response_vars
 
 for (i in seq_along(response_vars)) {
   
   # Extract number of divergent samples
-  sampler_params <- get_sampler_params(readRDS(paste0("../output/bayesian_output/", model_type, "/fit_", response_vars[i],".stan")), inc_warmup = FALSE)
+  sampler_params <- get_sampler_params(readRDS(file.path(base_path, paste0("fit_", response_vars[i], ".rds"))), inc_warmup = FALSE)
   num_transitions <- sapply(sampler_params, function(x) sum(x[, "divergent__"]))
   
   divergent_transitions[,i] <- num_transitions
@@ -1382,7 +1318,13 @@ plot_df <- divergent_transitions %>%
   pivot_longer(!"chain", names_to = "model", values_to = "divergent") %>%
   mutate(
     suffix = sub(".*_", "", model)
-  )
+  ) %>%
+  mutate(clean_name = clean_model_name(model)) %>%
+    filter(
+    model != "animal_cons_cap",
+    str_detect(clean_name, "capita")         |
+      str_detect(clean_name, "Aquatic reliance") |
+      str_detect(clean_name, "reliance"))
 
 # compute the order of model names by suffix
 ordered_names <- plot_df %>%
@@ -1392,6 +1334,7 @@ ordered_names <- plot_df %>%
 
 # Plot # divergent transitions
 (plot <- plot_df %>%
+    
   mutate(model = factor(model, levels = ordered_names)) %>%
   ggplot(aes(y = model, x = divergent, fill = chain)) +
   geom_col() +
@@ -1399,146 +1342,308 @@ ordered_names <- plot_df %>%
   labs(y = "Model", x = "# divergent transitions") +
   theme_light() +
     theme(legend.position = "bottom"))
-
-ggsave(paste0("../images/bayesian plots/", model_type, "/divergent_samples.jpg"), plot = plot, device = "jpg", width = 7, height = 5, units = "in", dpi = 300)
 ``` 
 
-## Generate Posterior Predictive distribuitons
+> Result: Out of 3000 samples, the highest number of divergent transitions was 5 - divergence is not an issue. 
 
-This code chunk will only run if not run before as it takes awhile to run.
+## SI Figure: R^2
 
-```{r ppd distributions}
-if ( !file.exists(paste0("../output/bayesian_output/", model_type, "/posterior_predictive_all_models.parquet")) ) {
-  
-  model_type = "realm"
-# Load in function to clean the model output names from snake case to a publication-friendly read
-source("../R/clean_model_name.R")
+```{r R^2}
+# Calculate hierarchical R² across models, decomposed into fixed, random,
+# and combined (conditional) components
+R2_df <- data.frame(
+  fixed_r2    = numeric(0),
+  random_r2   = numeric(0),
+  combined_r2 = numeric(0),
+  model       = character(0)
+)
 
-# Function to extract posterior predictive draws for a model.
-extract_ppd <- function(model_name, model_type) {
+for (i in seq_along(response_vars)) {
 
-  # Load fitted Stan model
-  fit <- readRDS(
-    paste0("../output/bayesian_output/", model_type, "/fit_", model_name, ".stan")
+  fit <- rstan::extract(
+    readRDS(file.path(base_path, paste0("fit_", response_vars[i], ".rds"))),
+    permuted = TRUE
   )
 
-  x <- rstan::extract(fit, permuted = TRUE)
+  b_s       <- fit$beta_0i[1:3000, ]
+  realm_ids <- readRDS(file.path(base_path, paste0("realms_", response_vars[i], ".rds")))
+  X         <- readRDS(file.path(base_path, paste0("X_",      response_vars[i], ".rds")))
+  Z         <- model.matrix(~ 0 + factor(realm_ids))
 
-  # Posterior predictive draws (S × N)
-  y_pred <- x$y_pred
+  # Linear predictors: iterations × N
+  mu_random <- b_s %*% t(Z)
+  beta_s    <- fit$beta[1:3000, ]
+  mu_fixed  <- beta_s %*% t(X)
 
-  # Load X and y to get N
-  X <- readRDS(
-    paste0("../output/bayesian_output/", model_type, "/X_", model_name, ".rds")
-  )
-  y <- readRDS(
-    paste0("../output/bayesian_output/", model_type, "/y_", model_name, ".rds")
-  )
+  # Variance partitioning across posterior iterations
+  var_fixed_s  <- apply(mu_fixed,  1, var)
+  var_random_s <- apply(mu_random, 1, var)
+  var_resid_s  <- fit$sigma^2
+  mu_total     <- mu_fixed + mu_random
+  var_total_s  <- apply(mu_total, 1, var)
 
-  N <- length(y)
+  # Marginal R² (fixed), random R², and conditional R² (combined)
+  R2_fixed_s  <- var_fixed_s  / (var_total_s + var_resid_s)
+  R2_random_s <- var_random_s / (var_total_s + var_resid_s)
+  R2_cond_s   <- var_total_s  / (var_total_s + var_resid_s)
 
-  # Load realm names (vector of length N)
-  realm_levels <- readRDS(
-    paste0("../output/bayesian_output/", model_type, "/realms_", model_name, ".rds")
-  )
-
-  # Safety check
-  if (length(realm_levels) != N) {
-    stop(paste0("realm_levels length mismatch for model ", model_name))
-  }
-
-  # Format long
-  ppd_long <- as.data.frame(y_pred) %>%
-    mutate(draw = row_number()) %>%
-    pivot_longer(-draw, names_to = "obs", values_to = "ppd") %>%
-    mutate(
-      obs = as.integer(gsub("V", "", obs)),
-      region = realm_levels[obs],
-      y_obs = y[obs],
-      model = model_name
+  R2_df <- bind_rows(
+    R2_df,
+    data.frame(
+      fixed_r2    = R2_fixed_s,
+      random_r2   = R2_random_s,
+      combined_r2 = R2_cond_s,
+      model       = response_vars[i]
     )
-
-  return(ppd_long)
+  )
 }
 
+# Colours for effect type — drawn from project palette
+# Fixed = blue (predictors), random = teal (realm structure), combined = grey
+r2_colors <- c(
+  "Fixed"    = "#2B6AA8",
+  "Random"   = "#1A7A6E",
+  "Combined" = "#888780"
+)
 
-# Loop over all models and bind results
-ppd_all_models <- map_dfr(response_vars, ~ extract_ppd(.x, model_type)) %>%
-  mutate(clean_name = clean_model_name(model)) # Add column for clean model names
-
-
-# Calculate posterior predictive means
-ppd_means <- ppd_all_models %>%
-  group_by(model, obs, region) %>%
-  summarise(
-    ppd_mean = mean(ppd),
-    y_obs    = first(y_obs),
-    .groups  = "drop"
+# Build plot data — filter to capita and reliance models, clean names
+r2_plot_df <- R2_df %>%
+  filter(
+    str_detect(model, "_cap") | str_detect(model, "_rel"),
+    model != "animal_cons_cap"
+  ) %>%
+  pivot_longer(
+    cols      = c(fixed_r2, random_r2, combined_r2),
+    names_to  = "effect",
+    values_to = "r2"
+  ) %>%
+  mutate(
+    clean_name = clean_model_name(model),
+    effect     = factor(
+      case_when(
+        effect == "fixed_r2"    ~ "Fixed",
+        effect == "random_r2"   ~ "Random",
+        effect == "combined_r2" ~ "Combined"
+      ),
+      levels = c("Fixed", "Random", "Combined")
+    )
   )
 
-# Save combined posterior predictive dataset
-write_parquet(
-  ppd_all_models,
-  paste0("../output/bayesian_output/", model_type, "/posterior_predictive_all_models.parquet")
+# Compute posterior medians and 95% CI per model × effect for reference lines
+r2_summary <- r2_plot_df %>%
+  group_by(clean_name, effect) %>%
+  summarise(
+    med   = median(r2),
+    lo95  = quantile(r2, 0.025),
+    hi95  = quantile(r2, 0.975),
+    .groups = "drop"
+  )
+
+# Shared theme applied to every individual panel
+theme_r2 <- function(show_y = FALSE, show_x = FALSE) {
+  base <- theme_minimal(base_size = 8) +
+    theme(
+      text                  = element_text(family = "sans", color = "black"),
+      plot.background       = element_rect(fill = "transparent", color = NA),
+      panel.background      = element_rect(fill = "transparent", color = NA),
+      panel.grid.minor      = element_blank(),
+      panel.grid.major.x    = element_line(
+        color = scales::alpha("black", 0.12), linewidth = 0.3
+      ),
+      panel.grid.major.y    = element_blank(),
+      strip.background      = element_blank(),
+      plot.title            = element_text(size = 5.5, face = "bold",
+                                            hjust = 0.5, margin = margin(b = 2)),
+      plot.tag              = element_text(size = 7, face = "bold"),
+      plot.tag.position     = "topleft",
+      axis.text.x           = element_text(size = 5.5, color = "black"),
+      axis.text.y           = element_text(size = 5.5, color = "black"),
+      axis.title.x          = element_blank(),
+      axis.title.y          = element_blank(),
+      legend.position       = "none",
+      plot.margin           = margin(3, 4, 3, 4)
+    )
+
+  if (show_y) base <- base + theme(
+    axis.title.y = element_text(size = 6.5, face = "bold", margin = margin(r = 3))
+  )
+  if (show_x) base <- base + theme(
+    axis.title.x = element_text(size = 6.5, face = "bold", margin = margin(t = 3))
+  )
+  base
+}
+
+# Build one density panel per model
+model_names <- unique(r2_plot_df$clean_name)
+
+panels <- lapply(seq_along(model_names), function(i) {
+  nm      <- model_names[i]
+  df_sub  <- r2_plot_df %>% filter(clean_name == nm)
+  sum_sub <- r2_summary  %>% filter(clean_name == nm)
+
+  # Left column panels: 1, 5, 9, 13 — show y-axis title
+  # Bottom row panels: 13, 14, 15 — show x-axis title
+  show_y <- i %in% c(1, 5, 9, 13)
+  show_x <- i %in% c(13, 14, 15)
+
+  ggplot(df_sub, aes(x = r2, colour = effect, fill = effect)) +
+    geom_density(alpha = 0.18, linewidth = 0.55) +
+    geom_vline(
+      data      = sum_sub,
+      aes(xintercept = med, colour = effect),
+      linewidth = 0.4,
+      linetype  = "dashed"
+    ) +
+    scale_colour_manual(values = r2_colors) +
+    scale_fill_manual(  values = r2_colors) +
+    scale_x_continuous(
+      limits = c(0, 1),
+      breaks = c(0, 0.5, 1),
+      labels = c("0", "0.5", "1")
+    ) +
+    labs(
+      title = nm,
+      tag   = LETTERS[i],
+      y     = if (show_y) "Density" else NULL,
+      x     = if (show_x) bquote("Posterior" ~ R^2) else NULL
+    ) +
+    theme_r2(show_y = show_y, show_x = show_x)
+})
+
+# Extract a shared legend from a single fully-specified panel
+legend_source <- ggplot(r2_plot_df, aes(x = r2, colour = effect, fill = effect)) +
+  geom_density(alpha = 0.18, linewidth = 0.55) +
+  scale_colour_manual(values = r2_colors, name = "Effect type") +
+  scale_fill_manual(  values = r2_colors, name = "Effect type") +
+  guides(
+    colour = guide_legend(title.position = "top", title.hjust = 0.5, nrow = 1),
+    fill   = guide_legend(title.position = "top", title.hjust = 0.5, nrow = 1)
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+legend_grob <- cowplot::get_plot_component(
+  legend_source, "guide-box", return_all = TRUE
 )
-  
+legend_grob <- Filter(function(x) !inherits(x, "zeroGrob"), legend_grob)[[1]]
+
+# Assemble rows manually — bottom row (3 panels) centered with empty spacers
+# widths c(0.5, 1, 1, 1, 0.5) flanks the three panels with half-column margins
+empty <- ggplot() + theme_void()
+
+row1 <- panels[[1]]  | panels[[2]]  | panels[[3]]  | panels[[4]]
+row2 <- panels[[5]]  | panels[[6]]  | panels[[7]]  | panels[[8]]
+row3 <- panels[[9]]  | panels[[10]] | panels[[11]] | panels[[12]]
+row4 <- (empty | panels[[13]] | panels[[14]] | panels[[15]] | empty) +
+  plot_layout(widths = c(0.5, 1, 1, 1, 0.5))
+
+grid_plot <- wrap_plots(row1, row2, row3, row4, ncol = 1) +
+  plot_layout(heights = c(1, 1, 1, 1)) &
+  theme(plot.margin = margin(2, 3, 2, 3))
+
+# Stack grid above shared legend
+plot <- cowplot::plot_grid(
+  grid_plot,
+  legend_grob,
+  ncol        = 1,
+  rel_heights = c(1, 0.11)
+)
+
+ggsave(
+  filename = paste0("../images/SI/r2.pdf"),
+  plot     = plot,
+  device   = cairo_pdf,
+  width    = 9,
+  height   = 5,
+  units    = "in"
+)
+```
+## Generate PPD
+
+This code chunk will only run if not run before as it takes awhile to run. This plots the posterior predictive distributions (PPDs) across each model used in the paper. 
+
+```{r extract ppd}
+if (!file.exists(file.path(base_path,"ppd.parquet"))) {
+
+  # Load function to clean model output names to publication-friendly labels
+
+  # Extract posterior predictive draws for a single model
+  # model_name is used consistently for all file reads — no global i dependency
+  extract_ppd <- function(model_name, model_type) {
+
+    # Load fitted Stan model and extract posterior samples
+    fit   <- readRDS(file.path(base_path, paste0("fit_",    model_name, ".rds")))
+    x     <- rstan::extract(fit, permuted = TRUE)
+    y_pred <- x$y_pred   # S × N matrix of posterior predictive draws
+
+    # Load design matrix, response, and realm labels for this model
+    X           <- readRDS(file.path(base_path, paste0("X_",      model_name, ".rds")))
+    y           <- readRDS(file.path(base_path, paste0("y_",      model_name, ".rds")))
+    realm_levels <- readRDS(file.path(base_path, paste0("realms_", model_name, ".rds")))
+
+    N <- length(y)
+
+    # Validate that realm labels match the number of observations
+    if (length(realm_levels) != N) {
+      stop(paste0("realm_levels length mismatch for model: ", model_name,
+                  " (expected ", N, ", got ", length(realm_levels), ")"))
+    }
+
+    # Reshape to long format: one row per draw × observation
+    ppd_long <- as.data.frame(y_pred) %>%
+      mutate(draw = row_number()) %>%
+      pivot_longer(-draw, names_to = "obs", values_to = "ppd") %>%
+      mutate(
+        obs    = as.integer(gsub("V", "", obs)),
+        region = realm_levels[obs],
+        y_obs  = y[obs],
+        model  = model_name
+      )
+
+    return(ppd_long)
+  }
+
+  # Extract PPD for all models and combine
+  ppd_all_models <- map_dfr(response_vars, ~ extract_ppd(.x, model_type)) %>%
+    mutate(clean_name = clean_model_name(model))
+
+  # Calculate posterior predictive means per observation
+  ppd_means <- ppd_all_models %>%
+    group_by(model, obs, region) %>%
+    summarise(
+      ppd_mean = mean(ppd),
+      y_obs    = first(y_obs),
+      .groups  = "drop"
+    )
+
+  # Save combined posterior predictive dataset
+  write_parquet(
+    ppd_all_models,
+    file.path(base_path,"ppd.parquet")
+  )
+
+} else {
+  message("Posterior predictive values have already been generated — skipping model posterior predictive acquisition")
 }
 ```
 
-## Plot posterior predictive distributions
 
-```{r create ppd plot}
-# Read in posterior predictive distrbituion data
-ppd_all_models <- read_parquet(
-  paste0("../output/bayesian_output/", model_type, "/posterior_predictive_all_models.parquet")
-)
 
-# Get letters for panel numbers
-panel_tags <- letters[1:15] 
+## SI Figure: PPD
 
-# Function to draw a single panel ---
-make_ppd_panel <- function(df, title, tag = "") {
-  ggplot(df, aes(x = ppd, group = draw)) +
-    geom_density(alpha = 0.08, color = "grey60") +
-    geom_density(aes(x = y_obs), color = "black", linewidth = 1.1) +
-    labs(y = "Density") +
-    annotate(
-      "text",
-      x = -Inf, y = Inf,
-      label = tag,
-      hjust = -0.3, vjust = 1.3,
-      size = 3, fontface = "bold"
-    ) +
-    theme_minimal(base_size = 8) +
-    theme(
-      panel.grid.major.x = element_blank(),
-      panel.grid.minor.x = element_blank(),
-      panel.grid.major.y = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
-      panel.grid.minor.y = element_blank(),
-      panel.background = element_rect(fill = "transparent", color = NA),
-      plot.background = element_rect(fill = "transparent", color = NA),
-      strip.background = element_blank(),
-      strip.text = element_blank(),
-      axis.text = element_text(size = 6, color = "black"),
-      axis.title.y = element_text(size = 7, margin = margin(r = 5), face = "bold"),
-      axis.text.x = element_text(size = 5.5, angle = 30, hjust = 1),
-      axis.title.x = element_blank()
-    )
-}
+```{r plot ppd}
+# Read in posterior predictive distribution data
+ppd_all_models <- read_parquet(file.path(base_path,"ppd.parquet"))
 
-#  Split df_plot into 9 panels
-xlab_plot <- ggplot() +
-  theme_void() +
-  annotate("text", x = 0.5, y = 0.5,
-           label = "Response value",
-           size = 2.5, fontface = "bold")
-
+# Sample 30 posterior draws to plot — enough to show the envelope without
+# overplotting, consistent across all panels
 draw_sample <- sample(unique(ppd_all_models$draw), size = 30)
 
+# Filter to models of interest and sampled draws
 df_plot <- ppd_all_models %>%
   filter(
     model != "animal_cons_cap",
-    str_detect(clean_name, "capita") |
+    str_detect(clean_name, "capita")         |
       str_detect(clean_name, "Aquatic reliance") |
       str_detect(clean_name, "reliance")
   ) %>%
@@ -1547,41 +1652,337 @@ df_plot <- ppd_all_models %>%
 
 panel_names <- levels(df_plot$clean_name)
 
-layout_order <- c(15, 3, 5,
-                  1, 7, 9,
-                  13, 11, 4,
-                  2, 6, 8,
-                  10, 14, 12)
+# 4×4 layout — 15 panels means bottom row has 3 panels centered with spacers
+# Panels are ordered sequentially by clean_name factor level (A–O)
+# Left column: panels 1, 5, 9, 13 — show y-axis title
+# Bottom row:  panels 13, 14, 15  — show x-axis title
+# Left column also gets inward-nudged tag to clear y-axis label text
 
-panel_tags <- letters[1:15]
+# Function to draw a single PPD panel
+# title    = model name shown above panel
+# tag      = uppercase letter (A–O)
+# left_col = TRUE nudges tag right and shows y-axis title
+# bot_row  = TRUE shows x-axis title
+make_ppd_panel <- function(df, title = "", tag = "",
+                           left_col = FALSE, bot_row = FALSE) {
 
-# assign tags in layout order
-tags_by_panel_index <- rep("", length(panel_names))
-tags_by_panel_index[layout_order] <- panel_tags
+  tag_pos <- if (left_col) c(0.18, 1) else c(0.01, 1)
 
-# Create panel plots
+  p <- ggplot(df, aes(x = ppd, group = draw)) +
+
+    # Posterior predictive envelope — faint coloured lines show spread
+    geom_density(
+      colour    = "#7BAEC4",
+      linewidth = 0.25
+    ) +
+
+    # Observed data density — drawn on top, clearly distinct
+    geom_density(
+      aes(x = y_obs, group = NULL),
+      colour    = "grey20",
+      linewidth = 0.7
+    ) +
+
+    labs(title = title, tag = tag) +
+    theme_minimal(base_size = 8) +
+    theme(
+      text              = element_text(family = "sans", color = "black"),
+      plot.background   = element_rect(fill = "transparent", color = NA),
+      panel.background  = element_rect(fill = "transparent", color = NA),
+      panel.grid.minor  = element_blank(),
+      panel.grid.major.x = element_blank(),
+      panel.grid.major.y = element_line(
+        color = scales::alpha("black", 0.12), linewidth = 0.3
+      ),
+      plot.title        = element_text(size = 5, face = "bold", hjust = 0.5,
+                                        margin = margin(b = 2)),
+      plot.tag          = element_text(size = 7, face = "bold"),
+      plot.tag.position = tag_pos,
+      axis.text         = element_text(size = 5.5, color = "black"),
+      axis.title.x      = element_blank(),
+      axis.title.y      = element_blank(),
+      plot.margin       = margin(3, 4, 3, 4)
+    )
+
+  if (left_col) p <- p +
+    labs(y = "Density") +
+    theme(axis.title.y = element_text(size = 6.5, face = "bold",
+                                       margin = margin(r = 3)))
+
+  if (bot_row) p <- p +
+    labs(x = "Response value (standardised)") +
+    theme(axis.title.x = element_text(size = 6.5, face = "bold",
+                                       margin = margin(t = 3)))
+  p
+}
+
+# Build all 15 panels in sequential order (A–O)
 panels <- lapply(seq_along(panel_names), function(i) {
-  nm <- panel_names[i]
+  nm     <- panel_names[i]
   df_sub <- df_plot %>% filter(clean_name == nm)
-  make_ppd_panel(df_sub, nm, tag = tags_by_panel_index[i])
+  make_ppd_panel(
+    df_sub,
+    title    = nm,
+    tag      = LETTERS[i],
+    left_col = i %in% c(1, 5, 9, 13),
+    bot_row  = i %in% c(13, 14, 15)
+  )
 })
 
-
-# Create empty plots for bottom row in the combined plot (so final plot that sits alone at the bottom can be centered)
+# Assemble 4×4 grid — bottom row centered with half-column empty spacers
 empty <- ggplot() + theme_void()
 
-# Create panels that will display in the ppd plot
-row1 <- panels[[15]]  | panels[[3]]  | panels[[5]]
-row2 <- panels[[1]]  | panels[[7]]  | panels[[9]]
-row3 <- panels[[13]]  | panels[[11]]  | panels[[4]]
-row4 <- panels[[2]] | panels[[6]] | panels[[8]]
-row5 <- panels[[10]] | panels[[14]] | panels[[12]]
-row6 <- empty | xlab_plot | empty
+row1 <- panels[[1]]  | panels[[2]]  | panels[[3]]  | panels[[4]]
+row2 <- panels[[5]]  | panels[[6]]  | panels[[7]]  | panels[[8]]
+row3 <- panels[[9]]  | panels[[10]] | panels[[11]] | panels[[12]]
+row4 <- (empty | panels[[13]] | panels[[14]] | panels[[15]] | empty) +
+  plot_layout(widths = c(0.5, 1, 1, 1, 0.5))
 
-(final_plot <- wrap_plots(
-  row1, row2, row3, row4, row5, row6,
-  ncol = 1
-) + plot_layout(heights = c(1,1,1,1,1,0.15)))
+final_plot <- wrap_plots(row1, row2, row3, row4, ncol = 1) +
+  plot_layout(heights = c(1, 1, 1, 1)) &
+  theme(plot.margin = margin(2, 3, 2, 3))
 
-ggsave(paste0("../images/SI/ppd_SI.jpg"), plot = final_plot, device = "jpg", width = 4, height = 5, units = "in", dpi = 300)
+ggsave(
+  filename = "../images/SI/ppd_SI.pdf",
+  plot     = final_plot,
+  device   = cairo_pdf,
+  width    = 9,
+  height   = 5,
+  units    = "in"
+)
 ```
+
+# Sensitivity Testing
+
+## Main paper posteriors but using only the coastline variable. This is run as a sensitivity testing measure as for whether we can include both coastline and EEZ area. 
+
+```{r hierarcical partial slope posteriors}
+# Get file path for Bayesian model with the coastline length only variable model
+separated_model_path <- "../output/bayesian_output/random_effect_realm/var_coastline_km"
+
+# Create a data frame of posteriors of partial slopes across Bayesian models
+slopes_df <- data.frame()
+
+for (i in seq_along(response_vars)) {
+
+  # Extract MCMC samples
+  x <- rstan::extract(
+    readRDS(file.path(separated_model_path, paste0("fit_", response_vars[i], ".rds"))),
+    permuted = TRUE
+  )
+  beta_global <- x$beta
+  X           <- readRDS(file.path(separated_model_path, paste0("X_", response_vars[i], ".rds")))
+
+  n_iter <- nrow(beta_global)
+  K      <- ncol(beta_global)
+  vars   <- colnames(X)
+
+  # Extract global slopes and calculate credibility intervals
+  ci_df <- expand_grid(iter = 1:n_iter, k = 1:K) %>%
+    mutate(
+      value = map2_dbl(iter, k, ~ beta_global[.x, .y]),
+      var   = vars[k]
+    ) %>%
+    group_by(var) %>%
+    summarise(
+      lo95 = quantile(value, 0.025),
+      lo80 = quantile(value, 0.10),
+      lo50 = quantile(value, 0.25),
+      med  = quantile(value, 0.50),
+      hi50 = quantile(value, 0.75),
+      hi80 = quantile(value, 0.90),
+      hi95 = quantile(value, 0.975),
+      .groups = "drop"
+    ) %>%
+    mutate(model = response_vars[i])
+
+  slopes_df <- bind_rows(slopes_df, ci_df)
+}
+
+# Clean variable names for axis labels
+var_labels <- c(
+  coastline_km               = "Coastline length (km)",
+  gdp_trade                  = "GDP from trade (%)",
+  inundation_area_log1000km2 = "Inundated area (log 1000 km²)",
+  log_gdp                    = "GDP (log scale)",
+  pop_10k_pct_coast          = "Pop. within 10 km of coast (%)",
+  supermarkets               = "Supermarkets per 100,000",
+  eez_total                  = "Log EEZ area km²"
+)
+
+# Model colours — harmonized palette
+model_colors <- c(
+  "Terrestrial animal consumption per capita" = "#8C1A11",
+  "Aquatic animal consumption per capita"     = "#2B6AA8",
+  "Aquatic reliance"                          = "#1A7A6E",
+  "Capture consumption per capita"            = "#D4601A",
+  "Aquaculture consumption per capita"        = "#E8B000",
+  "Domestic consumption per capita"           = "#7BAEC4",
+  "Foreign consumption per capita"            = "#C45C3A",
+  "Marine consumption per capita"             = "#9B6DC5",
+  "Inland consumption per capita"             = "#D4956A"
+)
+
+# Interval colours — three lightness steps per model colour
+col_95 <- colorspace::lighten(model_colors, 0.65)
+col_80 <- colorspace::lighten(model_colors, 0.35)
+col_50 <- colorspace::lighten(model_colors, 0.05)
+
+# Load script to convert model name strings to readable labels
+source("../R/clean_model_name.R")
+
+# Build plotting data
+df_plot <- slopes_df %>%
+  mutate(
+    clean_name = clean_model_name(model),
+    nonzero    = (lo95 < 0 & hi95 < 0) | (lo95 > 0 & hi95 > 0),
+    suffix     = sub(".*_", "", model),
+    suffix_num = suppressWarnings(as.numeric(suffix))
+  ) %>%
+  filter(
+    str_detect(clean_name, "capita") | str_detect(clean_name, "Aquatic animal reliance"),
+    !model == "animal_cons_cap"
+  ) %>%
+  arrange(suffix_num, suffix) %>%
+  mutate(
+    clean_name = factor(clean_name, levels = unique(clean_name)),
+    col95 = coalesce(col_95[as.character(clean_name)], "grey80"),
+    col80 = coalesce(col_80[as.character(clean_name)], "grey60"),
+    col50 = coalesce(col_50[as.character(clean_name)], "grey40"),
+    panel_id = as.numeric(factor(clean_name))
+  )
+
+# Shared symmetric x-axis limits so zero lines align across all panels
+x_limit <- max(abs(c(df_plot$lo95, df_plot$hi95)), na.rm = TRUE) * 1.05
+x_limit <- ceiling(x_limit * 10) / 10
+
+panel_names <- levels(df_plot$clean_name)
+
+# Function to draw a single credible interval panel
+# left_col = TRUE shifts the tag inward to clear the y-axis label text
+make_panel <- function(df, show_yaxis = FALSE, title = "", tag = "",
+                       left_col = FALSE) {
+
+  df_sig  <- df %>% filter(nonzero)
+  df_nsig <- df %>% filter(!nonzero)
+
+  # Left-column panels have wide y-axis text; nudge the tag right so it
+  # doesn't sit directly on top of the longest label
+  tag_pos <- if (left_col) c(0.52, 1) else c(0.01, 1)
+
+  ggplot(df, aes(y = var)) +
+    geom_segment(aes(x = lo95, xend = hi95, color = col95),
+                 linewidth = 2.2, lineend = "butt", alpha = 1) +
+    geom_segment(aes(x = lo80, xend = hi80, color = col80),
+                 linewidth = 2.2, lineend = "butt", alpha = 1) +
+    geom_segment(aes(x = lo50, xend = hi50, color = col50),
+                 linewidth = 2.2, lineend = "butt", alpha = 1) +
+    geom_point(aes(x = med), shape = 21, size = 1.6,
+               fill = "white", color = "grey20", stroke = 0.4) +
+
+    geom_vline(xintercept = 0, linetype = "dashed",
+               linewidth = 0.35, color = "grey40") +
+    scale_color_identity() +
+    scale_x_continuous(limits = c(-x_limit, x_limit)) +
+    scale_y_discrete(labels = var_labels) +
+    labs(title = title, tag = tag) +
+    theme_minimal(base_size = 8) +
+    theme(
+      plot.title         = element_text(size = 3.5, face = "bold", hjust = 0.5,
+                                        margin = margin(b = 2)),
+      plot.tag           = element_text(size = 7, face = "bold"),
+      plot.tag.position  = tag_pos,
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor   = element_blank(),
+      panel.grid.major.x = element_line(
+        color = scales::alpha("black", 0.12), linewidth = 0.3
+      ),
+      axis.text.x        = element_text(size = 5.5, color = "black"),
+      axis.title         = element_blank(),
+      plot.margin        = margin(4, 6, 4, 6),
+      axis.text.y        = if (show_yaxis) element_text(size = 5.5, color = "black",
+                                                         hjust = 1) else element_blank(),
+      axis.ticks.y       = element_blank()
+    )
+}
+
+# Build all nine panels — panels 1, 4, 7 are left column (show y-axis + shifted tag)
+panels <- lapply(seq_along(panel_names), function(i) {
+  name     <- panel_names[i]
+  df_sub   <- df_plot %>% filter(clean_name == name)
+  show_y   <- i %in% c(1, 4, 7)
+  left_col <- i %in% c(1, 4, 7)
+  make_panel(df_sub,
+             show_yaxis = show_y,
+             left_col   = left_col,
+             title      = name,
+             tag        = letters[i])
+})
+
+# Centered x-axis label placed below the grid
+xlab_plot <- ggplot() +
+  theme_void() +
+  annotate("text", x = 0.5, y = 0.5,
+           label    = "Posterior slope estimate",
+           size     = 2.4,
+           fontface = "bold",
+           hjust    = 0.5,
+           vjust    = 0.5)
+
+# Assemble 3×3 grid
+grid_plot <- (
+    (panels[[1]] | panels[[2]] | panels[[3]]) /
+    (panels[[4]] | panels[[5]] | panels[[6]]) /
+    (panels[[7]] | panels[[8]] | panels[[9]])
+  ) +
+  plot_layout(heights = c(1, 1, 1)) &
+  theme(plot.margin = margin(3, 4, 3, 4))
+
+# Stack grid above centered x-axis label
+final_plot <- cowplot::plot_grid(
+  grid_plot,
+  xlab_plot,
+  ncol        = 1,
+  rel_heights = c(1, 0.07)
+)
+
+ggsave(
+  filename = "../images/SI/posteriors_partial_slopes_coastline_SI.pdf",
+  plot     = final_plot,
+  device   = cairo_pdf,
+  width    = 5,
+  height   = 3,
+  units    = "in"
+)
+```
+
+> Result: Posteriors between coastline & EEZ area model and the coastline only model are very similar in significance and direction.
+
+## PSIS-LOOCV
+
+With the collinearity matrix seen above, there are concerns that this collinearity might influence model performance. We checked posterior distribution shpaes in the previous code chunk. To additionally gague model performance and whether the collinearity is having a confounding effect on the results, we will compare the Pareto-smoothed importance sampling leave one out cross-validation expected log pointwise predictive density (PSIS-LOOCV) of the model with both coastline length and EEZ area and with the model including only coastline length.
+
+```{r PSIS-LOOCV}
+# Extract log-likelihood matrices for the combined coastline length-eez area model
+combined_model_path <- base_path
+
+# Extract log-likelihood matrices
+log_lik_combined  <- rstan::extract(
+  readRDS(file.path(combined_model_path,  paste0("fit_", response_vars[i], ".rds"))),
+  permuted = TRUE
+)$log_lik
+
+log_lik_separated <- rstan::extract(
+  readRDS(file.path(separated_model_path, paste0("fit_", response_vars[i], ".rds"))),
+  permuted = TRUE
+)$log_lik
+
+# Compute LOO for each model
+loo_combined  <- loo(log_lik_combined,  cores = 2)
+loo_separated <- loo(log_lik_separated, cores = 2)
+
+# Compare — positive elpd_diff favours the first model listed
+loo_compare(loo_combined, loo_separated)
+```
+
+> Result: Models are indistinguishable in performance looking at the LOO ELPD CV scores. And given the partial slopes do not differ substantially across models when using removing one variable, the collinearity between the coastline length and EEZ area is not 

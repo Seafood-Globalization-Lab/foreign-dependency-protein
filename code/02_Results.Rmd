@@ -35,6 +35,7 @@ library(stringr)
 library(grid)
 library(broom)
 library(ggtext)
+library(progress)
 ```
 
 # Read in data
@@ -526,7 +527,7 @@ aquatic_reliance %>%
 
 This panel visualizes for each country separated by region, their average annual change in their aggregate aquatic animal reliance, with separate colors as stacked bars representing the disaggregate reliance. The regions include Africa, Asia, South America, North America, Europe, and Oceania.
 
-```{r}
+```{r aggregate vs disaggregate change in reliance}
 # Shared base theme (mirrors theme_realm_panel style)
 theme_reliance <- function(base_size = 8,
                            axis_title_x = TRUE,
@@ -750,6 +751,41 @@ ggsave(
   height   = 6,
   units    = "in"
 )
+```
+
+## Statistic: How many countries have increased their X reliance?
+
+```{r}
+# Proportion of countries with increasing reliance
+disagg %>%
+  filter(estimate > 0) %>%
+  group_by(habitat, method) %>%
+  count()
+
+# Proportion of countries with decreasing reliance
+disagg %>%
+  filter(estimate < 0) %>%
+  group_by(habitat, method) %>%
+  count()
+
+
+disagg %>%
+  add_region("iso3c", "region") %>%
+  filter(estimate > 0) %>%
+  group_by(habitat, method, region) %>%
+  count() %>% 
+  filter(habitat == "marine",
+         method == "aquaculture") %>%
+  arrange(-n)
+
+disagg %>%
+  add_region("iso3c", "region") %>%
+  filter(estimate < 0) %>%
+  group_by(habitat, method, region) %>%
+  count() %>% 
+  filter(habitat == "marine",
+         method == "capture") %>%
+  arrange(-n)
 ```
 
 
@@ -1050,6 +1086,17 @@ predictors <- c(
   "pop_10k_pct_coast"
 )
 
+# All response variables
+predictors <- c(
+  "coastline_km",
+  "eez_total",
+  "log_gdp",
+  "gdp_trade",
+  "inundation_area_log1000km2",
+  "supermarkets",
+  "pop_10k_pct_coast"
+)
+
 # Variable list with EEZ total area instead of coastline_km
 # predictors <- c(
 #   "eez_total",
@@ -1065,6 +1112,7 @@ model_type = "realm"
 
 # Get which variable is selected (for unique file path)
 var_used = predictors[1]
+var_used = "all"
 
 # Create file path to save files to
 base_path <- file.path(
@@ -1088,11 +1136,25 @@ all_outputs_exist <- all(
   })
 )
 
+
+
+# Initialize the progress bar
+pb <- progress_bar$new(
+  format = "  [:bar] :percent :elapsedfull",
+  total = length(response_vars), # Number of models to run
+  clear = FALSE, # Do not clear the bar after completion
+  width = 60 # Width of the bar
+)
+
+
 if (all_outputs_exist) {
   message("All Stan outputs already exist for all response variables — skipping model fitting loop.")
 } else {
 
   for (i in seq_along(response_vars)) {
+
+    # Update progress bar
+    pb$tick()
 
     joined_df <- get(response_vars[i]) %>%
       left_join(ac_df, by = "iso3c") %>%
@@ -1140,8 +1202,8 @@ if (all_outputs_exist) {
     }
 
     # Save design matrix, response, and realm vector
-    saveRDS(X, file.path(base_path, paste0("X_",      response_vars[i], ".rds")))
-    saveRDS(y, file.path(base_path, paste0("y_",      response_vars[i], ".rds")))
+    saveRDS(X, file.path(base_path, paste0("X_", response_vars[i], ".rds")))
+    saveRDS(y, file.path(base_path, paste0("y_", response_vars[i], ".rds")))
     saveRDS(
       joined_df$realm,
       file.path(base_path, paste0("realms_", response_vars[i], ".rds"))
@@ -1240,7 +1302,8 @@ var_labels <- c(
   inundation_area_log1000km2 = "Inundated area (log 1000 km²)",
   log_gdp                    = "GDP (log scale)",
   pop_10k_pct_coast          = "Pop. within 10 km of coast (%)",
-  supermarkets               = "Supermarkets per 100,000"
+  supermarkets               = "Supermarkets per 100,000",
+  eez_total                  = "Log EEZ area km²"
 )
 
 # Model colours — harmonized palette
@@ -1273,7 +1336,7 @@ df_plot <- slopes_df %>%
     suffix_num = suppressWarnings(as.numeric(suffix))
   ) %>%
   filter(
-    str_detect(clean_name, "capita") | str_detect(clean_name, "Aquatic reliance"),
+    str_detect(clean_name, "capita") | str_detect(clean_name, "Aquatic animal reliance"),
     !model == "animal_cons_cap"
   ) %>%
   arrange(suffix_num, suffix) %>%
@@ -1304,33 +1367,13 @@ make_panel <- function(df, show_yaxis = FALSE, title = "", tag = "",
   tag_pos <- if (left_col) c(0.52, 1) else c(0.01, 1)
 
   ggplot(df, aes(y = var)) +
-
-    # Non-significant rows — reduced opacity, drawn behind
-    geom_segment(data = df_nsig,
-                 aes(x = lo95, xend = hi95, color = col95),
-                 linewidth = 2.2, lineend = "butt", alpha = 0.3) +
-    geom_segment(data = df_nsig,
-                 aes(x = lo80, xend = hi80, color = col80),
-                 linewidth = 2.2, lineend = "butt", alpha = 0.3) +
-    geom_segment(data = df_nsig,
-                 aes(x = lo50, xend = hi50, color = col50),
-                 linewidth = 2.2, lineend = "butt", alpha = 0.3) +
-    geom_point(data = df_nsig,
-               aes(x = med), shape = 21, size = 1.6,
-               fill = "white", color = "grey60", stroke = 0.3, alpha = 0.5) +
-
-    # Significant rows — full opacity, drawn on top
-    geom_segment(data = df_sig,
-                 aes(x = lo95, xend = hi95, color = col95),
+    geom_segment(aes(x = lo95, xend = hi95, color = col95),
                  linewidth = 2.2, lineend = "butt", alpha = 1) +
-    geom_segment(data = df_sig,
-                 aes(x = lo80, xend = hi80, color = col80),
+    geom_segment(aes(x = lo80, xend = hi80, color = col80),
                  linewidth = 2.2, lineend = "butt", alpha = 1) +
-    geom_segment(data = df_sig,
-                 aes(x = lo50, xend = hi50, color = col50),
+    geom_segment(aes(x = lo50, xend = hi50, color = col50),
                  linewidth = 2.2, lineend = "butt", alpha = 1) +
-    geom_point(data = df_sig,
-               aes(x = med), shape = 21, size = 1.6,
+    geom_point(aes(x = med), shape = 21, size = 1.6,
                fill = "white", color = "grey20", stroke = 0.4) +
 
     geom_vline(xintercept = 0, linetype = "dashed",

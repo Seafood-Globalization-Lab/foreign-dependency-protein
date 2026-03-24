@@ -1,34 +1,27 @@
 data {
-  int<lower=1> N;
-  int<lower=1> K;
-  int<lower=1> J;
-  matrix[N, K] X;
-  vector[N] y;                     // standardized response
-  int<lower=1, upper=J> province[N];
+  int<lower=1> N;            // Number of data points (countries)
+  int<lower=1> K;            // Number of explanatory variables
+  int<lower=1> J;            // Number of realms
+  matrix[N, K] X;            // Design matrix (explanatory variables)
+  vector[N] y;               // Response vector (standardized)
+  int<lower=1, upper=J> province[N]; // Realm index for each country
 }
 
 parameters {
-  real beta_0;                     // global intercept
-  real<lower=0> sigma_beta_0;      // SD of province intercepts
-  vector[J] z_beta_0;              // non-centered intercepts
-
-  vector[K] beta;                  // slopes
-  real<lower=0> sigma;             // residual SD
-}
-
-transformed parameters {
-  vector[J] beta_0i;               // actual province intercepts
-  beta_0i = beta_0 + sigma_beta_0 * z_beta_0;
+  real beta_0;               // Global intercept
+  real<lower=0> sigma_beta_0;  // SD of realm-specific intercepts
+  vector[J] beta_0i;         // Realm-specific intercepts
+  vector[K] beta;            // Slopes
+  real<lower=0> sigma;       // Residual standard deviation
 }
 
 model {
-  // Priors for standardized y and X
-  beta_0       ~ normal(0, 1); // y intercept
-  sigma_beta_0 ~ normal(0, 1); // realm specific deviation
-  z_beta_0     ~ normal(0, 1); // realm specific mean
-
-  beta         ~ normal(0, 1);
-  sigma        ~ exponential(1); // process error
+  // Priors
+  beta_0       ~ normal(0, 1);  // Global intercept prior
+  sigma_beta_0 ~ normal(0, 1);  // Standard deviation for realm intercepts
+  beta_0i      ~ normal(beta_0, sigma_beta_0);  // Realm-specific intercepts centered around beta_0
+  beta         ~ normal(0, 1);  // Slopes prior
+  sigma        ~ exponential(1);  // Residual error prior
 
   // Likelihood
   for (n in 1:N) {
@@ -37,8 +30,8 @@ model {
 }
 
 generated quantities {
-  vector[N] y_pred;
-  vector[N] log_lik;
+  vector[N] y_pred;           // Predictions
+  vector[N] log_lik;          // Log likelihood
 
   for (n in 1:N) {
     real mu_n = beta_0i[province[n]] + X[n] * beta;
