@@ -135,13 +135,10 @@ rm(list = c("ecoregion_full", "ecoregion_unique"))
 This code chunk is also in the main results. This code chunk extracts the name of each model name used in the Bayesian model. In code lines further down, we call the "response_vars" object to generate statistics and figures.
 
 ```{r acquire animal consumption data to be fed through analysis}
-# Calculate animal consumption
+if ( !file.exists("../output/response_vars.rds") ) {
+  
+  # Calculate animal consumption
 terr_animal_cons_cap <- aquatic_reliance %>%
-  filter(year == 2019) %>%
-  group_by(iso3c) %>%
-  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap))
-
-animal_cons_cap <- aquatic_reliance %>%
   filter(year == 2019) %>%
   group_by(iso3c) %>%
   summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap))
@@ -159,7 +156,7 @@ aquatic_rel <- aquatic_animal_cons_cap %>%
   summarize(prop_animal_protein = protein_consumed_kg_percap.x / protein_consumed_kg_percap.y)
 
 # Add items not created in the loop to the list
-response_vars <- c("terr_animal_cons_cap","animal_cons_cap", "aquatic_animal_cons_cap", "aquatic_rel", "aquatic_protein_roc", "terrestrial_protein_roc")
+response_vars <- c("terr_animal_cons_cap", "aquatic_animal_cons_cap", "aquatic_rel")
 
 for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")) {
   
@@ -209,42 +206,11 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
   
   response_vars <- c(response_vars, paste0(i, "_rel"))
   
-  # Calculate production sources' proportion of total aquatic animal consumption per capita
-  assign(
-    paste0(i, "_prop_of_aquatic_cons"),
-    get(paste0(i, "_cap")) %>%
-      left_join(aquatic_animal_cons_cap, by = "iso3c") %>%
-      group_by(iso3c) %>%
-      summarize(aquatic_source_prop = protein_consumed_kg_percap.x / protein_consumed_kg_percap.y)
-  )
-  
-  response_vars <- c(response_vars, paste0(i, "_prop_of_aquatic_cons"))
 }
 
-#calculate rate of change in aquatic protein quantity
-aquatic_protein_roc <- aquatic_reliance %>%
-  filter(data_source == "new FBS", food_group == "aquatic") %>%
-  group_by(iso3c, year, method) %>%
-  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE)) %>%
-  distinct() %>%
-  filter(method == "capture") %>%
-  split(.$iso3c) %>%
-  map(~lm(protein_consumed_kg_percap~year, data = .x)) %>%
-  map_df(broom::tidy, .id = 'iso3c') %>%
-  filter(term == 'year') %>%
-  select(c("iso3c", "aquatic_estimate" = "estimate"))
-
-#calculate rate of change in terrestrial protein quantity
-terrestrial_protein_roc <- aquatic_reliance %>%
-  filter(data_source == "new FBS", food_group == "terrestrial") %>%
-  group_by(iso3c, year) %>%
-  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE)) %>%
-  distinct() %>%
-  split(.$iso3c) %>%
-  map(~lm(protein_consumed_kg_percap~year, data = .x)) %>%
-  map_df(broom::tidy, .id = 'iso3c') %>%
-  filter(term == 'year') %>%
-  select(c("iso3c", "terrestrial_estimate" = "estimate"))
+# Save response_vars to RDS format
+saveRDS(response_vars, "../data/response_vars.rds")
+}
 ```
 
 # RQ 1a: How do aquatic food reliance trends disaggregated by source differ from aggregate aquatic food reliance?
@@ -1077,14 +1043,14 @@ Only run this code chunk if all models aren't already saved
 
 ```{r hierarchical bayesian model}
 # Variable list with coastline_km area instead of EEZ area
-predictors <- c(
-  "coastline_km",
-  "log_gdp",
-  "gdp_trade",
-  "inundation_area_log1000km2",
-  "supermarkets",
-  "pop_10k_pct_coast"
-)
+# predictors <- c(
+#   "coastline_km",
+#   "log_gdp",
+#   "gdp_trade",
+#   "inundation_area_log1000km2",
+#   "supermarkets",
+#   "pop_10k_pct_coast"
+# )
 
 # All response variables
 predictors <- c(
@@ -1111,7 +1077,6 @@ predictors <- c(
 model_type = "realm"
 
 # Get which variable is selected (for unique file path)
-var_used = predictors[1]
 var_used = "all"
 
 # Create file path to save files to
@@ -1182,6 +1147,9 @@ if (all_outputs_exist) {
       select(iso3c, 2, all_of(predictors), realm) %>%
       drop_na() %>%
       filter(realm != "")
+    
+    # Save used countries in a vector
+    saveRDS(joined_df$iso3c,"../data/model_countries")
 
     # Design matrix — z-scored predictors
     X <- joined_df %>%
@@ -1300,7 +1268,7 @@ var_labels <- c(
   coastline_km               = "Coastline length (km)",
   gdp_trade                  = "GDP from trade (%)",
   inundation_area_log1000km2 = "Inundated area (log 1000 km²)",
-  log_gdp                    = "GDP (log scale)",
+  log_gdp                    = "Log GDP per capita",
   pop_10k_pct_coast          = "Pop. within 10 km of coast (%)",
   supermarkets               = "Supermarkets per 100,000",
   eez_total                  = "Log EEZ area km²"
@@ -1716,14 +1684,14 @@ make_realm_map <- function(model_name, df = intecrept_df) {
  
 # Build panels with clean human-readable titles
 panel_titles <- c(
-  animal_cons_cap = "Daily animal protein consumption (g/cap/day)",
-  aquatic_rel     = "Aquatic animal proten reliance",
+  terr_animal_cons_cap = "Daily terrestrial animal protein consumption (g/cap/day)",
+  aquatic_rel     = "Aquatic animal protein reliance (%)",
   aquaculture_rel = "Aquaculture production reliance",
   capture_rel     = "Capture fisheries reliance"
 )
  
-p1 <- make_realm_map("animal_cons_cap") +
-  labs(title = panel_titles["animal_cons_cap"])
+p1 <- make_realm_map("terr_animal_cons_cap") +
+  labs(title = panel_titles["terr_animal_cons_cap"])
  
 p2 <- make_realm_map("aquatic_rel") +
   labs(title = panel_titles["aquatic_rel"])
@@ -1775,3 +1743,21 @@ ggsave(
   units    = "in"
 )
 ```
+
+```{r}
+intecrept_df %>%
+  filter((model == "terr_animal_cons_cap" & med < 0) |
+         (model == "aquatic_rel" & med < 0)) %>%
+  group_by(realm) %>%
+  filter(all(med < 0)) %>%
+  ungroup()
+
+intecrept_df %>%
+  filter(model %in% c("terr_animal_cons_cap", "aquatic_rel")) %>%
+  group_by(realm) %>%
+  filter(all(med[model == "terr_animal_cons_cap"] < 0) & 
+         all(med[model == "aquatic_rel"] < 0)) %>%
+  ungroup() %>% 
+  pull(realm)
+```
+

@@ -65,11 +65,6 @@ terr_animal_cons_cap <- aquatic_reliance %>%
   group_by(iso3c) %>%
   summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap))
 
-animal_cons_cap <- aquatic_reliance %>%
-  filter(year == 2019) %>%
-  group_by(iso3c) %>%
-  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap))
-
 # Calculate aquatic animal consumption
 aquatic_animal_cons_cap <- aquatic_reliance %>%
   filter(year == 2019, food_group == "aquatic") %>%
@@ -83,7 +78,7 @@ aquatic_rel <- aquatic_animal_cons_cap %>%
   summarize(prop_animal_protein = protein_consumed_kg_percap.x / protein_consumed_kg_percap.y)
 
 # Add items not created in the loop to the list
-response_vars <- c("terr_animal_cons_cap","animal_cons_cap", "aquatic_animal_cons_cap", "aquatic_rel", "aquatic_protein_roc", "terrestrial_protein_roc")
+response_vars <- c("terr_animal_cons_cap", "aquatic_animal_cons_cap", "aquatic_rel")
 
 for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")) {
   
@@ -133,42 +128,7 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
   
   response_vars <- c(response_vars, paste0(i, "_rel"))
   
-  # Calculate production sources' proportion of total aquatic animal consumption per capita
-  assign(
-    paste0(i, "_prop_of_aquatic_cons"),
-    get(paste0(i, "_cap")) %>%
-      left_join(aquatic_animal_cons_cap, by = "iso3c") %>%
-      group_by(iso3c) %>%
-      summarize(aquatic_source_prop = protein_consumed_kg_percap.x / protein_consumed_kg_percap.y)
-  )
-  
-  response_vars <- c(response_vars, paste0(i, "_prop_of_aquatic_cons"))
 }
-
-#calculate rate of change in aquatic protein quantity
-aquatic_protein_roc <- aquatic_reliance %>%
-  filter(data_source == "new FBS", food_group == "aquatic") %>%
-  group_by(iso3c, year, method) %>%
-  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE)) %>%
-  distinct() %>%
-  filter(method == "capture") %>%
-  split(.$iso3c) %>%
-  map(~lm(protein_consumed_kg_percap~year, data = .x)) %>%
-  map_df(broom::tidy, .id = 'iso3c') %>%
-  filter(term == 'year') %>%
-  select(c("iso3c", "aquatic_estimate" = "estimate"))
-
-#calculate rate of change in terrestrial protein quantity
-terrestrial_protein_roc <- aquatic_reliance %>%
-  filter(data_source == "new FBS", food_group == "terrestrial") %>%
-  group_by(iso3c, year) %>%
-  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE)) %>%
-  distinct() %>%
-  split(.$iso3c) %>%
-  map(~lm(protein_consumed_kg_percap~year, data = .x)) %>%
-  map_df(broom::tidy, .id = 'iso3c') %>%
-  filter(term == 'year') %>%
-  select(c("iso3c", "terrestrial_estimate" = "estimate"))
 
 # Save response_vars to RDS format
 saveRDS(response_vars, "../data/response_vars.rds")
@@ -646,23 +606,23 @@ quad_df <- aquatic_protein_quant %>%
   ungroup()
 
 # Plot parameters
-max_val    <- 0.75   # axis limit — corresponds to 75% proportion
+max_val    <- 0.75   # axis limit - corresponds to 75% proportion
 half_width <- 0.20   # angular half-width of each spike in radians
 
-# Quadrant colours — harmonized with project palette
+# Quadrant colours - harmonized with project palette
 # Q1 (both up) = teal: growing together
 # Q2 (aquatic down, terr up) = dark red: aquatic declining
 # Q3 (both down) = dark wine: both declining
 # Q4 (aquatic up, terr down) = blue: aquatic gaining share
 quad_colors <- c(
-  "Aquatic \u2191 / Terrestrial \u2191" = "#7BAEC4",   # mid blue — ambiguous
-  "Aquatic \u2193 / Terrestrial \u2191" = "#B2182B",   # strong red — reliance clearly ↓
-  "Aquatic \u2193 / Terrestrial \u2193" = "#D4956A",   # warm sand — ambiguous
-  "Aquatic \u2191 / Terrestrial \u2193" = "#2166AC"    # strong blue — reliance clearly ↑
+  "Aquatic \u2191 / Terrestrial \u2191" = "#7BAEC4",   # mid blue - ambiguous
+  "Aquatic \u2193 / Terrestrial \u2191" = "#B2182B",   # strong red - reliance clearly ↓
+  "Aquatic \u2193 / Terrestrial \u2193" = "#D4956A",   # warm sand - ambiguous
+  "Aquatic \u2191 / Terrestrial \u2193" = "#2166AC"    # strong blue - reliance clearly ↑
 )
-# Build spike polygons — each spike is a triangle from the origin
+# Build spike polygons - each spike is a triangle from the origin
 # r = prop * max_val * sqrt(2) scales so that prop = 1 fills to the axis limit
-# Number of arc points — more = smoother curve, 20 is plenty at this scale
+# Number of arc points - more = smoother curve, 20 is plenty at this scale
 n_arc <- 20
 
 spike_df <- quad_df %>%
@@ -695,7 +655,7 @@ spike_df <- quad_df %>%
                          length.out = n_arc)))
   )
 
-# Reference circle data — drawn at 50% and 100% of max_val
+# Reference circle data - drawn at 50% and 100% of max_val
 # Gives readers two anchors for judging spike length without cluttering axis labels
 circle_df <- expand.grid(
   region = unique(spike_df$region),
@@ -708,14 +668,14 @@ circle_df <- expand.grid(
     y = r_frac * max_val * sin(theta)
   )
 
-# Axis quadrant label positions — placed just outside max_val in each quadrant
+# Axis quadrant label positions - placed just outside max_val in each quadrant
 quad_axis_labels <- tibble(
   x     = c( 0.58, -0.58, -0.58,  0.58),
   y     = c( 0.58,  0.58, -0.58, -0.58),
   label = c("A\u2191 T\u2191", "A\u2193 T\u2191", "A\u2193 T\u2193", "A\u2191 T\u2193")
 )
 
-# Single reference label — annotates the outer circle in top-right of each facet
+# Single reference label - annotates the outer circle in top-right of each facet
 ref_label_df <- tibble(
   region = unique(spike_df$region)
 ) %>%
@@ -733,7 +693,7 @@ ref_label_df <- tibble(
 # Assemble plot
 plot <- ggplot() +
 
-  # Reference circles — dashed, at 50% and 100% of axis range
+  # Reference circles - dashed, at 50% and 100% of axis range
   geom_path(
     data    = circle_df %>% filter(r_frac == 1.0),
     aes(x = x, y = y, group = interaction(region, r_frac)),
@@ -760,7 +720,7 @@ plot <- ggplot() +
     alpha = 0.88
   ) +
 
-  # 75% reference label — top-right corner only, one per facet
+  # 75% reference label - top-right corner only, one per facet
   geom_text(
     data  = ref_label_df,
     aes(x = x, y = y, label = label),
@@ -875,13 +835,13 @@ var_labels <- c(
   coastline_km               = "Coastline length (km)",
   gdp_trade                  = "GDP from trade (%)",
   inundation_area_log1000km2 = "Inundated area (log 1000 km²)",
-  log_gdp                    = "GDP (log scale)",
+  log_gdp                    = "Log GDP per capita",
   pop_10k_pct_coast          = "Pop. within 10 km of coast (%)",
   supermarkets               = "Supermarkets per 100,000",
   eez_total                  = "Log EEZ area km²"
 )
 
-# Model colours — harmonized palette, reliance models only
+# Model colours - harmonized palette, reliance models only
 model_colors <- c(
   "Aquatic reliance"      = "#1A7A6E",
   "Aquaculture reliance"  = "#E8B000",
@@ -892,7 +852,7 @@ model_colors <- c(
   "Inland reliance"       = "#D4956A"
 )
 
-# Interval colours — three lightness steps per model colour
+# Interval colours - three lightness steps per model colour
 col_95 <- colorspace::lighten(model_colors, 0.65)
 col_80 <- colorspace::lighten(model_colors, 0.35)
 col_50 <- colorspace::lighten(model_colors, 0.05)
@@ -944,7 +904,7 @@ make_panel <- function(df, show_yaxis = FALSE, title = "", tag = "",
     geom_segment(aes(x = lo50, xend = hi50, color = col50),
                  linewidth = 2.2, lineend = "butt", alpha = 1) +
     geom_point(aes(x = med), shape = 21, size = 1.6,
-               fill = "white", color = "grey20", stroke = 0.4)
+               fill = "white", color = "grey20", stroke = 0.4) +
 
     geom_vline(xintercept = 0, linetype = "dashed",
                linewidth = 0.35, color = "grey40") +
@@ -974,7 +934,7 @@ make_panel <- function(df, show_yaxis = FALSE, title = "", tag = "",
 
 # Build all seven panels
 # Panels 1 and 4 are left-column (show y-axis + shifted tag)
-# Panel 7 is the lone bottom panel — also left-column for y-axis and tag
+# Panel 7 is the lone bottom panel - also left-column for y-axis and tag
 panels <- lapply(seq_along(panel_names), function(i) {
   name     <- panel_names[i]
   df_sub   <- df_plot %>% filter(clean_name == name)
@@ -1000,7 +960,7 @@ xlab_plot <- ggplot() +
 empty <- ggplot() + theme_void()
 
 # Rows 1 and 2 are full 3-panel; row 3 has one centered panel flanked by
-# empty spacers — widths kept equal so the single panel aligns to column 2
+# empty spacers - widths kept equal so the single panel aligns to column 2
 row1 <- panels[[1]] | panels[[2]] | panels[[3]]
 row2 <- panels[[4]] | panels[[5]] | panels[[6]]
 row3 <- (empty | panels[[7]] | empty) + plot_layout(widths = c(.0002, 1, 1.118))
@@ -1073,7 +1033,7 @@ diag_melt  <- melt(get_diag(cor_mat), na.rm = TRUE) %>%
 # Collinearity plot
 plot <- ggplot() +
 
-  # Lower triangle — filled heatmap tiles
+  # Lower triangle - filled heatmap tiles
   geom_tile(
     data  = lower_melt,
     aes(x = Var2, y = Var1, fill = value),
@@ -1081,7 +1041,7 @@ plot <- ggplot() +
     linewidth = 0.4
   ) +
 
-  # Diagonal — white tiles with border, holds variable name labels
+  # Diagonal - white tiles with border, holds variable name labels
   geom_tile(
     data      = diag_melt,
     aes(x = Var2, y = Var1),
@@ -1090,7 +1050,7 @@ plot <- ggplot() +
     linewidth = 0.4
   ) +
 
-  # Upper triangle — correlation values, coloured to match heatmap
+  # Upper triangle - correlation values, coloured to match heatmap
   geom_text(
     data  = upper_melt,
     aes(x = Var2, y = Var1, label = label, color = value),
@@ -1108,11 +1068,11 @@ plot <- ggplot() +
     lineheight = 0.9
   ) +
 
-  # Fill scale — aligned with project diverging palette
+  # Fill scale - aligned with project diverging palette
   scale_fill_gradient2(
-    low      = "#2B6AA8",   # blue — strong negative correlation
+    low      = "#2B6AA8",   # blue - strong negative correlation
     mid      = "#F7F7F7",   # near-white midpoint
-    high     = "#B2182B",   # red — strong positive correlation
+    high     = "#B2182B",   # red - strong positive correlation
     midpoint = 0,
     limits   = c(-1, 1),
     name     = "Pearson\ncorrelation",
@@ -1126,7 +1086,7 @@ plot <- ggplot() +
     )
   ) +
 
-  # Text colour scale — matches fill so values read clearly against tiles
+  # Text colour scale - matches fill so values read clearly against tiles
   scale_color_gradient2(
     low      = "#2B6AA8",
     mid      = "#888888",   # mid-grey so near-zero values are still legible
@@ -1182,7 +1142,6 @@ for (i in seq_along(response_vars))  {
            beta_0 = fit$beta_0[1:3000],
            sigma = fit$sigma[1:3000],
            beta_0i = fit$beta_0i[1:3000,1],
-           z_beta_0 = fit$z_beta_0[1:3000,1],
            model = response_vars[i],
            iteration = 1:3000,
            chain = "1")
@@ -1191,7 +1150,6 @@ for (i in seq_along(response_vars))  {
            beta_0 = fit$beta_0[3001:6000],
            sigma = fit$sigma[3001:6000],
            beta_0i = fit$beta_0i[3001:6000,1],
-           z_beta_0 = fit$z_beta_0[3001:6000,1],
            model = response_vars[i],
            iteration = 1:3000,
            chain = "2")
@@ -1200,7 +1158,6 @@ for (i in seq_along(response_vars))  {
            beta_0 = fit$beta_0[6001:9000],
            sigma = fit$sigma[6001:9000],
            beta_0i = fit$beta_0i[6001:9000,1],
-           z_beta_0 = fit$z_beta_0[6001:9000,1],
            model = response_vars[i],
            iteration = 1:3000,
            chain = "3")
@@ -1245,7 +1202,7 @@ library(rstan)
 rhat_df <- data.frame()
 
 # Parameters we care about for convergence
-params_to_check <- c("beta_0", "beta", "sigma", "beta_0i", "sigma_beta_0", "z_beta_0", "lp__")
+params_to_check <- c("beta_0", "beta", "sigma", "beta_0i", "sigma_beta_0", "lp__")
 
 for (i in seq_along(response_vars)) {
   # Load the fitted model
@@ -1342,223 +1299,15 @@ ordered_names <- plot_df %>%
   labs(y = "Model", x = "# divergent transitions") +
   theme_light() +
     theme(legend.position = "bottom"))
+
+plot_df %>% group_by(model) %>% summarise(sum = sum(divergent))
 ``` 
 
 > Result: Out of 3000 samples, the highest number of divergent transitions was 5 - divergence is not an issue. 
 
-## SI Figure: R^2
+## Model fit checks
 
-```{r R^2}
-# Calculate hierarchical R² across models, decomposed into fixed, random,
-# and combined (conditional) components
-R2_df <- data.frame(
-  fixed_r2    = numeric(0),
-  random_r2   = numeric(0),
-  combined_r2 = numeric(0),
-  model       = character(0)
-)
-
-for (i in seq_along(response_vars)) {
-
-  fit <- rstan::extract(
-    readRDS(file.path(base_path, paste0("fit_", response_vars[i], ".rds"))),
-    permuted = TRUE
-  )
-
-  b_s       <- fit$beta_0i[1:3000, ]
-  realm_ids <- readRDS(file.path(base_path, paste0("realms_", response_vars[i], ".rds")))
-  X         <- readRDS(file.path(base_path, paste0("X_",      response_vars[i], ".rds")))
-  Z         <- model.matrix(~ 0 + factor(realm_ids))
-
-  # Linear predictors: iterations × N
-  mu_random <- b_s %*% t(Z)
-  beta_s    <- fit$beta[1:3000, ]
-  mu_fixed  <- beta_s %*% t(X)
-
-  # Variance partitioning across posterior iterations
-  var_fixed_s  <- apply(mu_fixed,  1, var)
-  var_random_s <- apply(mu_random, 1, var)
-  var_resid_s  <- fit$sigma^2
-  mu_total     <- mu_fixed + mu_random
-  var_total_s  <- apply(mu_total, 1, var)
-
-  # Marginal R² (fixed), random R², and conditional R² (combined)
-  R2_fixed_s  <- var_fixed_s  / (var_total_s + var_resid_s)
-  R2_random_s <- var_random_s / (var_total_s + var_resid_s)
-  R2_cond_s   <- var_total_s  / (var_total_s + var_resid_s)
-
-  R2_df <- bind_rows(
-    R2_df,
-    data.frame(
-      fixed_r2    = R2_fixed_s,
-      random_r2   = R2_random_s,
-      combined_r2 = R2_cond_s,
-      model       = response_vars[i]
-    )
-  )
-}
-
-# Colours for effect type — drawn from project palette
-# Fixed = blue (predictors), random = teal (realm structure), combined = grey
-r2_colors <- c(
-  "Fixed"    = "#2B6AA8",
-  "Random"   = "#1A7A6E",
-  "Combined" = "#888780"
-)
-
-# Build plot data — filter to capita and reliance models, clean names
-r2_plot_df <- R2_df %>%
-  filter(
-    str_detect(model, "_cap") | str_detect(model, "_rel"),
-    model != "animal_cons_cap"
-  ) %>%
-  pivot_longer(
-    cols      = c(fixed_r2, random_r2, combined_r2),
-    names_to  = "effect",
-    values_to = "r2"
-  ) %>%
-  mutate(
-    clean_name = clean_model_name(model),
-    effect     = factor(
-      case_when(
-        effect == "fixed_r2"    ~ "Fixed",
-        effect == "random_r2"   ~ "Random",
-        effect == "combined_r2" ~ "Combined"
-      ),
-      levels = c("Fixed", "Random", "Combined")
-    )
-  )
-
-# Compute posterior medians and 95% CI per model × effect for reference lines
-r2_summary <- r2_plot_df %>%
-  group_by(clean_name, effect) %>%
-  summarise(
-    med   = median(r2),
-    lo95  = quantile(r2, 0.025),
-    hi95  = quantile(r2, 0.975),
-    .groups = "drop"
-  )
-
-# Shared theme applied to every individual panel
-theme_r2 <- function(show_y = FALSE, show_x = FALSE) {
-  base <- theme_minimal(base_size = 8) +
-    theme(
-      text                  = element_text(family = "sans", color = "black"),
-      plot.background       = element_rect(fill = "transparent", color = NA),
-      panel.background      = element_rect(fill = "transparent", color = NA),
-      panel.grid.minor      = element_blank(),
-      panel.grid.major.x    = element_line(
-        color = scales::alpha("black", 0.12), linewidth = 0.3
-      ),
-      panel.grid.major.y    = element_blank(),
-      strip.background      = element_blank(),
-      plot.title            = element_text(size = 5.5, face = "bold",
-                                            hjust = 0.5, margin = margin(b = 2)),
-      plot.tag              = element_text(size = 7, face = "bold"),
-      plot.tag.position     = "topleft",
-      axis.text.x           = element_text(size = 5.5, color = "black"),
-      axis.text.y           = element_text(size = 5.5, color = "black"),
-      axis.title.x          = element_blank(),
-      axis.title.y          = element_blank(),
-      legend.position       = "none",
-      plot.margin           = margin(3, 4, 3, 4)
-    )
-
-  if (show_y) base <- base + theme(
-    axis.title.y = element_text(size = 6.5, face = "bold", margin = margin(r = 3))
-  )
-  if (show_x) base <- base + theme(
-    axis.title.x = element_text(size = 6.5, face = "bold", margin = margin(t = 3))
-  )
-  base
-}
-
-# Build one density panel per model
-model_names <- unique(r2_plot_df$clean_name)
-
-panels <- lapply(seq_along(model_names), function(i) {
-  nm      <- model_names[i]
-  df_sub  <- r2_plot_df %>% filter(clean_name == nm)
-  sum_sub <- r2_summary  %>% filter(clean_name == nm)
-
-  # Left column panels: 1, 5, 9, 13 — show y-axis title
-  # Bottom row panels: 13, 14, 15 — show x-axis title
-  show_y <- i %in% c(1, 5, 9, 13)
-  show_x <- i %in% c(13, 14, 15)
-
-  ggplot(df_sub, aes(x = r2, colour = effect, fill = effect)) +
-    geom_density(alpha = 0.18, linewidth = 0.55) +
-    geom_vline(
-      data      = sum_sub,
-      aes(xintercept = med, colour = effect),
-      linewidth = 0.4,
-      linetype  = "dashed"
-    ) +
-    scale_colour_manual(values = r2_colors) +
-    scale_fill_manual(  values = r2_colors) +
-    scale_x_continuous(
-      limits = c(0, 1),
-      breaks = c(0, 0.5, 1),
-      labels = c("0", "0.5", "1")
-    ) +
-    labs(
-      title = nm,
-      tag   = LETTERS[i],
-      y     = if (show_y) "Density" else NULL,
-      x     = if (show_x) bquote("Posterior" ~ R^2) else NULL
-    ) +
-    theme_r2(show_y = show_y, show_x = show_x)
-})
-
-# Extract a shared legend from a single fully-specified panel
-legend_source <- ggplot(r2_plot_df, aes(x = r2, colour = effect, fill = effect)) +
-  geom_density(alpha = 0.18, linewidth = 0.55) +
-  scale_colour_manual(values = r2_colors, name = "Effect type") +
-  scale_fill_manual(  values = r2_colors, name = "Effect type") +
-  guides(
-    colour = guide_legend(title.position = "top", title.hjust = 0.5, nrow = 1),
-    fill   = guide_legend(title.position = "top", title.hjust = 0.5, nrow = 1)
-  ) +
-  theme_minimal() +
-  theme(legend.position = "bottom")
-
-legend_grob <- cowplot::get_plot_component(
-  legend_source, "guide-box", return_all = TRUE
-)
-legend_grob <- Filter(function(x) !inherits(x, "zeroGrob"), legend_grob)[[1]]
-
-# Assemble rows manually — bottom row (3 panels) centered with empty spacers
-# widths c(0.5, 1, 1, 1, 0.5) flanks the three panels with half-column margins
-empty <- ggplot() + theme_void()
-
-row1 <- panels[[1]]  | panels[[2]]  | panels[[3]]  | panels[[4]]
-row2 <- panels[[5]]  | panels[[6]]  | panels[[7]]  | panels[[8]]
-row3 <- panels[[9]]  | panels[[10]] | panels[[11]] | panels[[12]]
-row4 <- (empty | panels[[13]] | panels[[14]] | panels[[15]] | empty) +
-  plot_layout(widths = c(0.5, 1, 1, 1, 0.5))
-
-grid_plot <- wrap_plots(row1, row2, row3, row4, ncol = 1) +
-  plot_layout(heights = c(1, 1, 1, 1)) &
-  theme(plot.margin = margin(2, 3, 2, 3))
-
-# Stack grid above shared legend
-plot <- cowplot::plot_grid(
-  grid_plot,
-  legend_grob,
-  ncol        = 1,
-  rel_heights = c(1, 0.11)
-)
-
-ggsave(
-  filename = paste0("../images/SI/r2.pdf"),
-  plot     = plot,
-  device   = cairo_pdf,
-  width    = 9,
-  height   = 5,
-  units    = "in"
-)
-```
-## Generate PPD
+### Generate PPD
 
 This code chunk will only run if not run before as it takes awhile to run. This plots the posterior predictive distributions (PPDs) across each model used in the paper. 
 
@@ -1568,7 +1317,7 @@ if (!file.exists(file.path(base_path,"ppd.parquet"))) {
   # Load function to clean model output names to publication-friendly labels
 
   # Extract posterior predictive draws for a single model
-  # model_name is used consistently for all file reads — no global i dependency
+  # model_name is used consistently for all file reads - no global i dependency
   extract_ppd <- function(model_name, model_type) {
 
     # Load fitted Stan model and extract posterior samples
@@ -1623,19 +1372,17 @@ if (!file.exists(file.path(base_path,"ppd.parquet"))) {
   )
 
 } else {
-  message("Posterior predictive values have already been generated — skipping model posterior predictive acquisition")
+  message("Posterior predictive values have already been generated - skipping model posterior predictive acquisition")
 }
 ```
 
-
-
-## SI Figure: PPD
+### Create PPD Plot
 
 ```{r plot ppd}
 # Read in posterior predictive distribution data
 ppd_all_models <- read_parquet(file.path(base_path,"ppd.parquet"))
 
-# Sample 30 posterior draws to plot — enough to show the envelope without
+# Sample 30 posterior draws to plot - enough to show the envelope without
 # overplotting, consistent across all panels
 draw_sample <- sample(unique(ppd_all_models$draw), size = 30)
 
@@ -1652,10 +1399,10 @@ df_plot <- ppd_all_models %>%
 
 panel_names <- levels(df_plot$clean_name)
 
-# 4×4 layout — 15 panels means bottom row has 3 panels centered with spacers
+# 4×4 layout - 15 panels means bottom row has 3 panels centered with spacers
 # Panels are ordered sequentially by clean_name factor level (A–O)
-# Left column: panels 1, 5, 9, 13 — show y-axis title
-# Bottom row:  panels 13, 14, 15  — show x-axis title
+# Left column: panels 1, 5, 9, 13 - show y-axis title
+# Bottom row:  panels 13, 14, 15  - show x-axis title
 # Left column also gets inward-nudged tag to clear y-axis label text
 
 # Function to draw a single PPD panel
@@ -1670,13 +1417,13 @@ make_ppd_panel <- function(df, title = "", tag = "",
 
   p <- ggplot(df, aes(x = ppd, group = draw)) +
 
-    # Posterior predictive envelope — faint coloured lines show spread
+    # Posterior predictive envelope - faint coloured lines show spread
     geom_density(
       colour    = "#7BAEC4",
       linewidth = 0.25
     ) +
 
-    # Observed data density — drawn on top, clearly distinct
+    # Observed data density - drawn on top, clearly distinct
     geom_density(
       aes(x = y_obs, group = NULL),
       colour    = "grey20",
@@ -1694,7 +1441,7 @@ make_ppd_panel <- function(df, title = "", tag = "",
       panel.grid.major.y = element_line(
         color = scales::alpha("black", 0.12), linewidth = 0.3
       ),
-      plot.title        = element_text(size = 5, face = "bold", hjust = 0.5,
+      plot.title        = element_text(size = 4, face = "bold", hjust = 0.5,
                                         margin = margin(b = 2)),
       plot.tag          = element_text(size = 7, face = "bold"),
       plot.tag.position = tag_pos,
@@ -1711,7 +1458,7 @@ make_ppd_panel <- function(df, title = "", tag = "",
 
   if (bot_row) p <- p +
     labs(x = "Response value (standardised)") +
-    theme(axis.title.x = element_text(size = 6.5, face = "bold",
+    theme(axis.title.x = element_text(size = 5, face = "bold",
                                        margin = margin(t = 3)))
   p
 }
@@ -1723,13 +1470,13 @@ panels <- lapply(seq_along(panel_names), function(i) {
   make_ppd_panel(
     df_sub,
     title    = nm,
-    tag      = LETTERS[i],
+    tag      = letters[i],
     left_col = i %in% c(1, 5, 9, 13),
     bot_row  = i %in% c(13, 14, 15)
   )
 })
 
-# Assemble 4×4 grid — bottom row centered with half-column empty spacers
+# Assemble 4×4 grid - bottom row centered with half-column empty spacers
 empty <- ggplot() + theme_void()
 
 row1 <- panels[[1]]  | panels[[2]]  | panels[[3]]  | panels[[4]]
@@ -1741,20 +1488,309 @@ row4 <- (empty | panels[[13]] | panels[[14]] | panels[[15]] | empty) +
 final_plot <- wrap_plots(row1, row2, row3, row4, ncol = 1) +
   plot_layout(heights = c(1, 1, 1, 1)) &
   theme(plot.margin = margin(2, 3, 2, 3))
+```
+
+### PSIS-LOO model performance
+
+To see how well each model performs on unseen data, we can run a cross validation on each model. Additionally, we can calculate the Pareto k values to see if there are influential points that may have an impact on the LOO values.
+
+```{r PSIS-LOO plot}
+# Paths and model info
+combined_model_path <- base_path
+n_models <- length(response_vars)
+
+# Extract log-likelihood matrices for all models
+log_lik_list <- vector("list", n_models)
+
+for (i in seq_along(response_vars)) {
+  fit <- readRDS(file.path(combined_model_path, paste0("fit_", response_vars[i], ".rds")))
+  # fit <- readRDS(paste0("../bayesian output backup/var_all/fit_",response_vars[i],".rds"))
+  
+  # Extract log-likelihood matrix; make sure your Stan model has 'log_lik' in generated quantities
+  log_lik_list[[i]] <- rstan::extract(fit, permuted = TRUE)$log_lik
+}
+
+names(log_lik_list) <- response_vars
+
+# Compute LOO for each model
+loo_list <- vector("list", n_models)
+
+for (i in seq_along(log_lik_list)) {
+  loo_list[[i]] <- loo(log_lik_list[[i]], cores = 2)
+}
+
+names(loo_list) <- response_vars
+
+
+# Compare models using ELPD
+loo_compare_matrix <- loo_compare(loo_list)
+
+model_data <- as.data.frame(loo_compare_matrix) %>%
+  mutate(model = rownames(loo_compare_matrix)) %>%
+  mutate(clean_name = clean_model_name(model)) %>%
+  select(clean_name, elpd_diff, se_diff) %>%
+  mutate(
+    lo95 = elpd_diff - 2 * se_diff,
+    hi95 = elpd_diff + 2 * se_diff,
+    # Flag models whose CI excludes zero (significantly worse than best)
+    nonzero = (lo95 < 0 & hi95 < 0) | (lo95 > 0 & hi95 > 0),
+    # Best model (elpd_diff == 0) gets a distinct fill
+    is_best = elpd_diff == 0
+  ) %>%
+  arrange(elpd_diff) %>%
+  mutate(clean_name = factor(clean_name, levels = clean_name))
+
+
+# Assign colours; fall back to grey for any model not in the palette
+model_data <- model_data %>%
+  mutate(
+    pt_color = coalesce(model_colors[as.character(clean_name)], "grey50"),
+    pt_fill  = if_else(is_best, "white", pt_color),
+    # Non-significant intervals (CI crosses zero) rendered lighter
+    bar_color = if_else(nonzero,
+                        colorspace::lighten(pt_color, 0.25),
+                        colorspace::lighten(pt_color, 0.60))
+  )
+
+# create plot
+psis_plot <- ggplot(model_data,
+                    aes(y = clean_name, x = elpd_diff)) +
+
+  # +- 2 SE error bars
+  geom_errorbarh(
+    aes(xmin = lo95, xmax = hi95),
+    height    = 0.35,
+    linewidth = 0.55
+  ) +
+
+  # Point estimates
+  geom_point(fill = "black",
+             shape  = 21,
+    size   = 2.2,
+    stroke = 0.55
+  ) +
+
+  # Reference line at zero (best model)
+  geom_vline(xintercept = 0, linetype = "dashed",
+             linewidth = 0.35, color = "grey40") +
+
+  scale_color_identity() +
+  scale_fill_identity() +
+
+  labs(
+    x   = "ELPD difference (higher = better)",
+    y   = "Model"
+  ) +
+
+  theme_minimal(base_size = 8) +
+  theme(
+    plot.tag           = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor   = element_blank(),
+    panel.grid.major.x = element_line(
+      color     = scales::alpha("black", 0.12),
+      linewidth = 0.3
+    ),
+    axis.text.x  = element_text(size = 5.5, color = "black"),
+    axis.text.y  = element_text(size = 5.5, color = "black", hjust = 1),
+    axis.title.x = element_text(size = 6, face = "bold",
+                                margin = margin(t = 4)),
+    axis.ticks.y = element_blank(),
+    plot.margin  = margin(6, 8, 4, 6)
+  )
+```
+
+### Pareto k
+
+#### SI Figure: PPD / LOO / Pareto K
+
+Pareto k is used to assess the validity of PSIS-LOO values. We ideally want these values to all be below 0.7.
+
+```{r Pareto k}
+# Pareto k diagnostic plot
+pareto_k_df <- bind_rows(
+  lapply(seq_along(loo_list), function(i) {
+    data.frame(
+      model    = names(loo_list)[i],
+      point    = seq_along(loo_list[[i]]$diagnostics$pareto_k),
+      pareto_k = loo_list[[i]]$diagnostics$pareto_k
+    )
+  }),
+  .id = "model_index"
+) %>%
+  mutate(
+    clean_name = clean_model_name(model),
+    flag       = pareto_k > 0.7,
+    # Threshold bands for background shading
+    band = case_when(
+      pareto_k <= 0.5 ~ "good",
+      pareto_k <= 0.7 ~ "ok",
+      TRUE            ~ "bad"
+    )
+  )
+
+# Load country labels
+model_countries <- readRDS("../data/model_countries")
+
+
+# pareto_k_df with country labels
+pareto_k_df <- bind_rows(
+  lapply(seq_along(loo_list), function(i) {
+    data.frame(
+      model    = names(loo_list)[i],
+      point    = seq_along(loo_list[[i]]$diagnostics$pareto_k),
+      pareto_k = loo_list[[i]]$diagnostics$pareto_k,
+      country  = model_countries   # ISO3 label per observation
+    )
+  }),
+  .id = "model_index"
+) %>%
+  mutate(
+    clean_name = clean_model_name(model),
+    flag       = pareto_k > 0.7
+  )
+
+# Facet order matches ELPD ranking
+facet_order <- levels(model_data$clean_name)
+pareto_k_df <- pareto_k_df %>%
+  mutate(clean_name = factor(clean_name,
+                             levels = if (length(facet_order) > 0) rev(facet_order)
+                                      else unique(clean_name)))
+
+pt_ok  <- "grey60"
+pt_bad <- "#C45C3A"
+
+# Build facet tag data — one row per facet, letters assigned in horizontal order
+# facet_wrap with ncol = 3 fills left-to-right, top-to-bottom
+facet_levels <- levels(pareto_k_df$clean_name)  # already in your desired order
+n_facets     <- length(facet_levels)
+
+facet_tags <- pareto_k_df %>%
+  group_by(clean_name) %>%
+  summarise(
+    x_max    = max(point),
+    x_min    = min(point),
+    y_max    = max(pareto_k),
+    .groups  = "drop"
+  ) %>%
+  # Match factor order so letters align with panel positions
+  mutate(
+    clean_name = factor(clean_name, levels = facet_levels),
+    tag        = letters[as.numeric(clean_name)]
+  )
+
+pareto_plot <- ggplot(pareto_k_df,
+                      aes(x = point, y = pareto_k)) +
+
+  geom_hline(yintercept = 0.5, linetype = "dotted",
+             linewidth = 0.3, color = "grey55") +
+  geom_hline(yintercept = 0.7, linetype = "dashed",
+             linewidth = 0.35, color = "grey30") +
+
+  geom_point(data = filter(pareto_k_df, !flag),
+             color = pt_ok, size = 0.7, alpha = 0.55, shape = 16) +
+  geom_point(data = filter(pareto_k_df,  flag),
+             color = pt_bad, size = 1.1, alpha = 0.85, shape = 16) +
+
+  ggrepel::geom_text_repel(
+    data             = filter(pareto_k_df, flag),
+    aes(label        = country),
+    color            = pt_bad,
+    size             = 1.8,
+    fontface         = "bold",
+    segment.color    = pt_bad,
+    segment.size     = 0.25,
+    segment.alpha    = 0.6,
+    box.padding      = 0.25,
+    point.padding    = 0.15,
+    min.segment.length = 0.2,
+    max.overlaps     = Inf,
+    force            = 2
+  ) +
+
+  facet_wrap(~ clean_name, scales = "free_x", ncol = 3) +
+
+  # Per-facet letter tags — top-left, using -Inf/Inf to anchor to panel edges
+  geom_text(
+    data        = facet_tags,
+    aes(x = -Inf, y = Inf, label = tag),
+    inherit.aes = FALSE,
+    hjust       = -0.3,   # small inset from left edge
+    vjust       = 1.4,    # small inset from top edge
+    size        = 2.5,
+    fontface    = "bold",
+    color       = "black"
+  ) +
+
+  # k = 0.7 annotation — top-right, anchored to each panel's x_max
+  geom_text(
+    data        = facet_tags,
+    aes(x = Inf, y = 1, label = "k = 0.7"),
+    inherit.aes = FALSE,
+    hjust       = 1.1,
+    vjust       = 0,
+    size        = 1.8,
+    color       = "grey30",
+    fontface    = "italic"
+  ) +
+
+  scale_y_continuous(
+    breaks = c(0, 0.5, 0.7, 1),
+    labels = c("0", "0.5", "0.7", "1")
+  ) +
+
+  labs(
+    x = "Observation index",
+    y = expression(paste("Pareto ", hat(k)))
+  ) +
+
+  theme_minimal(base_size = 8) +
+  theme(
+    plot.tag            = element_blank(),
+    strip.text          = element_text(size = 5.5, face = "bold", hjust = 0.5,
+                                       margin = margin(b = 2)),
+    panel.grid.major.y  = element_line(color = scales::alpha("black", 0.10),
+                                       linewidth = 0.25),
+    panel.grid.minor    = element_blank(),
+    panel.grid.major.x  = element_blank(),
+    axis.text.x         = element_text(size = 4.5, color = "black"),
+    axis.text.y         = element_text(size = 5, color = "black"),
+    axis.title.x        = element_text(size = 6, face = "bold", margin = margin(t = 4)),
+    axis.title.y        = element_text(size = 6, face = "bold", margin = margin(r = 4)),
+    axis.ticks          = element_blank(),
+    panel.spacing       = unit(4, "pt"),
+    plot.margin         = margin(6, 8, 4, 6)
+  )
+
+# Combine PSIS and Pareto k as panels A and B
+
+# Add panel tags directly in each plot's labs()
+psis_plot   <- psis_plot   + labs(tag = "A")
+pareto_plot <- pareto_plot + labs(tag = "B") +
+  theme(plot.tag.position = c(0.01, 1))  # consistent with psis_plot
+
+# Stack side by side with patchwork
+combined_plot <- plot_grid(psis_plot, pareto_plot, rel_widths = c(1,1.5), labels = c("B", "C"))
+
+
+
+final <- plot_grid(final_plot, combined_plot, nrow = 1, labels = "A", rel_widths = c(1,1.6))
 
 ggsave(
-  filename = "../images/SI/ppd_SI.pdf",
-  plot     = final_plot,
+  filename = "../images/SI/LOO_diagnostics_SI.pdf",
+  plot     = final,
   device   = cairo_pdf,
-  width    = 9,
-  height   = 5,
+  width    = 15,   # wider to accommodate both panels comfortably
+  height   = 4,
   units    = "in"
 )
 ```
 
-# Sensitivity Testing
+> Result: Terrestrial animal conusmption performs substantially better in model performance than all the aquatic animal consumption & reliance models.
 
-## Main paper posteriors but using only the coastline variable. This is run as a sensitivity testing measure as for whether we can include both coastline and EEZ area. 
+## Sensitivity Testing
+
+### Main paper posteriors but using only the coastline variable. This is run as a sensitivity testing measure as for whether we can include both coastline and EEZ area. 
 
 ```{r hierarcical partial slope posteriors}
 # Get file path for Bayesian model with the coastline length only variable model
@@ -1804,13 +1840,13 @@ var_labels <- c(
   coastline_km               = "Coastline length (km)",
   gdp_trade                  = "GDP from trade (%)",
   inundation_area_log1000km2 = "Inundated area (log 1000 km²)",
-  log_gdp                    = "GDP (log scale)",
+  log_gdp                    = "Log GDP per capita",
   pop_10k_pct_coast          = "Pop. within 10 km of coast (%)",
   supermarkets               = "Supermarkets per 100,000",
   eez_total                  = "Log EEZ area km²"
 )
 
-# Model colours — harmonized palette
+# Model colours - harmonized palette
 model_colors <- c(
   "Terrestrial animal consumption per capita" = "#8C1A11",
   "Aquatic animal consumption per capita"     = "#2B6AA8",
@@ -1823,7 +1859,7 @@ model_colors <- c(
   "Inland consumption per capita"             = "#D4956A"
 )
 
-# Interval colours — three lightness steps per model colour
+# Interval colours - three lightness steps per model colour
 col_95 <- colorspace::lighten(model_colors, 0.65)
 col_80 <- colorspace::lighten(model_colors, 0.35)
 col_50 <- colorspace::lighten(model_colors, 0.05)
@@ -1906,7 +1942,7 @@ make_panel <- function(df, show_yaxis = FALSE, title = "", tag = "",
     )
 }
 
-# Build all nine panels — panels 1, 4, 7 are left column (show y-axis + shifted tag)
+# Build all nine panels - panels 1, 4, 7 are left column (show y-axis + shifted tag)
 panels <- lapply(seq_along(panel_names), function(i) {
   name     <- panel_names[i]
   df_sub   <- df_plot %>% filter(clean_name == name)
@@ -1958,7 +1994,7 @@ ggsave(
 
 > Result: Posteriors between coastline & EEZ area model and the coastline only model are very similar in significance and direction.
 
-## PSIS-LOOCV
+### PSIS-LOOCV
 
 With the collinearity matrix seen above, there are concerns that this collinearity might influence model performance. We checked posterior distribution shpaes in the previous code chunk. To additionally gague model performance and whether the collinearity is having a confounding effect on the results, we will compare the Pareto-smoothed importance sampling leave one out cross-validation expected log pointwise predictive density (PSIS-LOOCV) of the model with both coastline length and EEZ area and with the model including only coastline length.
 
@@ -1970,18 +2006,19 @@ combined_model_path <- base_path
 log_lik_combined  <- rstan::extract(
   readRDS(file.path(combined_model_path,  paste0("fit_", response_vars[i], ".rds"))),
   permuted = TRUE
-)$log_lik
+)$log_likr
 
 log_lik_separated <- rstan::extract(
   readRDS(file.path(separated_model_path, paste0("fit_", response_vars[i], ".rds"))),
   permuted = TRUE
 )$log_lik
 
+
 # Compute LOO for each model
 loo_combined  <- loo(log_lik_combined,  cores = 2)
 loo_separated <- loo(log_lik_separated, cores = 2)
 
-# Compare — positive elpd_diff favours the first model listed
+# Compare - positive elpd_diff favours the first model listed
 loo_compare(loo_combined, loo_separated)
 ```
 
