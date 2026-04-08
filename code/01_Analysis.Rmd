@@ -17,7 +17,7 @@ library(here)
 library(janitor)
 
 # Create function from R folder if not building as a package
-source("../R/standardize_country_data.R")
+source("../inst/standardize_country_data.R")
 ```
 
 This file independently produces the supply sourcing file as a test. 

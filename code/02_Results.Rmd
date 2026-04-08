@@ -1200,7 +1200,7 @@ if (all_outputs_exist) {
 
     # Fit Stan model
     fit <- stan(
-      file   = "../R/social_bayesian_model_hierarchical.stan",
+      file   = "../utils/social_bayesian_model_hierarchical.stan",
       data   = stan_data,
       init   = inits,
       chains = 3,
@@ -1293,7 +1293,7 @@ col_80 <- colorspace::lighten(model_colors, 0.35)
 col_50 <- colorspace::lighten(model_colors, 0.05)
 
 # Load script to convert model name strings to readable labels
-source("../R/clean_model_name.R")
+source("../utils/clean_model_name.R")
 
 # Build plotting data
 df_plot <- slopes_df %>%

@@ -32,7 +32,7 @@ library(reshape2)
 library(loo)
 
 # Load script to convert model name strings to readable labels
-source("../R/clean_model_name.R")
+source("../utils/clean_model_name.R")
 ```
 
 # Read in data
@@ -1863,9 +1863,6 @@ model_colors <- c(
 col_95 <- colorspace::lighten(model_colors, 0.65)
 col_80 <- colorspace::lighten(model_colors, 0.35)
 col_50 <- colorspace::lighten(model_colors, 0.05)
-
-# Load script to convert model name strings to readable labels
-source("../R/clean_model_name.R")
 
 # Build plotting data
 df_plot <- slopes_df %>%

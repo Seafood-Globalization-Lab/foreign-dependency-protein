@@ -2,3 +2,11 @@
 .Rhistory
 .RData
 .Ruserdata
+archive/
+.Rbuildignore
+NAMESPACE
+code/test (delete).Rmd
+output/
+images/
+foreign-dependency-protein.Rproj
+data/
