@@ -2,11 +2,19 @@
 .Rhistory
 .RData
 .Ruserdata
-archive/
 .Rbuildignore
 NAMESPACE
 code/test (delete).Rmd
-output/
-images/
+
 foreign-dependency-protein.Rproj
-data/
+*html
+*.zip
+
+# folders
+archive/*
+output/*
+data/*
+images/*
+
+
+>>>>>>> 141db86 (update gitignore)
