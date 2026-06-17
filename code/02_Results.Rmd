@@ -55,6 +55,21 @@ aquatic_reliance <- read.csv("../output/fao_aquatic_reliance_source.csv") %>%
 aquatic_fbs <- read.csv("../output/fao_fbs_aquatic_source.csv")
 ```
 
+# delete
+
+```{r delete}
+library(clipr)
+aquatic_reliance %>%
+  filter(year == 2019, food_group == "aquatic", habitat == "marine") %>%
+  group_by(iso3c, habitat) %>%
+  summarize(sum = sum(prop_aquatic_source)) %>%
+  left_join(ecoregion, by = "iso3c") %>%
+  select(iso3c, sum, province) %>%
+  arrange(-sum) %>%
+  write_clip()
+```
+
+
 ## Load in biophysical and socio-economic data as covariates into the Bayesian model
 
 ```{r load data}
@@ -102,7 +117,8 @@ Impute countries with no denoted ecoregion as "landlocked"
 
 ```{r clean ecoregion data}
 # Join largest shape for the respective soverign country to their ecoregion names
-ecoregion <- left_join(ecoregion_unique, ecoregion_full, by = c("iso3c", "shape_area"))
+ecoregion <- left_join(ecoregion_unique, ecoregion_full, by = c("iso3c", "shape_area")) %>%
+  filter(realm != "")
 
 # Assign countries not associated with a marine ecoregion to "landlocked" code
 landlocked_countries <- aquatic_reliance %>%
@@ -142,6 +158,8 @@ terr_animal_cons_cap <- aquatic_reliance %>%
   filter(year == 2019) %>%
   group_by(iso3c) %>%
   summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap))
+
+animal_cons_cap <- terr_animal_cons_cap
 
 # Calculate aquatic animal consumption
 aquatic_animal_cons_cap <- aquatic_reliance %>%
@@ -457,24 +475,63 @@ ggsave(
 )
 ```
 
+### Statistic: What is the % reliance on aquaculture and on capture fisheries?
+
+```{r what year did aq reliance surpass capture reliance}
+aquatic_reliance %>% 
+  filter(data_source == "new FBS") %>%
+  group_by(year, method, food_group) %>%
+  summarize(sum = sum(protein_consumed_t)) %>%
+  group_by(year) %>%
+  mutate(prop_animal_protein = sum / sum(sum)) %>%
+  filter(food_group != "terrestrial",
+         method != "unknown") %>%
+  ggplot(aes(x = year, y = prop_animal_protein, color = method)) +
+           geom_line()
+```
+
+> 2020 was the year that aquauclture reliance surpassed capture
+
+```{r}
+combined%>%
+  group_by(habitat, method, consumption_source) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
+    tidy  = map(model, broom::tidy)
+  ) %>%
+  unnest(tidy) %>%
+  filter(term == "year") %>%
+  select(method, habitat, estimate) %>%
+  mutate(estimate = round(estimate, 3)) %>%
+  filter(method != "unknown",
+         consumption_source != "unknown") %>%
+  arrange(-estimate)
+  
+```
 
 
-## Statistic: X Countries have dominant reliance on X source
+
+### Statistic: X Countries have dominant reliance on X source
 
 ```{r X Countries have dominant reliance on X source}
 # X Countries have dominant reliance on X source
 aquatic_reliance %>%
-  filter(year == 2020, food_group == "aquatic") %>%
+  filter(year == 2020, food_group == "aquatic", data_source == "new FBS") %>%
   group_by(iso3c) %>%
   mutate(largest_group = prop_animal_protein == max(prop_animal_protein)) %>%
   filter(largest_group == TRUE) %>%
   ungroup() %>%
-  count(method)
+  count(method)summarize(sum = sum(protein_consumed_t)) %>%
+  group_by(year) %>%
+  mutate(prop_animal_protein = sum / sum(sum)) %>%
+  filter(food_group != "terrestrial",
+         method != "unknown") 
 ```
 
 > Foreign marine capture reliance is the most dominant across 86 countries, while domestic inland aquaculture is more concentrated at 12 countries. 
 
-## Statistic: How many countries have received X % of their animal source protein from marine vs inland
+### Statistic: How many countries have received X % of their animal source protein from marine vs inland
 
 ```{r X Countries have dominant reliance on X source}
 # X Countries have dominant reliance on X source
@@ -719,41 +776,105 @@ ggsave(
 )
 ```
 
-## Statistic: How many countries have increased their X reliance?
+### Statistic: How many countries have increased / decreased aggregate aquatic animal reliance?
 
 ```{r}
-# Proportion of countries with increasing reliance
-disagg %>%
-  filter(estimate > 0) %>%
-  group_by(habitat, method) %>%
-  count()
-
-# Proportion of countries with decreasing reliance
-disagg %>%
-  filter(estimate < 0) %>%
-  group_by(habitat, method) %>%
-  count()
-
-
-disagg %>%
-  add_region("iso3c", "region") %>%
-  filter(estimate > 0) %>%
-  group_by(habitat, method, region) %>%
-  count() %>% 
-  filter(habitat == "marine",
-         method == "aquaculture") %>%
-  arrange(-n)
-
-disagg %>%
-  add_region("iso3c", "region") %>%
-  filter(estimate < 0) %>%
-  group_by(habitat, method, region) %>%
-  count() %>% 
-  filter(habitat == "marine",
-         method == "capture") %>%
-  arrange(-n)
+agg %>%
+  count(estimate > 0)
 ```
 
+> 105 countries have decreased their total aquatic animal reliance  and 79 countries have increased.
+
+### Statistic: How many countries presently have capture fisheries as their dominant reliance versus aquaculture sources?
+
+FIXIT: Instead of a pivot wider, try replacing with case_when()
+```{r}
+aquatic_reliance %>%
+  filter(year == 2020) %>%
+  group_by(iso3c, method, food_group) %>%
+  summarize(sum = sum(protein_consumed_t)) %>%
+  group_by(iso3c) %>%
+  mutate(prop_animal_protein = sum / sum(sum)) %>%
+  filter(food_group != "terrestrial") %>%
+  pivot_wider(names_from = "method", values_from = "prop_animal_protein") %>%
+  select(-food_group, -sum) %>%
+  group_by(iso3c) %>%
+  summarise(
+    aquaculture = first(na.omit(aquaculture)),
+    capture      = first(na.omit(capture)),
+    unknown      = first(na.omit(unknown))
+  ) %>%
+  count(capture > 0.5)
+```
+
+> A majority of countries (i.e., 179) have acpture fisheries as their dominant reliance source over aquaculture
+
+### Statistic: How many countries have marine capture as a dominant aquatic food source
+
+```{r}
+aquatic_reliance %>%
+  filter(data_source == "new FBS", year == 2020, food_group == "aquatic") %>%
+  group_by(iso3c, method) %>%
+  summarize(prop_aquatic_source = sum(prop_aquatic_source)) %>%
+  group_by(method) %>%
+  count(prop_aquatic_source > 0.5)
+```
+> 170 countries have a majority share of their aquatic food consumption coming from capture fisheries.
+
+### Statistic: Which region has the most rapid declines in capture reliance?
+
+```{r regional reliance trends }
+# Extract average annual change (2010-2020) in reliance by method by *region*
+regional_reliance_trends <-  aquatic_reliance %>%
+  add_region("iso3c", "region") %>%
+  filter(data_source == "new FBS", food_group == "aquatic") %>%
+  group_by(year, region, method) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
+  group_by(region, method) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
+    tidy  = map(model, broom::tidy)
+  ) %>%
+  unnest(tidy) %>%
+  filter(term == "year")
+
+# Generate stat
+regional_reliance_trends %>%
+  filter(method == "capture") %>%
+  arrange(estimate) %>%
+  select(region, method, estimate)
+```
+
+> Asia and Africa are experiencing steepest declines in capture fishery reliance, averaging 0.11 and 0.06 % per year respectively. 
+
+### Statistic: What is the proportion of countries in each region who have experienced a majority of declines in capture fishery reliance?
+
+```{r}
+# Extract average annual change (2010-2020) in reliance by method by *country*
+regional_reliance_trends <-  aquatic_reliance %>%
+  filter(data_source == "new FBS", food_group == "aquatic") %>%
+  group_by(year, iso3c, method) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
+  group_by(iso3c, method) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
+    tidy  = map(model, broom::tidy)
+  ) %>%
+  unnest(tidy) %>%
+  filter(term == "year")
+
+# Generate stat
+regional_reliance_trends %>%
+  add_region("iso3c", "region") %>%
+  group_by(region, method) %>%
+  summarize(prop = mean(estimate < 0)) %>%
+  filter(method == "capture") %>%
+  arrange(-prop)
+```
+
+> Asia has experienced the steepest and most widespread reductions in capture reliance, declining 0.11\%, with reductions occurring in 77\% of their countries annually per year respectively.
 
 # RQ 1b: How does aquatic animal reliance change with the relative contribution of aquatic versus terrestrial animal consumption
 
@@ -1022,6 +1143,10 @@ cv_aquatic <- sd(plot_df$aquatic_estimate, na.rm = TRUE) /
 # Ratio of CVs
 cv_diff <- abs(cv_aquatic / cv_terr) %>% round(2)
 
+# Print final plot
+print(final_plot)
+
+# Save plot
 ggsave(
   filename = "../images/scatter_bar_overlay.pdf",
   plot     = final_plot,
@@ -1030,6 +1155,74 @@ ggsave(
   height   = 3.5,
   units    = "in"
 )
+```
+
+### Trying to understand why points don't follow the 1:1 line
+
+```{r 1:1 line analysis}
+# Calculate annual aquatic animal protein reliance by country
+reliance <- aquatic_reliance %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         data_source == "new FBS") %>%
+  group_by(iso3c, year, food_group) %>%
+  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE),
+            .groups = "drop") %>%
+  group_by(iso3c, year) %>%
+  mutate(prop_animal_protein = protein_consumed_kg_percap / sum(protein_consumed_kg_percap)) %>%
+  filter(food_group != "terrestrial") %>%
+  distinct()
+
+# Calculate annual aquatic animal protein consumption by country
+aquatic <- aquatic_reliance %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         data_source == "new FBS") %>%
+  group_by(iso3c, year, food_group) %>%
+  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE),
+            .groups = "drop") %>%
+  group_by(iso3c, year) %>%
+  filter(food_group != "terrestrial") %>%
+  distinct()
+
+# Calculate terrestrial aquatic animal protein consumption by country
+terrestrial <- aquatic_reliance %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         data_source == "new FBS") %>%
+  group_by(iso3c, year, food_group) %>%
+  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE),
+            .groups = "drop") %>%
+  group_by(iso3c, year) %>%
+  filter(food_group == "terrestrial") %>%
+  distinct()
+
+# Filter aquatic, terrestrial, and reliance data to Costa Rica
+aquatic_CRI <- aquatic %>%
+  filter(iso3c == "CRI")
+
+terrestrial_CRI <- terrestrial %>%
+  filter(iso3c == "CRI")
+
+reliance_CRI <- reliance %>%
+  filter(iso3c == "CRI")
+
+# lm(protein_consumed_kg_percap ~ year, data = aquatic_CRI)
+# lm(protein_consumed_kg_percap ~ year, data = terrestrial_CRI)
+# lm(prop_animal_protein ~ year, data = reliance_CRI)
+
+# Plot trends in CRI aquatic animal reliance, aquatic animal protein reliance, to try and see why it doesn't fall on the 1:1 line (the sum is the sum of terrestrial and)
+
+# Facets currently have freed axes to better see changes in data points
+data.frame(aquatic = aquatic_CRI$protein_consumed_kg_percap,
+           terrestrial = terrestrial_CRI$protein_consumed_kg_percap,
+           reliance = reliance_CRI$prop_animal_protein,
+           year = 2010:2020) %>%
+  mutate(sum = (aquatic + terrestrial)) %>%
+  pivot_longer(cols = c("aquatic", "terrestrial", "reliance", "sum")) %>%
+  mutate(name = factor(name, levels = c("aquatic", "terrestrial", "reliance", "sum"))) %>%
+  ggplot(aes(x = year, y = value, color = name)) +
+  geom_point(size = 1) +
+  facet_wrap(~ name, scales = "free")
+```
+
 ```
 
 
