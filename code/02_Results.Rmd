@@ -308,6 +308,7 @@ observed_global_new <- aa_reliance_mean_global_trends_alt %>%
 
 combined_global <- bind_rows(observed_global_old, observed_global_new)
 
+# Join total protein to aquatic protein weights separated by protein to calculate reliance by method
 aa_reliance_mean_global_trends <- ggplot() +
   geom_area(data = combined_global,
             aes(x = year, y = prop_animal_protein),
