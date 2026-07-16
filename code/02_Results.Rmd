@@ -70,7 +70,6 @@ aquatic_reliance <- read.csv("../output/fao_aquatic_reliance_source.csv") %>%
 aquatic_fbs <- read.csv("../output/fao_fbs_aquatic_source.csv")
 ```
 
-
 ## Load in biophysical and socio-economic data as covariates into the Bayesian model
 
 ```{r load data}
@@ -152,9 +151,7 @@ rm(list = c("ecoregion_full", "ecoregion_unique"))
 This code chunk is also in the main results. This code chunk extracts the name of each model name used in the Bayesian model. In code lines further down, we call the "response_vars" object to generate statistics and figures.
 
 ```{r acquire animal consumption data to be fed through analysis}
-if ( !file.exists("../output/response_vars.rds") ) {
-  
-  # Calculate animal consumption
+# Calculate animal consumption
 terr_animal_cons_cap <- aquatic_reliance %>%
   filter(year == 2019) %>%
   group_by(iso3c) %>%
@@ -229,7 +226,6 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
 
 # Save response_vars to RDS format
 saveRDS(response_vars, "../data/response_vars.rds")
-}
 ```
 
 # RQ 1a: How do aquatic food reliance trends disaggregated by source differ from aggregate aquatic food reliance?
@@ -2249,13 +2245,17 @@ post_intercepts <- expand_grid(
   ci_intercepts <- post_intercepts %>%
   group_by(realm) %>%
   summarise(
-    lo95 = quantile(value, 0.025),
-    lo50 = quantile(value, 0.25),
-    med  = quantile(value, 0.5),
-    hi50 = quantile(value, 0.75),
-    hi95 = quantile(value, 0.975),
-    .groups = "drop"
-  ) %>%
+      lo95 = quantile(value, 0.025),
+      lo80 = quantile(value, 0.10),
+      lo50 = quantile(value, 0.25),
+      lo25 = quantile(value, 0.375),
+      med  = quantile(value, 0.50),
+      hi25 = quantile(value, 0.625),
+      hi50 = quantile(value, 0.75),
+      hi80 = quantile(value, 0.90),
+      hi95 = quantile(value, 0.975),
+      .groups = "drop"
+    ) %>%
   mutate(model = response_vars[i])
   
   intercept_df <- intercept_df %>%
@@ -2478,12 +2478,11 @@ panel_titles <- c(
   capture_rel     = "Capture fisheries reliance"
 )
  
-p1 <- make_realm_map("terr_animal_cons_cap") +
-  labs(title = panel_titles["terr_animal_cons_cap"])
- 
-p2 <- make_realm_map("aquatic_rel") +
+p1 <- make_realm_map("aquatic_rel") +
   labs(title = panel_titles["aquatic_rel"])
- 
+
+p2 <- make_realm_map("terr_animal_cons_cap") +
+  labs(title = panel_titles["terr_animal_cons_cap"])
  
 # Combined figure with patchwork
 # Restore shared legend on a single representative panel, then collect
@@ -2534,20 +2533,50 @@ ggsave(
 )
 ```
 
-```{r}
-intercept_df %>%
-  filter((model == "terr_animal_cons_cap" & med < 0) |
-         (model == "aquatic_rel" & med < 0)) %>%
-  group_by(realm) %>%
-  filter(all(med < 0)) %>%
-  ungroup()
+### Regions of terrestrial dominance
 
-intercept_df %>%
-  filter(model %in% c("terr_animal_cons_cap", "aquatic_rel")) %>%
-  group_by(realm) %>%
-  filter(all(med[model == "terr_animal_cons_cap"] < 0) & 
-         all(med[model == "aquatic_rel"] < 0)) %>%
-  ungroup() %>% 
+### Regions of animal protein scarcity
+
+```{r}
+# Regions with lower than average aquatic animal reliance
+low_rel <- intercept_df %>%
+  filter((model == "aquatic_rel" & hi25 < 0)) %>%
+  pull(realm)
+
+# Countries with low terrestrial animal consumption
+low_terr <- intercept_df %>%
+  filter((model == "terr_animal_cons_cap" & hi25 < 0)) %>%
+  pull(realm)
+
+# Countries with both low aquatic animal reliance and low terrestrial animal consumption per capita
+low_protein_countries <- low_rel[low_rel %in% low_terr]
+```
+
+> Landlocked Africa and Temperate Southern Africa
+
+### Regions of high aquatic animal reliance
+
+```{r}
+high_rel <- intercept_df %>%
+  filter((model == "aquatic_rel" & lo80 > 0)) %>%
   pull(realm)
 ```
+
+> Central Indo-Pacific and Tropical Atlantic+
+
+### Regions of terrestrial animal dominance
+
+```{r}
+high_terr <- intercept_df %>%
+  filter((model == "aquatic_rel" & hi80 < 0)) %>%
+  filter(!realm %in% low_protein_countries) %>%
+  pull()
+```
+
+Measuring aquatic animal protein reliance and terrestrial animal protein consumption across ecoregion-realms, we find geographic patterns of high aquatic animal protein reliance, high terrestrial animal reliance, and limited protein availability.
+Regions with high aquatic animal protein reliance include Central Indo-Pacific and Tropical Atlantic, (Figure 2A), signaling toward a high consumption of high-quality aquatic animal proteins.
+In contrast, regions with the highest reliance on terrestrial animal proteins  include Landlocked Asian, African, and European regions have the lowest aquatic animal protein reliance (Figure 2B).
+A high aquatic or terrestrial animal protein reliant region is more likely to consume an adequate amount of animal proteins, however limited protein-available regions may indicate a lack of dietary animal proteins.
+These regions include landlocked African nations and Temperate Southern Africa, whose aquatic animal protein reliance and terrestrial animal protein consumption are both lower than than the world average.
+
 
