@@ -1469,7 +1469,7 @@ p_region_legend_source <- plot_df %>%
   ggplot(aes(x = region, y = n, fill = region)) +
   geom_col() +
   scale_fill_manual(
-    values = region_colors,
+    values = artis_palette(6),
     name   = "Region",
     guide  = guide_legend(
       title.position = "top",
@@ -1492,14 +1492,16 @@ p_scatter_base <- plot_df %>%
   ggplot(aes(
     x     = aquatic_estimate,
     y     = terrestrial_estimate,
-    fill  = aquatic_reliance_estimate,
+    fill  = region,
     label = iso3c
   )) +
+  scale_fill_manual(values = artis_palette(6)) +
   geom_hline(yintercept = 0, linewidth = 0.4, color = "grey40") +
   geom_vline(xintercept = 0, linewidth = 0.4, color = "grey40") +
-  geom_abline(intercept = 0, slope = 1,
-              linetype = "dashed", linewidth = 0.35, color = "grey55") +
-  geom_point(shape = 21, size = 1.8, color = "grey30", stroke = 0.25) +
+  # geom_abline(intercept = 0, slope = 1,
+  #             linetype = "dashed", linewidth = 0.35, color = "grey55") +
+  geom_point(shape = 21, size = 1.8, stroke = 0.25, alpha = 0.7
+  ) +
   geom_text_repel(
     size               = 2.0,
     min.segment.length = 0.2,
@@ -1508,21 +1510,21 @@ p_scatter_base <- plot_df %>%
     show.legend        = FALSE
   ) +
   lims(x = c(-0.25, 0.25), y = c(-4.5, 4.5)) +
-  scale_fill_gradient2(
-    low      = div_low,
-    mid      = div_mid,
-    high     = div_high,
-    midpoint = 0,
-    name     = "Annual change in aquatic animal protein reliance (%) 2010–2020",
-    guide    = guide_colorbar(
-      title.position = "top",
-      title.hjust    = 0.5,
-      barwidth       = unit(4.5, "cm"),
-      barheight      = unit(0.3, "cm"),
-      frame.colour   = "grey40",
-      ticks.colour   = "grey40"
-    )
-  ) +
+  # scale_fill_gradient2(
+  #   low      = div_low,
+  #   mid      = div_mid,
+  #   high     = div_high,
+  #   midpoint = 0,
+  #   name     = "Annual change in aquatic animal protein reliance (%) 2010–2020",
+  #   guide    = guide_colorbar(
+  #     title.position = "top",
+  #     title.hjust    = 0.5,
+  #     barwidth       = unit(4.5, "cm"),
+  #     barheight      = unit(0.3, "cm"),
+  #     frame.colour   = "grey40",
+  #     ticks.colour   = "grey40"
+  #   )
+  # ) +
   labs(
     x = "Average annual change in daily aquatic animal protein consumption (kg/capita/year) 2010–2020",
     y = "Average annual change in daily\nterrestrial animal protein consumption (kg/capita/year) 2010–2020"
@@ -1546,7 +1548,7 @@ make_inset <- function(q) {
     filter(quadrant == q) %>%
     ggplot(aes(x = region, y = n, fill = region)) +
     geom_col(width = 0.7) +
-    scale_fill_manual(values = region_colors) +
+    scale_fill_manual(values = artis_palette(6)) +
     scale_y_continuous(
       limits   = c(0, max_count),
       breaks   = c(0, max_count),
@@ -1585,10 +1587,7 @@ p_with_insets <- p_scatter +
 
 # Place colorbar and region legend side by side below the main panel
 legend_row <- cowplot::plot_grid(
-  legend_reliance,
-  legend_regions,
-  ncol       = 2,
-  rel_widths = c(1.2, 1)
+  legend_regions
 )
 
 # Stack main panel above legend row
