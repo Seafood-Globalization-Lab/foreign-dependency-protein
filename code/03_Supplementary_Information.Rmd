@@ -40,13 +40,8 @@ source("../utils/clean_model_name.R")
 ### Read in aquatic reliance data & FAO population data
 
 ```{r read in FAO derived data}
-# Read in population
-population_fao_wb <- read.csv("../output/population_fao_wb.csv")
-
 # Read in aquatic reliance data
-aquatic_reliance <- read.csv("../output/fao_aquatic_reliance_source.csv") %>%
-  left_join(population_fao_wb,by=c("year","iso3c"))%>%
-  mutate(protein_consumed_kg_percap=protein_consumed_t*1000/population_fao)
+aquatic_reliance <- read.csv("../output/fao_aquatic_reliance_source.csv")
 
 # Read in FAO sourcing data
 aquatic_fbs <- read.csv("../output/fao_fbs_aquatic_source.csv")
@@ -63,19 +58,19 @@ if ( !file.exists("../output/response_vars.rds") ) {
 terr_animal_cons_cap <- aquatic_reliance %>%
   filter(year == 2019) %>%
   group_by(iso3c) %>%
-  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap))
+  summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
 
 # Calculate aquatic animal consumption
 aquatic_animal_cons_cap <- aquatic_reliance %>%
   filter(year == 2019, food_group == "aquatic") %>%
   group_by(iso3c) %>%
-  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap))
+  summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
 
 # Calculate animal reliance consumption
 aquatic_rel <- aquatic_animal_cons_cap %>%
   left_join(animal_cons_cap, by = "iso3c") %>%
   group_by(iso3c) %>%
-  summarize(prop_animal_protein = protein_consumed_kg_percap.x / protein_consumed_kg_percap.y)
+  summarize(prop_animal_protein = protein_consumed_kg_percap_peryr.x / protein_consumed_kg_percap_peryr.y)
 
 # Add items not created in the loop to the list
 response_vars <- c("terr_animal_cons_cap", "aquatic_animal_cons_cap", "aquatic_rel")
@@ -89,7 +84,7 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
       aquatic_reliance %>%
         filter(year == 2019, food_group == "aquatic", method == i) %>%
         group_by(iso3c) %>%
-        summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap))
+        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
     )
   }
   
@@ -100,7 +95,7 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
       aquatic_reliance %>%
         filter(year == 2019, food_group == "aquatic", consumption_source == i) %>%
         group_by(iso3c) %>%
-        summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap))
+        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
     )
   }
   
@@ -111,7 +106,7 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
       aquatic_reliance %>%
         filter(year == 2019, food_group == "aquatic", habitat == i) %>%
         group_by(iso3c) %>%
-        summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap))
+        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
     )
   }
   
@@ -123,7 +118,7 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
     get(paste0(i, "_cap")) %>%
       left_join(animal_cons_cap, by = "iso3c") %>%
       group_by(iso3c) %>%
-      summarize(prop_animal_protein = protein_consumed_kg_percap.x / protein_consumed_kg_percap.y)
+      summarize(prop_animal_protein = protein_consumed_kg_percap_peryr.x / protein_consumed_kg_percap_peryr.y)
   )
   
   response_vars <- c(response_vars, paste0(i, "_rel"))
@@ -538,11 +533,11 @@ aquatic_protein_quant <- aquatic_reliance %>%
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
          data_source == "new FBS", food_group == "aquatic") %>%
   group_by(iso3c, year) %>%
-  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE),
+  summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr, na.rm = TRUE),
             .groups = "drop") %>%
   distinct() %>%
   split(.$iso3c) %>%
-  map(~ lm(protein_consumed_kg_percap ~ year, data = .x)) %>%
+  map(~ lm(protein_consumed_kg_percap_peryr ~ year, data = .x)) %>%
   map_df(broom::tidy, .id = "iso3c") %>%
   filter(term == "year") %>%
   select(iso3c, aquatic_estimate = estimate)
@@ -552,11 +547,11 @@ terrestrial_protein_quant <- aquatic_reliance %>%
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
          data_source == "new FBS", food_group == "terrestrial") %>%
   group_by(iso3c, year) %>%
-  summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE),
+  summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr, na.rm = TRUE),
             .groups = "drop") %>%
   distinct() %>%
   split(.$iso3c) %>%
-  map(~ lm(protein_consumed_kg_percap ~ year, data = .x)) %>%
+  map(~ lm(protein_consumed_kg_percap_peryr ~ year, data = .x)) %>%
   map_df(broom::tidy, .id = "iso3c") %>%
   filter(term == "year") %>%
   select(iso3c, terrestrial_estimate = estimate)
