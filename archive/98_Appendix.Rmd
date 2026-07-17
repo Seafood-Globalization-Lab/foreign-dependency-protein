@@ -3572,3 +3572,100 @@ disagg %>%
 > For example, Europe, Asia, and North America represent aquaculture emerging hotspots, whose reliance in aquaculture for animal protein has increased across of a majority of their countries despite a majority decline in their aggregate aquatic animal reliance (SI figures 7,8,10).
 
 > Oceania, on the other hand, has declined in reliance across all aquatic food sources, shifting toward terrestrial animal proteins (SI figure 11).
+
+### delete
+
+```{r}
+consumption_full %>%
+  filter(consumer_iso3c == "USA",
+         habitat == "inland",
+         method == "aquaculture") %>%
+  group_by(year, habitat, method) %>%
+  summarize(consumption_live_t = sum(consumption_live_t)) %>%
+  ggplot(aes(x = year, y = consumption_live_t)) +
+  geom_line()
+```
+
+> Aquaculture consumption quantity *has* increased
+
+```{r}
+fao_old_aquatic %>%
+  filter(Element == "Protein supply quantity (kg/capita/yr)",
+         iso3c == "USA") %>%
+  ggplot(aes(x = year, y = value)) +
+  geom_line()
+
+fao_new_aquatic %>%
+  filter(Element == "Protein supply quantity (kg/capita/yr)",
+         iso3c == "USA") %>%
+  ggplot(aes(x = year, y = value)) +
+  geom_line()
+
+
+bind_rows(fao_old_aquatic, fao_new_aquatic)  %>%
+  filter(Element == "Protein supply quantity (kg/capita/yr)",
+         iso3c == "USA") %>%
+  ggplot(aes(x = year, y = value)) +
+  geom_line()
+
+bind_rows(fao_old_aquatic, fao_new_aquatic)  %>%
+  filter(Element == "Protein supply quantity (t)",
+         iso3c == "USA") %>%
+  ggplot(aes(x = year, y = value)) +
+  geom_line()
+
+fao_aquatic_reliance %>%
+  filter(food_group == "aquatic") %>%
+  filter(iso3c == "USA") %>%
+  ggplot(aes(x = year, y = value, color = food_group)) +
+  geom_line()
+
+fao_aquatic_reliance_source %>%
+  filter(iso3c == "USA") %>%
+  filter(food_group == "aquatic") %>%
+  filter(consumption_source == "foreign",
+         habitat == "inland",
+         method == "aquaculture") %>%
+  ggplot(aes(x = year, y = protein_consumed_t_peryr, color = data_source)) +
+  geom_line() +
+  labs(x = "Year", y = "Aquatic animal protein consumption (t/yr)", title = "USA inland aquaculture protein consumption (t/yr)") +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+# total_consumption_usa <- fao_aquatic_reliance_source %>%
+#   filter(food_group == "terrestrial",
+#          iso3c == "USA")
+
+fao_aquatic_reliance_source %>%
+  filter(iso3c == "USA") %>%
+  filter(food_group == "aquatic") %>%
+  filter(consumption_source == "foreign",
+         habitat == "inland",
+         method == "aquaculture") %>%
+  # bind_rows(total_consumption_usa) %>%
+  ggplot(aes(x = year, y = protein_consumed_kg_percap_peryr, color = data_source)) +
+  geom_line() +
+  labs(x = "Year", y = "Inland aquaculture protein consumption (kg/cap/yr)", title = "USA inland aquaculture protein consumption (kg/cap/yr)") +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+fao_aquatic_reliance_source %>%
+  filter(iso3c == "USA") %>%
+  filter(food_group == "aquatic") %>%
+  group_by(year, habitat, method, data_source) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein)) %>%
+  filter(habitat == "inland",
+         method == "aquaculture") %>%
+  mutate(prop_animal_protein = 100 * prop_animal_protein) %>%
+  ggplot(aes(x = year, y = prop_animal_protein, color = data_source)) +
+  geom_line() +
+  labs(x = "Year", y = "Inland aquaculture protein protein reliance (%)", title = "USA inland aquaculture (foreign & domestic) protein reliance (%)") +
+  theme_light() +
+  theme(plot.title = element_text(hjust = 0.5))
+  
+
+# USA aggregate aquatic animal reliance hovers between 5.5-7.5% between 1996-2020
+```
+
+
