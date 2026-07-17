@@ -191,10 +191,10 @@ The bottom panel visualizes for each country in each region the average annual c
 
 # Production-source palette (matches main figure)
 pal_consource <- c(
-  "inland aquaculture" = "#E8B000",
-  "inland capture"     = "#D4601A",
-  "marine aquaculture" = "#9B6DC5",
-  "marine capture"     = "#2B6AA8",
+  "inland aquaculture" = "#e3b17e",
+  "marine aquaculture" = "#d77b4f",
+  "inland capture"     = "#93aca7",
+  "marine capture"     = "#456f8b",
   "unknown"            = "#A8A8A8"
 )
 
@@ -303,7 +303,8 @@ disagg <- aquatic_reliance %>%
   drop_na(estimate) %>%
   group_by(group_label) %>%
   mutate(pct_above = mean(estimate > 0) * 100) %>%
-  ungroup()
+  ungroup() %>%
+  mutate(group_label = factor(group_label, levels = c("marine capture", "marine aquaculture", "unknown", "inland capture", "inland aquaculture")))
 
 # Fit linear models to estimate the average annual change in aggregate
 # aquatic animal reliance (2010-2020)
@@ -387,10 +388,11 @@ for (i in regions) {
     mutate(iso3c = fct_reorder(iso3c, -agg_estimate)) %>%
     ggplot(aes(x = estimate, y = iso3c, fill = group_label)) +
     geom_col() +
+    geom_vline(xintercept = 0, linewidth = 0.4, color = "#434343") +
     agg_point() +
     scale_fill_manual(
       values = pal_consource,
-      name   = "Production source",
+      name   = "Source",
       drop   = FALSE
     ) +
     guides(fill = guide_legend(ncol = 2)) +
@@ -522,7 +524,6 @@ for (i in regions) {
 
 }
 ```
-
 
 # RQ 1b: How does aquatic animal reliance change with the relative contribution of aquatic versus terrestrial animal consumption
 
@@ -744,8 +745,8 @@ plot <- ggplot() +
   guides(fill = guide_legend(nrow = 2, byrow = TRUE,
                               override.aes = list(alpha = 1))) +
   labs(
-    x = "Aquatic protein consumption \u2192",
-    y = "Terrestrial protein consumption \u2192"
+    x = "Aquatic animal protein consumption \u2192",
+    y = "Terrestrial animal protein consumption \u2192"
   ) +
   theme_minimal(base_size = 8) +
   theme(
@@ -2020,3 +2021,28 @@ loo_compare(loo_combined, loo_separated)
 ```
 
 > Result: Models are indistinguishable in performance looking at the LOO ELPD CV scores. And given the partial slopes do not differ substantially across models when using removing one variable, the collinearity between the coastline length and EEZ area is not 
+
+```{r}
+
+
+# Statistical test: terrestrial consumption rate of change > aquatic
+wilcox.test(plot_df$terrestrial_estimate, plot_df$aquatic_estimate,
+            paired = FALSE, alternative = "greater")
+
+# Coefficient of variation for terrestrial consumption rate of change
+cv_terr <- sd(plot_df$terrestrial_estimate, na.rm = TRUE) /
+           mean(plot_df$terrestrial_estimate, na.rm = TRUE)
+
+# Coefficient of variation for aquatic reliance rate of change
+cv_aquatic <- sd(plot_df$aquatic_estimate, na.rm = TRUE) /
+              mean(plot_df$aquatic_reliance_estimate, na.rm = TRUE)
+
+# Coefficient of variation for aquatic reliance rate of change
+cv_reliance <- sd(plot_df$aquatic_reliance_estimate, na.rm = TRUE) /
+              mean(plot_df$aquatic_reliance_estimate, na.rm = TRUE)
+
+# Coefficient of variation for aquatic reliance rate of change
+cv_animal <- sd(animal_protein_quant$animal_protein_estimate, na.rm = TRUE) /
+              mean(animal_protein_quant$animal_protein_estimate, na.rm = TRUE)
+```
+

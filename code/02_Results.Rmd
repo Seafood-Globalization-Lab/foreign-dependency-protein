@@ -1066,11 +1066,11 @@ theme_reliance <- function(base_size = 8,
 scale_fill_consource <- function(...) {
   scale_fill_manual(
     values = c(
-      "inland aquaculture" = "#E8B000",
-      "inland capture"     = "#D4601A",
-      "marine aquaculture"    = "#9B6DC5",
-      "marine capture"        = "#2B6AA8",
-      "unknown"            = "#A8A8A8"
+      "inland aquaculture"    = "#e3b17e",
+      "marine aquaculture"    = "#d77b4f",
+      "inland capture"        = "#93aca7",
+      "marine capture"        = "#456f8b",
+      "unknown"               = "#A8A8A8"
     ),
     ...,
     drop = FALSE
@@ -1081,6 +1081,7 @@ scale_fill_consource <- function(...) {
 # Shared geom layer list for bar panels
 bar_layers <- list(
   geom_col(),
+  geom_vline(xintercept = 0, linewidth = 0.4, color = "#434343"),
   geom_point(aes(x = agg_estimate, y = iso3c), shape = 21,
              fill = "grey20", color = "white", size = 1.2, stroke = 0.3)
 )
@@ -1108,7 +1109,8 @@ disagg <- aquatic_reliance %>%
   drop_na(estimate) %>%
   group_by(group_label) %>%
   mutate(pct_above = mean(estimate > 0) * 100) %>%
-  ungroup()
+  ungroup() %>%
+  mutate(group_label = factor(group_label, levels = c("marine capture", "inland capture", "marine aquaculture", "inland aquaculture", "unknown")))
 
 # Fit linear models to estimate the average annual change in aggregate
 # aquatic animal reliance (2010-2020)
@@ -1152,11 +1154,11 @@ make_bar_panel <- function(regions,
     mutate(iso3c = fct_reorder(iso3c, -agg_estimate)) %>%
     ggplot(aes(x = estimate, y = iso3c, fill = group_label)) +
     bar_layers +
-    scale_fill_consource(name = "Production source") +
+    scale_fill_consource(name = "Source") +
     facet_wrap(~ region, scales = "free", nrow = 1) +
     labs(
       x    = "Average annual change in aquatic animal reliance (2010–2020)",
-      fill = "Production source"
+      fill = "Source"
     ) +
     theme_reliance(
       axis_title_x = axis_x_label,
@@ -1404,6 +1406,11 @@ aquatic_protein_quant <- aquatic_reliance %>%
   group_by(iso3c, year) %>%
   summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE),
             .groups = "drop") %>%
+  # Filter time series so that each country has at least 5 data points
+  group_by(iso3c) %>%
+  mutate(n_years = n()) %>%
+  ungroup() %>%
+  filter(n_years > 5) %>%
   distinct() %>%
   split(.$iso3c) %>%
   map(~ lm(protein_consumed_kg_percap ~ year, data = .x)) %>%
@@ -1419,6 +1426,11 @@ terrestrial_protein_quant <- aquatic_reliance %>%
   group_by(iso3c, year) %>%
   summarize(protein_consumed_kg_percap = sum(protein_consumed_kg_percap, na.rm = TRUE),
             .groups = "drop") %>%
+  # Filter time series so that each country has at least 5 data points
+  group_by(iso3c) %>%
+  mutate(n_years = n()) %>%
+  ungroup() %>%
+  filter(n_years > 5) %>%
   distinct() %>%
   split(.$iso3c) %>%
   map(~ lm(protein_consumed_kg_percap ~ year, data = .x)) %>%
@@ -1434,6 +1446,11 @@ aquatic_protein_reliance <- aquatic_reliance %>%
   group_by(iso3c, year) %>%
   summarize(prop_animal_protein = sum(prop_animal_protein, na.rm = TRUE),
             .groups = "drop") %>%
+  # Filter time series so that each country has at least 5 data points
+  group_by(iso3c) %>%
+  mutate(n_years = n()) %>%
+  ungroup() %>%
+  filter(n_years > 5) %>%
   distinct() %>%
   split(.$iso3c) %>%
   map(~ lm(prop_animal_protein ~ year, data = .x)) %>%
@@ -1488,7 +1505,7 @@ legend_regions <- Filter(function(x) !inherits(x, "zeroGrob"), legend_regions)[[
 # Main scatterplot — fill encodes reliance change, no region border encoding
 # on points (region is shown only in the inset bar charts and the square legend)
 p_scatter_base <- plot_df %>%
-  filter(iso3c != "MDV") %>%
+  # filter(iso3c != "MDV") %>%
   ggplot(aes(
     x     = aquatic_estimate,
     y     = terrestrial_estimate,
