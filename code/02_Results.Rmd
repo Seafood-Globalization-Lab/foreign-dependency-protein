@@ -658,7 +658,7 @@ aa_reliance_multiple_trends <- ggplot() +
                                         ),
                                         extend = "repeat",
                                         gp = gpar(col = "black", fill = "white",
-                                                  lwd = 0.25)
+                                                  lwd = 0.57)
 
                                       )
                                     ),
