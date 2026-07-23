@@ -182,10 +182,368 @@ The middle panel measures the 2020 aggregate aquatic animal reliance for each co
 
 The bottom panel visualizes for each country in each region the average annual change in their aggregate aquatic animal reliance, with separate colors as stacked bars representing the disaggregate reliance.
 
+```{r individual continent production contribution}
+# shared color palettes
+
+# Production-source palette (matches main figure)
+pal_consource <- c(
+  "inland aquaculture" = "#D3AF55",
+  "marine aquaculture" = "#C87534",
+  "inland capture"     = "#5DA49A",
+  "marine capture"     = "#114F59",
+  "unknown"            = "#A8A8A8"
+)
+
+# Diverging palette for direction-of-change panels
+pal_direction <- c(
+  "decreasing" = "#B2182B",
+  "increasing" = "#2166AC"
+)
+
+# Neutral fill for reliance bar chart
+col_reliance_bar <- "#606060"
+
+
+# Shared base theme
+
+theme_si <- function(base_size = 8,
+                     show_x_title = TRUE,
+                     show_y_title = TRUE,
+                     show_legend  = TRUE) {
+
+  base <- theme_minimal(base_size = base_size) +
+    theme(
+      text                  = element_text(family = "sans", color = "black"),
+      plot.background       = element_rect(fill = "transparent", color = NA),
+      panel.background      = element_rect(fill = "transparent", color = NA),
+      panel.grid.minor      = element_blank(),
+      panel.grid.major.y    = element_line(
+        color = scales::alpha("black", 0.06), linewidth = 0.3
+      ),
+      panel.grid.major.x    = element_line(
+        color = scales::alpha("black", 0.25), linewidth = 0.3
+      ),
+      axis.text             = element_text(size = base_size - 2.5, color = "black"),
+      axis.title.x          = element_text(
+        size = base_size - 1, face = "bold",
+        margin = margin(t = 3)
+      ),
+      axis.title.y          = element_text(
+        size = base_size - 1, face = "bold",
+        margin = margin(r = 3)
+      ),
+      strip.text            = element_text(size = base_size - 1, face = "bold"),
+      legend.position       = if (show_legend) "bottom" else "none",
+      legend.title          = element_text(size = base_size - 1.5, face = "bold"),
+      legend.text           = element_text(size = base_size - 2.5),
+      legend.key.size       = unit(0.25, "cm"),
+      legend.box            = "vertical",
+      legend.spacing        = unit(0.05, "cm"),
+      legend.margin         = margin(t = 0, b = 0),
+      legend.box.margin     = margin(t = -2, b = -2),
+      legend.background     = element_rect(fill = "transparent", color = NA),
+      legend.box.background = element_rect(fill = "transparent", color = NA),
+      plot.margin           = margin(3, 4, 3, 4)
+    )
+
+  if (!show_x_title) base <- base + theme(axis.title.x = element_blank())
+  if (!show_y_title) base <- base + theme(axis.title.y = element_blank())
+  base
+}
+
+# suppress y-axis grid (used for horizontal count bars
+theme_si_hbar <- function(base_size = 8, show_legend = TRUE) {
+  theme_si(base_size = base_size, show_legend = show_legend) +
+    theme(
+      panel.grid.major.y = element_blank(),
+      axis.text.y        = element_blank(),
+      axis.ticks.y       = element_blank(),
+      axis.title.y       = element_blank()
+    )
+}
+
+
+# Shared geom helpers
+
+agg_point <- function() {
+  geom_point(
+    aes(x = agg_estimate, y = iso3c, color = term),
+    shape  = 21,
+    fill   = "grey20",
+    size   = 1.2,
+    stroke = 0.3
+  )
+}
+
+
+# Fit linear models to estimate the average annual change in disaggregated
+# aquatic animal reliance (2010-2020) by production source (habitat x method)
+# for each country
+disagg <- aquatic_reliance %>%
+  filter(data_source == "new FBS", food_group == "aquatic") %>%
+  group_by(year, iso3c, habitat, method) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
+  group_by(iso3c, habitat, method) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
+    tidy  = map(model, broom::tidy)
+  ) %>%
+  unnest(tidy) %>%
+  filter(term == "year") %>%
+  mutate(
+    group_label = paste(habitat, method),
+    group_label = if_else(group_label == "unknown unknown", "unknown", group_label)
+  ) %>%
+  drop_na(estimate) %>%
+  group_by(group_label) %>%
+  mutate(pct_above = mean(estimate > 0) * 100) %>%
+  ungroup() %>%
+  mutate(group_label = factor(group_label, levels = c("marine capture", "marine aquaculture", "unknown", "inland capture", "inland aquaculture")))
+
+# Fit linear models to estimate the average annual change in aggregate
+# aquatic animal reliance (2010-2020)
+agg <- aquatic_reliance %>%
+  filter(data_source == "new FBS", food_group == "aquatic") %>%
+  group_by(iso3c, year) %>%
+  summarise(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
+  group_by(iso3c) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
+    tidy  = map(model, broom::tidy)
+  ) %>%
+  unnest(tidy) %>%
+  filter(term == "year") %>%
+  mutate(group_label = "aggregate") %>%
+  drop_na(estimate) %>%
+  group_by(group_label) %>%
+  mutate(pct_above = mean(estimate > 0) * 100) %>%
+  ungroup()
+
+# Clean aggregate estimate data
+agg_estimate <- bind_rows(agg, disagg) %>%
+  group_by(iso3c) %>%
+  mutate(agg_est = estimate[group_label == "aggregate"][1]) %>%
+  add_region("iso3c", "region") %>%
+  ungroup() %>%
+  filter(group_label == "aggregate") %>%
+  select(iso3c, agg_estimate = estimate)
+
+# Extract rate of change in aggregate aquatic animal reliance from 2010-2020 
+roc_aquatic_total <- aquatic_reliance %>%
+  filter(
+    !(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+    data_source == "new FBS",
+    food_group  == "aquatic"
+  ) %>%
+  group_by(iso3c, year) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein, na.rm = TRUE),
+            .groups = "drop") %>%
+  distinct() %>%
+  split(list(.$iso3c), drop = TRUE) %>%
+  map(~ lm(prop_animal_protein ~ year, data = .x)) %>%
+  map_df(broom::tidy, .id = "combined_id") %>%
+  filter(term == "year") %>%
+  select(iso3c = combined_id, roc = estimate) %>%
+  mutate(
+    direction      = if_else(roc > 0, "increasing", "decreasing"),
+    method_habitat = "total"
+  ) %>%
+  add_region(col = "iso3c", region.col.name = "continent")
+
+counts_by_continent <- roc_aquatic_total %>%
+  group_by(continent, method_habitat) %>%
+  count(direction) %>%
+  group_by(continent) %>%
+  mutate(prop = n / sum(n))
+
+
+# Extract legend
+
+extract_legend <- function(p) {
+  legs <- cowplot::get_plot_component(p, "guide-box", return_all = TRUE)
+  good <- Filter(function(x) !inherits(x, "zeroGrob"), legs)
+  if (length(good) == 0) return(NULL)
+  good[[1]]
+}
+
+
+# Loop across regions
+
+regions <- c("Asia", "Africa", "Europe", "North America", "South America", "Oceania")
+
+for (i in regions) {
+
+  # Panel 1: aggregate + disaggregated rate-of-change bars
+  p_bars <- disagg %>%
+    add_region("iso3c", "region") %>%
+    filter(region == i) %>%
+    left_join(agg_estimate, by = "iso3c") %>%
+    mutate(iso3c = fct_reorder(iso3c, -agg_estimate)) %>%
+    ggplot(aes(x = estimate, y = iso3c, fill = group_label)) +
+    geom_col() +
+    geom_vline(xintercept = 0, linewidth = 0.4, color = "#434343") +
+    agg_point() +
+    scale_fill_manual(
+      values = pal_consource,
+      name   = "Source",
+      drop   = FALSE
+    ) +
+    labs(x = "Average annual change in aquatic animal reliance (2010–2020)",
+         color = "") +
+    theme_si(show_y_title = FALSE, show_legend = TRUE) +
+    scale_color_manual(values = "white",
+                     label = "aggregate reliance",
+                     guide = guide_legend(override.aes = list(
+                        fill = list(pattern(
+                                      grobTree(
+                                        circleGrob(x = 0.5, 
+                                                   y = 0.5, 
+                                                   r = 0.3,
+                                                   gp = gpar(fill = "grey20"))
+                                        ),
+                                        extend = "repeat",
+                                        gp = gpar(col = "grey20", fill = "white",
+                                                  lwd = 0.25)
+
+                                      )
+                                    ),
+                        color = "grey20",
+                        linewidth = 0.2,
+                        size = 3.5
+                      ))) +
+        guides(fill = guide_legend(order = 1, ncol = 2))
+
+  # Panel 2: aggregate direction counts (horizontal stacked bar)
+  p_agg_counts <- counts_by_continent %>%
+    filter(method_habitat == "total", continent == i) %>%
+    ggplot(aes(y = continent, x = n, fill = direction)) +
+    geom_col(width = 0.55) +
+    scale_fill_manual(
+      values = pal_direction,
+      labels = c(
+        "decreasing" = "Declining reliance",
+        "increasing" = "Increasing reliance"
+      ),
+      name = "Direction\nof change"
+    ) +
+    guides(fill = guide_legend(nrow = 2)) +
+    labs(x = "No. countries (aggregate)") +
+    theme_si_hbar(show_legend = TRUE)
+
+  # Panel 3: disaggregated direction counts
+  num_regional_countries <- disagg %>%
+    add_region("iso3c", "region") %>%
+    filter(region == i) %>%
+    distinct(iso3c) %>%
+    nrow()
+
+  p_disagg_counts <- disagg %>%
+    add_region("iso3c", "region") %>%
+    filter(region == i) %>%
+    group_by(region, group_label) %>%
+    count(increasing = estimate > 0) %>%
+    ungroup() %>%
+    mutate(direction = if_else(increasing, "increasing", "decreasing")) %>%
+    ggplot(aes(y = group_label, x = n, fill = direction)) +
+    geom_col(width = 0.55) +
+    scale_fill_manual(values = pal_direction, guide = "none") +
+    labs(
+      x = paste0(
+        "No. countries (disaggregate, n = ", num_regional_countries, ")"
+      )
+    ) +
+    theme_si(show_y_title = FALSE, show_legend = FALSE) +
+    theme(panel.grid.major.y = element_blank())
+
+  # Panel 4: 2020 reliance, ordered by rate of change
+  p_reliance <- aquatic_reliance %>%
+    filter(year == 2020, food_group == "aquatic") %>%
+    group_by(iso3c) %>%
+    summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
+    left_join(agg_estimate, by = "iso3c") %>%
+    add_region("iso3c", "region") %>%
+    filter(region == i) %>%
+    ggplot(aes(
+      x = fct_reorder(iso3c, agg_estimate),
+      y = prop_animal_protein * 100
+    )) +
+    geom_col(fill = col_reliance_bar, width = 0.7) +
+    labs(y = "Aquatic animal\nreliance, 2020 (%)") +
+    theme_si(show_x_title = FALSE, show_legend = FALSE) +
+    theme(
+      axis.text.x        = element_text(size = 4.5, angle = 45, hjust = 1),
+      panel.grid.major.x = element_blank(),
+      panel.grid.major.y = element_line(
+        color = scales::alpha("black", 0.25), linewidth = 0.3
+      )
+    )
+
+  # Assemble legends
+  legend_bars       <- extract_legend(p_bars)
+  legend_agg_counts <- extract_legend(p_agg_counts)
+
+  p_bars_nl       <- p_bars       + theme(legend.position = "none")
+  p_agg_counts_nl <- p_agg_counts + theme(legend.position = "none")
+
+  legend_row <- cowplot::plot_grid(
+    legend_agg_counts,
+    legend_bars,
+    ncol       = 2,
+    rel_widths = c(1, 1.45)
+  )
+
+  # Title and divider
+  title_panel <- ggplot() +
+    labs(title = i) +
+    theme_void() +
+    theme(
+      plot.title = element_text(
+        hjust = 0.5, face = "bold", size = 9
+      )
+    )
+
+  divider_panel <- ggplot() +
+    theme_void() +
+    geom_hline(yintercept = 0.5, linewidth = 0.4, color = "grey60")
+
+  # Combine top count panels 
+  top_counts <- cowplot::plot_grid(
+    p_agg_counts_nl,
+    p_disagg_counts,
+    ncol       = 2,
+    rel_widths = c(1, 1)
+  )
+
+  # Final assembly
+  final_plot <- cowplot::plot_grid(
+    title_panel,
+    divider_panel,
+    top_counts,
+    p_reliance,
+    p_bars_nl,
+    legend_row,
+    ncol        = 1,
+    rel_heights = c(0.12, 0.04, 0.5, 0.8, 2.5, 0.42)
+  )
+
+  # Save plot
+  ggsave(
+    filename = paste0("../images/SI/multi_metrics_", i, "_SI.pdf"),
+    plot     = final_plot,
+    device   = cairo_pdf,
+    width    = 5,
+    height   = 7,
+    units    = "in"
+  )
+
+}
+```
 
 ## SI figure: Maps in aggregate by source
 
-```{r aquatic_reliance_maps, message=FALSE, warning=FALSE}
+```{r aquatic_reliance_maps}
 # Single small addition: tightens the vertical gap between the two
 # stacked (domestic/foreign) maps by shrinking legend box spacing and
 # panel margins. Nothing else about your layout is changed.

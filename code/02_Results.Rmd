@@ -36,6 +36,7 @@ library(grid)
 library(broom)
 library(ggtext)
 library(progress)
+library(ggpattern)
 
 # Initialize directories
 
@@ -295,7 +296,7 @@ combined_global <- bind_rows(observed_global_old, observed_global_new)
 aa_reliance_mean_global_trends <- ggplot() +
   geom_area(data = combined_global,
             aes(x = year, y = prop_animal_protein),
-            fill = "#2171B5") +
+            fill = "#8FACB4") +
   geom_line(data = projections_global,
             aes(x = year, y = prop_animal_protein, group = data_source),
             colour = "black", linetype = "dashed", linewidth = 0.5, alpha = 0.7) +
@@ -421,7 +422,8 @@ aa_reliance_aq_cap <- aa_reliance_method_trends %>%
   geom_line(data = filter(combined_method, type == "projected"),
             aes(x = year, y = prop_animal_protein, group = data_source),
             colour = "black", linetype = "dashed", linewidth = 0.5, alpha = 0.7) +
-  scale_fill_manual(values = c(desaturate("#08519C", amount = 0.1), desaturate("#6BAED6", amount = 0.1))) +
+  scale_fill_manual(values = c("#337D81","#D3983E")) +
+  # scale_fill_manual(values = c(desaturate("#08519C", amount = 0.1), desaturate("#6BAED6", amount = 0.1))) +
   labs(x = "", y = "Aquatic animal reliance (%)\n(by method)") +
   theme_minimal(base_size = 8) +
     facet_grid(~ factor(method, levels=c("Capture", "Aquaculture"))) +
@@ -529,24 +531,148 @@ projections_new <- projections %>%
 
 # Combine both observed and projected data
 combined <- bind_rows(observed_old, observed_new, projections_old, projections_new) %>%
-  mutate(habitat_method = paste(habitat, method))
+  mutate(habitat_method = paste(habitat, method)) %>%
+  mutate(habitat_method = factor(habitat_method, levels = c("Marine capture", "Inland capture", "Marine aquaculture", "Inland aquaculture"))) %>%
+  mutate(habitat_method_consource = paste0(habitat_method, " ", consumption_source))
 
+lines <- combined %>%
+  mutate(foreign_val = case_when(
+    consumption_source == "foreign" ~ prop_animal_protein
+  ))
+# "#C87534" "#D3983E" "#D3AF55"  "#5DA49A" "#337D81" "#114F59"
+disagg_colors <- list("#114F59",
+                      pattern(
+                            grobTree(
+                              polygonGrob(
+                                x = c(0,1,1,0),
+                                y = c(0,0,1,1)
+                                ),
+                              segmentsGrob(
+                              x0 = seq(-1,1, by = 0.04),
+                              x1 = seq(-1,1, by = 0.04) + 0.25,
+                              y0 = 0, y1 = 1
+                              )
+                              ),
+                              extend = "repeat",
+                              gp = gpar(col = "black", fill = "#114F59",
+                                        lwd = .6)
+                            ),
+                   "#5DA49A",
+                      pattern(
+                            grobTree(
+                              polygonGrob(
+                                x = c(0,1,1,0),
+                                y = c(0,0,1,1)
+                                ),
+                              segmentsGrob(
+                              x0 = seq(-1,1, by = 0.04),
+                              x1 = seq(-1,1, by = 0.04) + 0.01,
+                              y0 = 0, y1 = 1
+                              )
+                              ),
+                              extend = "repeat",
+                              gp = gpar(col = "black", fill = "#5DA49A",
+                                        lwd = .6)
+                            ),
+                   "#C87534",
+                      pattern(
+                            grobTree(
+                              polygonGrob(
+                                x = c(0,1,1,0),
+                                y = c(0,0,1,1)
+                                ),
+                              segmentsGrob(
+                              x0 = seq(-1,1, by = 0.04),
+                              x1 = seq(-1,1, by = 0.04) + 0.05,
+                              y0 = 0, y1 = 1
+                              )
+                              ),
+                              extend = "repeat",
+                              gp = gpar(col = "black", fill = "#C87534",
+                                        lwd = .6)
+                            ),
+                   "#D3AF55",
+                      pattern(
+                            grobTree(
+                              polygonGrob(
+                                x = c(0,1,1,0),
+                                y = c(0,0,1,1)
+                                ),
+                              segmentsGrob(
+                              x0 = seq(-1,1, by = 0.04),
+                              x1 = seq(-1,1, by = 0.04) + 0.03,
+                              y0 = 0, y1 = 1
+                              )
+                              ),
+                              extend = "repeat",
+                              gp = gpar(col = "black", fill = "#D3AF55",
+                                        lwd = .6)
+                            ))
 
+names(disagg_colors) <- 
+  c("Marine capture domestic",
+    "Marine capture foreign",
+    "Inland capture domestic",
+    "Inland capture foreign",
+    "Marine aquaculture domestic",
+    "Marine aquaculture foreign",
+    "Inland aquaculture domestic",
+    "Inland aquaculture foreign")
+
+disagg_linewidth <- c(0.3,0.03,0.3,0.3)
+
+names(disagg_linewidth) <- c("Marine capture",
+                             "Inland capture",
+                             "Marine aquaculture",
+                             "Inland aquaculture")
+
+# Create plot
 aa_reliance_multiple_trends <- ggplot() +
   geom_area(data = filter(combined, type == "observed"),
-            aes(x = year, y = prop_animal_protein, fill = consumption_source),
-            size = 0.75) +
+            aes(x = year,
+                y = prop_animal_protein,
+                fill = habitat_method_consource)) +
   geom_line(data = filter(combined, type == "projected"),
             aes(x = year, y = prop_animal_protein, group = data_source),
             colour = "black", linetype = "dashed", linewidth = 0.5, alpha = 0.7) +
+  geom_line(data = lines %>% drop_na(foreign_val), aes(x = year, y = foreign_val, linewidth = habitat_method)) +
   facet_wrap(~ habitat_method) +
-  scale_fill_manual(values = c("#2C5F8A", "#BDD7EE")) +
+  scale_linewidth_manual(values = disagg_linewidth) +
+  scale_fill_manual(values = disagg_colors,
+                    breaks = c("Inland aquaculture foreign", "Marine capture domestic"),
+                    labels = c("domestic", "foreign"), # Convert arbitrary two select groups on line above
+                    # to foreign / domestic
+                    guide = guide_legend(override.aes = list(
+                        fill = list("white",
+                                    pattern(
+                                      grobTree(
+                                        polygonGrob(
+                                          x = c(0,1,1,0),
+                                          y = c(0,0,1,1)
+                                          ),
+                                        segmentsGrob(
+                                        x0 = seq(-1,1, by = 0.25),
+                                        x1 = seq(-1,1, by = 0.25) + 1,
+                                        y0 = 0, y1 = 1
+                                        )
+                                        ),
+                                        extend = "repeat",
+                                        gp = gpar(col = "black", fill = "white",
+                                                  lwd = 0.25)
+
+                                      )
+                                    ),
+                        color = "black",
+                        linewidth = 0.2
+                      ))) +
+  # scale_fill_manual(values = c("#2C5F8A", "#BDD7EE")) +
   labs(fill = "Consumption source", x = "", y = "Aquatic animal reliance (%)\n(by habitat/method/consumption source)") +
+  guides(linewidth = "none") +
   theme_minimal(base_size = 8) +
   theme(
     panel.grid.major.x = element_blank(),
     panel.grid.minor.x = element_blank(),
-    panel.grid.major.y = element_line(color = scales::alpha("black", 0.25), linewidth = 0.3),
+    panel.grid.major.y = element_line(color = scales::alpha("gray", 0.25), linewidth = 0.3),
     panel.grid.minor.y = element_blank(),
     panel.background = element_rect(fill = "transparent", color = NA),
     plot.background = element_rect(fill = "transparent", color = NA),
@@ -556,7 +682,7 @@ aa_reliance_multiple_trends <- ggplot() +
     axis.title.y = element_text(size = 7, margin = margin(r = 5), face = "bold"),
     axis.text.x = element_text(size = 4.5, angle = 30, hjust = 1),
     legend.position = "bottom",
-    legend.title = element_text(size = 7, face = "bold"),
+    legend.title = element_blank(),
     legend.text = element_text(size = 6),
     legend.key.size = unit(0.3, "cm"),
     legend.box = "vertical",
@@ -584,14 +710,14 @@ aa_reliance_mean_global_trends_plot <- cowplot::plot_grid(
 print(aa_reliance_mean_global_trends_plot)
 
 # Save plot
-# ggsave(
-#   filename = "../images/aa_reliance_mean_global_trends.pdf",
-#   plot     = aa_reliance_mean_global_trends_plot,
-#   device   = cairo_pdf,
-#   width    = 7.2,   # two-column journal width
-#   height   = 3.2,
-#   units    = "in"
-# )
+ggsave(
+  filename = "../images/aa_reliance_mean_global_trends.pdf",
+  plot     = aa_reliance_mean_global_trends_plot,
+  device   = cairo_pdf,
+  width    = 7.2,   # two-column journal width
+  height   = 3.2,
+  units    = "in"
+)
 ```
 
 ### Statistic: what percent has global aquatic animal reliance stayed between during 1996-2020?
@@ -723,8 +849,9 @@ forwardcasted_cap <- bind_rows(
 # Step 2.
 
 ################################# Aquaculture
-## What is the rate of increase? (Get the most conservative estimate)
-roi_aq <- min(
+## What is the rate of increase?
+# Get vector of all potential rates of increase
+aq_vec <- c(
 forwardcasted_aq %>% filter(year == 2020) %>%
   pull(prop_animal_protein) / aq %>%
   filter(year == 1996) %>% pull(prop_animal_protein),
@@ -736,6 +863,9 @@ aq %>%
 
 obs_increases_aq
 ) * 100 # Convert to percent
+
+roi_aq_lb <- min(aq_vec) %>% round(0) # Lower bound for rate of increase
+roi_aq_up <- max(aq_vec) %>% round(0) # Upper bound for rate of increase
 
 roi_aq <- roi_aq %>% round(0) # Round to nearest whole number
 
@@ -750,7 +880,8 @@ roi_end_aq <- aq %>% filter(year == 2020) %>%
 ################################# Capture fisheries
 ## What is the rate of decrease? (Get the most conservative estimate)
 ## Since it's rate of decrease, we subtract from 1 to get percent decrease.
-rod_cap <- (1 - max(
+# Get vector of all potential rates of decrease
+rod_cap_vec <- (1 - c(
 forwardcasted_cap %>% filter(year == 2020) %>%
   pull(prop_animal_protein) / cap %>%
   filter(year == 1996) %>% pull(prop_animal_protein),
@@ -761,6 +892,9 @@ cap %>%
   pull(prop_animal_protein),
 
 obs_decreases_cap)) * 100
+
+rod_cap_vec_lb <- min(rod_cap_vec) %>% round(0)
+rod_cap_vec_up <- max(rod_cap_vec) %>% round(0)
 
 # Round to nearest whole number
 rod_cap <- rod_cap %>% round(0)
@@ -951,7 +1085,8 @@ forwardcasted_maca <- bind_rows(
 
 ################################# Domestic inland aquaculture
 ## What is the rate of increase? (Get the most conservative estimate)
-roi_inaq <- min(
+# Get vector of all potential rates of increase
+roi_inaq_vec <- c(
 forwardcasted_inaq %>% filter(year == 2020) %>%
   pull(prop_animal_protein) / inaq %>%
   filter(year == 1996) %>% pull(prop_animal_protein),
@@ -964,20 +1099,23 @@ inaq %>%
 obs_increases_inaq
 ) * 100 # Convert to percent
 
-roi_inaq <- roi_inaq %>% round(0) # Round to nearest whole number
+roi_inaq_lb <- min(roi_inaq_vec) %>% round(0) # lower bound for rate of increase
+roi_inaq_ub <- max(roi_inaq_vec) %>% round(0) # upper bound for rate of increase
+
 
 ## Figure out the start point and end point for the rate of increase - since obs-forwardcasted and obs-obs
 ## were produced equally identical rate of changes, giving the most conservative estimates on the percent change,
 ## we use the observed start and end points.
-roi_start_inaq <- inaq %>% filter(year == 1996) %>% 
-  pull(prop_animal_protein) %>% round(2)
-roi_end_inaq <- inaq %>% filter(year == 2020) %>% 
-  pull(prop_animal_protein) %>% round(2)
+# roi_start_inaq <- inaq %>% filter(year == 1996) %>% 
+#   pull(prop_animal_protein) %>% round(2)
+# roi_end_inaq <- inaq %>% filter(year == 2020) %>% 
+#   pull(prop_animal_protein) %>% round(2)
 
 ################################# Domestic marine capture
 ## What is the rate of decrease? (Get the most conservative estimate)
 ## Since it's rate of decrease, we subtract from 1 to get percent decrease.
-rod_maca <- (1 - max(
+# Get vector of all potential rates of increase
+rod_maca_vec <- (1 - c(
 forwardcasted_maca %>% filter(year == 2020) %>%
   pull(prop_animal_protein) / maca %>%
   filter(year == 1996) %>% pull(prop_animal_protein),
@@ -989,14 +1127,17 @@ maca %>%
 
 obs_decreases_maca)) * 100
 
+rod_maca_lb <- min(rod_maca_vec) %>% round(0) # lower bound for rate of increase
+rod_maca_ub <- max(rod_maca_vec) %>% round(0) # upper bound for rate of increase
+
 # Round to nearest whole number
-rod_maca <- rod_maca %>% round(0)
+# rod_maca <- rod_maca %>% round(0)
 
 ## Figure out the start point and end point for the rate of increase
-rod_start_maca <- backcasted_maca %>% filter(year == 1996) %>%
-  pull(prop_animal_protein) %>% round(2)
-rod_end_maca <- maca %>% filter(year == 2020) %>% 
-  pull(prop_animal_protein) %>% round(2)
+# rod_start_maca <- backcasted_maca %>% filter(year == 1996) %>%
+#   pull(prop_animal_protein) %>% round(2)
+# rod_end_maca <- maca %>% filter(year == 2020) %>% 
+#   pull(prop_animal_protein) %>% round(2)
 
 ```
 > Since 1996, inland aquaculture reliance has increased by over 200% from `r roi_start_inaq`% to `r roi_end_inaq`, while marine capture reliance decreased over 30% from `r rod_start_maca`% to `r rod_end_maca`%. 
@@ -1061,10 +1202,10 @@ theme_reliance <- function(base_size = 8,
 scale_fill_consource <- function(...) {
   scale_fill_manual(
     values = c(
-      "inland aquaculture"    = "#e3b17e",
-      "marine aquaculture"    = "#d77b4f",
-      "inland capture"        = "#93aca7",
-      "marine capture"        = "#456f8b",
+      "inland aquaculture"    = "#D3AF55",
+      "marine aquaculture"    = "#C87534",
+      "inland capture"        = "#5DA49A",
+      "marine capture"        = "#114F59",
       "unknown"               = "#A8A8A8"
     ),
     ...,
@@ -1077,8 +1218,8 @@ scale_fill_consource <- function(...) {
 bar_layers <- list(
   geom_col(),
   geom_vline(xintercept = 0, linewidth = 0.4, color = "#434343"),
-  geom_point(aes(x = agg_estimate, y = iso3c), shape = 21,
-             fill = "grey20", color = "white", size = 1.2, stroke = 0.3)
+  geom_point(aes(x = agg_estimate, y = iso3c, color = term), shape = 21,
+             fill = "grey20", size = 1.2, stroke = 0.3)
 )
 
 
@@ -1153,13 +1294,34 @@ make_bar_panel <- function(regions,
     facet_wrap(~ region, scales = "free", nrow = 1) +
     labs(
       x    = "Average annual change in aquatic animal reliance (2010–2020)",
-      fill = "Source"
+      fill = "Source",
+      color = ""
     ) +
     theme_reliance(
       axis_title_x = axis_x_label,
       legend       = legend_show
     ) +
-    theme(axis.text = element_text(size = text_size))
+    theme(axis.text = element_text(size = text_size)) +
+    scale_color_manual(values = "white",
+                     label = "aggregate reliance",
+                     guide = guide_legend(override.aes = list(
+                        fill = list(pattern(
+                                      grobTree(
+                                        circleGrob(x = 0.5, 
+                                                   y = 0.5, 
+                                                   r = 0.3,
+                                                   gp = gpar(fill = "grey20"))
+                                        ),
+                                        extend = "repeat",
+                                        gp = gpar(col = "grey20", fill = "white",
+                                                  lwd = 0.25)
+
+                                      )
+                                    ),
+                        color = "grey20",
+                        linewidth = 0.2,
+                        size = 3.5
+                      )))
 }
 
 
@@ -1227,15 +1389,68 @@ print(final_plot)
 
 
 # Save plot
-# ggsave(
-#   filename = "../images/pct_reliance_contribution_four_sources.pdf",
-#   plot     = final_plot,
-#   device   = cairo_pdf,   # embeds fonts; swap to "jpg" + dpi = 500 if raster needed
-#   width    = 8,
-#   height   = 6,
-#   units    = "in"
-# )
+ggsave(
+  filename = "../images/pct_reliance_contribution_four_sources.pdf",
+  plot     = final_plot,
+  device   = cairo_pdf,   # embeds fonts; swap to "jpg" + dpi = 500 if raster needed
+  width    = 8,
+  height   = 6,
+  units    = "in"
+)
+
+disagg %>%
+  group_by(habitat, method) %>% 
+  filter(estimate < 0) %>%
+  summarize(mean = mean(estimate) * 100)
+
+disagg %>%
+  group_by(habitat, method) %>% 
+  filter(estimate > 0) %>%
+  summarize(mean = mean(estimate) * 100)
 ```
+
+```{r}
+disagg %>%
+    add_region("iso3c", "region") %>%
+    filter(region %in% c("Oceania", "South America")) %>%
+    left_join(agg_estimate, by = "iso3c") %>%
+    mutate(iso3c = fct_reorder(iso3c, -agg_estimate)) %>%
+    ggplot(aes(x = estimate, y = iso3c, fill = group_label)) +
+    bar_layers +
+    scale_fill_consource(name = "Source") +
+    facet_wrap(~ region, scales = "free", nrow = 1) +
+    labs(
+      x    = "Average annual change in aquatic animal reliance (2010–2020)",
+      fill = "Source",
+      color = ""
+    ) +
+    theme_reliance(
+      axis_title_x = axis_x_label,
+      legend       = legend_show
+    ) +
+    theme(axis.text = element_text(size = text_size)) +
+  scale_color_manual(values = "white",
+                     label = "aggregate reliance",
+                     guide = guide_legend(override.aes = list(
+                        fill = list(pattern(
+                                      grobTree(
+                                        circleGrob(x = 0.5, 
+                                                   y = 0.5, 
+                                                   r = 0.3,
+                                                   gp = gpar(fill = "grey20"))
+                                        ),
+                                        extend = "repeat",
+                                        gp = gpar(col = "black", fill = "white",
+                                                  lwd = 0.25)
+
+                                      )
+                                    ),
+                        color = "black",
+                        linewidth = 0.2,
+                        size = 3.5
+                      )))
+```
+
 
 ### How many countries have increased / decreased aggregate aquatic animal reliance?
 
@@ -1500,18 +1715,20 @@ legend_regions <- Filter(function(x) !inherits(x, "zeroGrob"), legend_regions)[[
 # Main scatterplot — fill encodes reliance change, no region border encoding
 # on points (region is shown only in the inset bar charts and the square legend)
 p_scatter_base <- plot_df %>%
+  mutate(aquatic_outpaces_terrestrial = aquatic_estimate > terrestrial_estimate) %>%
   # filter(iso3c != "MDV") %>%
   ggplot(aes(
     x     = aquatic_estimate,
     y     = terrestrial_estimate,
-    fill  = region,
+    fill  = aquatic_outpaces_terrestrial,
     label = iso3c
   )) +
-  scale_fill_manual(values = artis_palette(6)) +
+  scale_fill_manual(labels = c("Terr. outpaces aq. animal protein cons.", "Aq. outpaces terr animal protein cons."), values = c("#B2182B", "#2166AC")) +
+  # scale_fill_manual(values = artis_palette(6)) +
   geom_hline(yintercept = 0, linewidth = 0.4, color = "grey40") +
   geom_vline(xintercept = 0, linewidth = 0.4, color = "grey40") +
-  # geom_abline(intercept = 0, slope = 1,
-  #             linetype = "dashed", linewidth = 0.35, color = "grey55") +
+  geom_abline(intercept = 0, slope = 1,
+              linetype = "dashed", linewidth = 0.35, color = "grey55") +
   geom_point(shape = 21, size = 1.8, stroke = 0.25, alpha = 0.7
   ) +
   geom_text_repel(
@@ -1524,9 +1741,11 @@ p_scatter_base <- plot_df %>%
   lims(x = c(-0.25, 0.25), y = c(-4.5, 4.5)) +
   labs(
     x = "Average annual change in daily aquatic animal protein consumption (kg/capita/year) 2010–2020",
-    y = "Average annual change in daily\nterrestrial animal protein consumption (kg/capita/year) 2010–2020"
-  ) +
-  theme_scatter()
+    y = "Average annual change in daily\nterrestrial animal protein consumption (kg/capita/year) 2010–2020") +
+  theme_scatter() +
+  guides(fill=guide_legend(nrow=2)) +
+  theme(legend.title = element_blank())
+
 
 # Extract colorbar legend from scatter before stripping it
 legend_reliance <- cowplot::get_plot_component(
@@ -1584,7 +1803,7 @@ p_with_insets <- p_scatter +
 
 # Place colorbar and region legend side by side below the main panel
 legend_row <- cowplot::plot_grid(
-  legend_regions
+  legend_reliance, legend_regions
 )
 
 # Stack main panel above legend row
@@ -1599,14 +1818,14 @@ final_plot <- cowplot::plot_grid(
 print(final_plot)
 
 # Save plot
-# ggsave(
-#   filename = "../images/scatter_bar_overlay.pdf",
-#   plot     = final_plot,
-#   device   = cairo_pdf,
-#   width    = 5,
-#   height   = 3.5,
-#   units    = "in"
-# )
+ggsave(
+  filename = "../images/scatter_bar_overlay.pdf",
+  plot     = final_plot,
+  device   = cairo_pdf,
+  width    = 5,
+  height   = 3.5,
+  units    = "in"
+)
 ```
 
 ## Statistic: How many countries have increased their total animal protein consumption from 2010-2020?
@@ -1742,13 +1961,10 @@ plot_df %>%
   group_by(terr_outpaces_aquatic) %>%
   summarize(num_countries = sum(n))
 
-plot_df %>%
-  filter(aquatic_estimate > terrestrial_estimate,
-         aquatic_reliance_estimate < 0) %>%
-  arrange(aquatic_reliance_estimate)
 
-
-
+plot_df %>% group_by(region) %>%
+  mutate(n = terrestrial_estimate > aquatic_estimate) %>%
+  summarize(mean = round(mean(n) * 100,0))
 ```
 One strategy is to come up with a series of key result messages/headlines/facts 
 that could stand alone without the rest of the context of the paper. What are the sound bites?
@@ -2199,380 +2415,3 @@ ggsave(
   units    = "in"
 )
 ```
-
-## Figure: Plot Maps of intercept median posteriors
-
-The region specific intercept deviations from the slope line for the levels of daily animal protein consumption per capita (left) and aquatic animal reliance per capita (right). Outlined countries indicate that the 95% posterior credible interval does not include zero.
-  
-```{r realm_maps_robinson_final, message=FALSE, warning=FALSE}
-# Get intercept posteriors
-model_type = "realm"
-intercept_df <- data.frame()
-for (i in seq_along(response_vars)) {
-     
-  # Extract MCMC samples
-  x <- rstan::extract(readRDS(file.path(base_path, paste0("fit_", response_vars[i], ".rds"))), permuted = T)
-  beta_global <- x$beta       # iter × K (slopes)
-  X <- readRDS(file.path(base_path, paste0("X_", response_vars[i], ".rds")))  
-  realm_level <- readRDS(file.path(base_path, paste0("realms_", response_vars[i], ".rds")))
-  
-  n_iter <- nrow(beta_global)
-  K <- ncol(beta_global)
-  vars <- colnames(X)
-  
-  # Posteriors of the realm intercepts
-  beta_0i <- x$beta_0i   # iterations × J
-
-  n_iter <- nrow(beta_0i)
-  J <- ncol(beta_0i)
-
-  # Get corresponding realm indicators (e.g., Europe, Oceania) to match with intercept values
-realm_labels <- levels(factor(realm_level))  # length J,
-
-post_intercepts <- expand_grid(
-  iter = 1:n_iter,
-  realm = 1:J
-) %>%
-  mutate(
-    value = beta_0i[cbind(iter, realm)],
-    realm = realm_labels[realm]
-  )
-
-  ci_intercepts <- post_intercepts %>%
-  group_by(realm) %>%
-  summarise(
-      lo95 = quantile(value, 0.025),
-      lo80 = quantile(value, 0.10),
-      lo50 = quantile(value, 0.25),
-      lo25 = quantile(value, 0.375),
-      med  = quantile(value, 0.50),
-      hi25 = quantile(value, 0.625),
-      hi50 = quantile(value, 0.75),
-      hi80 = quantile(value, 0.90),
-      hi95 = quantile(value, 0.975),
-      .groups = "drop"
-    ) %>%
-  mutate(model = response_vars[i])
-  
-  intercept_df <- intercept_df %>%
-    bind_rows(ci_intercepts)
-}
-
-
-# Load MEOW ecoregions
-meow <- st_read("../data/MEOW/meow_ecos.shp")
-
-# Realm levels
-realm_levels <- c(
-  "Arctic","Central Indo-Pacific","Eastern Indo-Pacific",
-  "Landlocked, Africa","Landlocked, Asia","Landlocked, Europe",
-  "Landlocked, South America","Southern Ocean","Temperate Australasia",
-  "Temperate Northern Atlantic","Temperate Northern Pacific",
-  "Temperate South America","Temperate Southern Africa",
-  "Tropical Atlantic","Tropical Eastern Pacific","Western Indo-Pacific"
-)
-
-marine_realms <- realm_levels[!str_detect(realm_levels, "Landlocked")]
-landlocked_realms <- realm_levels[str_detect(realm_levels, "Landlocked")]
-
-#  Dissolve MEOW ecoregions into REALM polygons
-meow_realms <- meow %>%
-  group_by(REALM) %>%
-  summarise(geometry = st_union(geometry), .groups = "drop") %>%
-  rename(realm = REALM)
-
-# Split polygons at the antimeridian
-meow_realms <- meow_realms %>%
-  st_wrap_dateline(options = c("WRAPDATELINE=YES", "DATELINEOFFSET=180")) %>%
-  st_collection_extract("POLYGON")
-
-
-# Build landlocked realms using CONTINENTS
-# but trim only the Russia sliver east of 180 degrees
-countries <- ne_countries(scale = "medium", returnclass = "sf")
-
-# Trim Russia's far-east sliver that bleeds onto the map as a horizontal line if not fixed
-russia <- countries %>% filter(iso_a3 == "RUS")
-
-russia_trimmed <- st_difference(
-  russia,
-  st_as_sfc(st_bbox(c(
-    xmin = 180, ymin = -90, xmax = 200, ymax = 90
-  ), crs = 4326))
-)
-
-countries_fixed <- countries %>%
-  filter(iso_a3 != "RUS") %>%
-  bind_rows(russia_trimmed)
-
-# Define robinson projection
-robin <- "+proj=robin +lon_0=0 +datum=WGS84 +units=m +no_defs"
-
-# Clean continent basemap (for always-visible land)
-continent_basemap <- countries_fixed %>%
-  group_by(continent) %>%
-  summarise(geometry = st_union(geometry), .groups = "drop") %>%
-  st_make_valid() %>%
-  st_wrap_dateline(options = c("WRAPDATELINE=YES", "DATELINEOFFSET=180")) %>%
-  st_collection_extract("POLYGON") %>%
-  st_transform(crs = robin)
-
-# Build continent unions (now safe)
-continents <- countries_fixed %>%
-  mutate(continent = factor(continent)) %>%
-  group_by(continent) %>%
-  summarise(geometry = st_union(geometry), .groups = "drop")
-
-# Map landlocked realms to continents
-landlocked_lookup <- tibble(
-  realm = landlocked_realms,
-  continent = str_remove(landlocked_realms, "Landlocked, ")
-)
-
-landlocked_geom <- landlocked_lookup %>%
-  left_join(continents, by = "continent") %>%
-  select(realm, geometry)
-
-# Combine marine + landlocked geometries
-realm_geom <- bind_rows(
-  meow_realms %>% filter(realm %in% marine_realms),
-  landlocked_geom
-)
-
-# Project to Robinson
-realm_geom_robin <- st_transform(realm_geom, crs = robin)
-
-# Mapping function with significance outlines
-selected_df <- intercept_df %>%
-  filter(model %in% c("terr_animal_cons_cap",
-                      "aquatic_rel",
-                      "aquaculture_rel",
-                      "capture_rel"
-                      ))
-
-global_min <- min(selected_df$med, na.rm = TRUE)
-global_max <- max(selected_df$med, na.rm = TRUE)
-
-global_limit <- max(abs(global_min), abs(global_max))
-
-# Panel theme
-theme_realm_panel <- function(base_size = 8) {
-  theme_void(base_size = base_size) +
-    theme(
-      text                  = element_text(family = "sans"),   # swap "sans" for your journal font
-      plot.title            = element_text(size = 8, face = "bold", hjust = 0.5,
-                                           margin = margin(b = 3)),
-      plot.background       = element_rect(fill = "transparent", color = NA),
-      panel.background      = element_rect(fill = "transparent", color = NA),
-      legend.position       = "bottom",
-      legend.title          = element_text(size = 7, face = "bold", hjust = 0.5),
-      legend.text           = element_text(size = 6),
-      legend.key.width      = unit(1.5, "cm"),
-      legend.key.height     = unit(0.3, "cm"),
-      legend.box            = "vertical",
-      legend.spacing        = unit(0.1, "cm"),
-      legend.margin         = margin(t = 2, b = 0),
-      legend.background     = element_rect(fill = "transparent", color = NA),
-      legend.box.background = element_rect(fill = "transparent", color = NA),
-      plot.margin           = margin(2, 2, 2, 2)
-    )
-}
- 
- 
-# Graticule layer (Robinson projection reference lines)
-graticule <- st_graticule(
-  lat = seq(-60, 60, 30),
-  lon = seq(-180, 180, 60)
-) %>%
-  st_transform(crs = robin)
- 
-# Diverging color palette
-div_low  <- "#B2182B"
-div_mid  <- "#FFFFFF"
-div_high <- "#2166AC"
- 
-# Updated map-making function
-make_realm_map <- function(model_name, df = intercept_df) {
- 
-  df_model <- df %>%
-    filter(model == model_name) %>%
-    mutate(significant = (lo95 > 0 & hi95 > 0) | (lo95 < 0 & hi95 < 0))
- 
-  geom_joined <- realm_geom_robin %>%
-    left_join(df_model, by = "realm") %>%
-    filter(!is.na(st_is_empty(geometry)) & !st_is_empty(geometry))
- 
-  ggplot() +
- 
-    # Subtle Robinson graticules for geographic anchor
-    geom_sf(
-      data  = graticule,
-      color = "grey88",
-      linewidth = 0.2,
-      linetype  = "solid"
-    ) +
- 
-    # Land basemap
-    geom_sf(
-      data  = continent_basemap,
-      fill  = "grey82",
-      color = "grey60",
-      linewidth = 0.15
-    ) +
- 
-    # Realm fill
-    geom_sf(
-      data = geom_joined,
-      aes(fill = med),
-      color = "grey40",
-      linewidth = 0.2
-    ) +
- 
-    # Significance: dual-stroke outline (white halo + dark inner)
-    geom_sf(
-      data      = geom_joined %>% filter(significant),
-      fill      = NA,
-      color     = "white",
-      linewidth = 1.0
-    ) +
-    geom_sf(
-      data      = geom_joined %>% filter(significant),
-      fill      = NA,
-      color     = "#1a1a1a",
-      linewidth = 0.45
-    ) +
- 
-    # Global symmetric diverging scale
-    scale_fill_gradient2(
-      low      = div_low,
-      mid      = div_mid,
-      high     = div_high,
-      midpoint = 0,
-      limits   = c(-global_limit, global_limit),
-      oob      = scales::squish,
-      name     = "Posterior median\nintercept",
-      guide    = guide_colorbar(
-        title.position = "top",
-        title.hjust    = 0.5,
-        barwidth       = unit(4, "cm"),
-        barheight      = unit(0.3, "cm"),
-        frame.colour   = "grey40",
-        ticks.colour   = "grey40"
-      )
-    ) +
- 
-    theme_realm_panel() +
-    theme(legend.position = "none")   # suppress per-panel; re-added in combined plot
-}
- 
- 
-# Build panels with clean human-readable titles
-panel_titles <- c(
-  terr_animal_cons_cap = "Daily terrestrial animal protein consumption (g/cap/day)",
-  aquatic_rel     = "Aquatic animal protein reliance (%)",
-  aquaculture_rel = "Aquaculture production reliance",
-  capture_rel     = "Capture fisheries reliance"
-)
- 
-p1 <- make_realm_map("aquatic_rel") +
-  labs(title = panel_titles["aquatic_rel"])
-
-p2 <- make_realm_map("terr_animal_cons_cap") +
-  labs(title = panel_titles["terr_animal_cons_cap"])
- 
-# Combined figure with patchwork
-# Restore shared legend on a single representative panel, then collect
-add_legend <- function(p) {
-  p + theme(legend.position = "bottom")
-}
- 
-plot <- (add_legend(p1) | add_legend(p2)) +
-  plot_layout(guides = "collect") +
-  plot_annotation(
-    tag_levels = "A",           # A, B,  panels
-    tag_prefix = "",
-    theme = theme(
-      plot.tag = element_text(size = 9, face = "bold", hjust = 0),
-      plot.background = element_rect(fill = "white", color = NA)
-    )
-  ) &
-  theme(
-    legend.position   = "bottom",
-    legend.box.margin = margin(t = 4),
-    aspect.ratio      = 0.45,
-    plot.margin       = margin(3, 3, 3, 3)
-  )
- 
- 
-# Add significance-outline caption note
-plot <- plot +
-  plot_annotation(
-    caption = "Bold outlines indicate realms where the 95% credible interval excludes zero.",
-    theme = theme(
-      plot.caption = element_text(size = 6, hjust = 0, color = "grey40",
-                                  margin = margin(t = 4)),
-      plot.background = element_rect(fill = "white", color = NA)
-    )
-  )
-
-# Print final plot
-print(plot)
- 
-# Save plot
-ggsave(
-  filename = "../images/intercept_map.pdf",   # PDF for vector submission
-  plot     = plot,
-  device   = cairo_pdf,
-  width    = 7.2,
-  height   = 5.5,
-  units    = "in"
-)
-```
-
-### Regions of terrestrial dominance
-
-### Regions of animal protein scarcity
-
-```{r}
-# Regions with lower than average aquatic animal reliance
-low_rel <- intercept_df %>%
-  filter((model == "aquatic_rel" & hi25 < 0)) %>%
-  pull(realm)
-
-# Countries with low terrestrial animal consumption
-low_terr <- intercept_df %>%
-  filter((model == "terr_animal_cons_cap" & hi25 < 0)) %>%
-  pull(realm)
-
-# Countries with both low aquatic animal reliance and low terrestrial animal consumption per capita
-low_protein_countries <- low_rel[low_rel %in% low_terr]
-```
-
-> Landlocked Africa and Temperate Southern Africa
-
-### Regions of high aquatic animal reliance
-
-```{r}
-high_rel <- intercept_df %>%
-  filter((model == "aquatic_rel" & lo80 > 0)) %>%
-  pull(realm)
-```
-
-> Central Indo-Pacific and Tropical Atlantic+
-
-### Regions of terrestrial animal dominance
-
-```{r}
-high_terr <- intercept_df %>%
-  filter((model == "aquatic_rel" & hi80 < 0)) %>%
-  filter(!realm %in% low_protein_countries) %>%
-  pull()
-```
-
-Measuring aquatic animal protein reliance and terrestrial animal protein consumption across ecoregion-realms, we find geographic patterns of high aquatic animal protein reliance, high terrestrial animal reliance, and limited protein availability.
-Regions with high aquatic animal protein reliance include Central Indo-Pacific and Tropical Atlantic, (Figure 2A), signaling toward a high consumption of high-quality aquatic animal proteins.
-In contrast, regions with the highest reliance on terrestrial animal proteins  include Landlocked Asian, African, and European regions have the lowest aquatic animal protein reliance (Figure 2B).
-A high aquatic or terrestrial animal protein reliant region is more likely to consume an adequate amount of animal proteins, however limited protein-available regions may indicate a lack of dietary animal proteins.
-These regions include landlocked African nations and Temperate Southern Africa, whose aquatic animal protein reliance and terrestrial animal protein consumption are both lower than than the world average.
-
-
