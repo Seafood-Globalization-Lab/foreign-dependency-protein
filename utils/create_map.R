@@ -34,7 +34,7 @@ create_map <- function(data = data,
   # Plot
   ggplot() +
     geom_sf(data = ocean_proj, fill = "#8080ff80") +
-    geom_sf(data = world_map, aes(fill = !!sym(fill)), color = "black") +
+    geom_sf(data = world_map, aes(fill = !!sym(fill)), color = "grey30", linewidth = 0.05) +
     {if (color.scale) scale_fill_viridis_c(option = "plasma") else scale_fill_manual(values = "gray80")} +
     coord_sf(crs = robinson_crs, expand = FALSE, default = FALSE) +
     theme_void() +

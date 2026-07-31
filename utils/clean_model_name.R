@@ -3,7 +3,7 @@ clean_model_name <- function(x) {
   # Dictionaries
   suffix_map <- c(
     cap = "consumption per capita",
-    rel = "reliance",
+    rel = "protein reliance",
     roc = "rate of change",
     prop_of_aquatic_cons = "share of aquatic foods"
   )
