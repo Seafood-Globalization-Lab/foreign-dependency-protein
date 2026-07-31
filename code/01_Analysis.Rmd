@@ -33,37 +33,44 @@ The desired final file should have the following columns:
 
 ```{r load artis data}
 # Read in consumption data
-# Set parquet database folder location
-# db_folder <- "/Users/gephart/Library/CloudStorage/Dropbox/Research/ARTIS/ARTIS_1.1.0_FAO_2025_08_02/"
+# Since loading in ARTIS data takes awhile, only run if consumption data has not been obtained before
+if (!file.exists("../data/consumption_full.parquet")) {
+  
+  # Set directory for ARTIS database folder
+  db_folder <- "K:/data-storage/artis/ARTIS_2.0_FAO_2025_09_09"
+  
+  # Open ARTIS consumption
+  artis_ds <- arrow::open_dataset(file.path(db_folder, "datasets", "ARTIS_v2.0_consumption_FAO_mid_all_HS_yrs_2025-09-12.parquet"))
+  
+  # Summarize consumption file by source country
+  artis_ts_result <- artis_ds %>%
+    filter(
+      # FBS data of interest is only for direct human consumption
+      end_use == "direct human consumption",
+      # Filter to custom time series
+      (hs_version == "HS96" & year <= 2003) |
+        (hs_version == "HS02" & year >= 2004 & year <= 2009) |
+        (hs_version == "HS07" & year >= 2010 & year <= 2012) |
+        (hs_version == "HS12" & year >= 2013 & year <= 2020) |
+        (hs_version == "HS17" & year >= 2021 & year <= 2023)
+    ) %>%
+    # Calculate consumption total by year, consumer, source, habitat and method 
+    group_by(year, consumer_iso3c, consumption_source, habitat, method) %>%
+    summarise(consumption_live_t = sum(consumption_live_t, na.rm = TRUE))
+  
+  consumption_full <- artis_ts_result %>%
+    collect() %>%
+    # Simplify consumption source to just indicate foreign vs domestic
+    mutate(consumption_source = str_replace(consumption_source, " step 1", ""),
+           consumption_source = str_replace(consumption_source, " step 2", ""))
+  
+  # Save data to .parquet
+  write_parquet(consumption_full, "../data/consumption_full.parquet")  
+  
+}
 
-# Desktop folder
-# db_folder <- paste0(here(),"/data/ARITS_1.1.0_FAO_2025_08_02")
-
-# Laptop folder
-db_folder <- "C:/Users/cjqui/Desktop/SGL/Data/ARITS_1.1.0_FAO_2025_08_02"
-
-artis_ds <- arrow::open_dataset(file.path(db_folder, "datasets", "ARTIS_consumption_v1.1.0_FAO_mid_2025-08-02.parquet"))
-
-# Summarize consumption file by source country
-artis_ts_result <- artis_ds %>%
-  filter(
-    # FBS data of interest is only for direct human consumption
-    end_use == "direct human consumption",
-    # Filter to custom time series
-    (hs_version == "HS96" & year <= 2003) |
-      (hs_version == "HS02" & year >= 2004 & year <= 2009) |
-      (hs_version == "HS07" & year >= 2010 & year <= 2012) |
-      (hs_version == "HS12" & year >= 2013 & year <= 2020)
-  ) %>%
-  # Calculate consumption total by year, consumer, source, habitat and method 
-  group_by(year, consumer_iso3c, consumption_source, habitat, method) %>%
-  summarise(consumption_live_t = sum(consumption_live_t, na.rm = TRUE))
-
-consumption_full <- artis_ts_result %>%
-  collect() %>%
-  # Simplify consumption source to just indicate foreign vs domestic
-  mutate(consumption_source = str_replace(consumption_source, " step 1", ""),
-         consumption_source = str_replace(consumption_source, " step 2", ""))
+# Read in consumption data
+consumption_full <- read_parquet("../data/consumption_full.parquet")
 ```
 
 > We will run initial checks on the data by checking FAO FBS population data that has not had their territories corrected to the Worldbank population data. No territory aggregation, just checking country to country populations.
@@ -71,7 +78,7 @@ consumption_full <- artis_ts_result %>%
 ```{r convert FAO data to .parquet}
 if(!file.exists("../output/fao_food.parquet")) {
   # Read in FAO consumer data
-fao_food <- read_csv("../data/FoodBalanceSheets_E_All_Data/FoodBalanceSheets_E_All_Data.csv")
+fao_food <- read_csv("../data/FoodBalanceSheets_E_All_Data/FoodBalanceSheets_E_All_Data_2026.csv")
 
 # Save to .parquet
 write_parquet(fao_food, "../output/fao_food.parquet")
@@ -103,7 +110,7 @@ fao_new_raw <- read_parquet("../output/fao_food.parquet") %>%
   # Remove flag columns
   select(-ends_with("F"), 
          -ends_with("N")) %>%
-  pivot_longer(cols = Y2010:Y2022, names_to = "year") %>%
+  pivot_longer(cols = Y2010:Y2023, names_to = "year") %>%
   # Convert year column to numeric after removing "Y" prefix
   mutate(year = as.numeric(str_replace(year, "Y", ""))) %>%
   filter(year <= max(consumption_full$year)) %>%
@@ -387,7 +394,8 @@ elements_select <- c("Food supply (kcal)",
 aquatic_animals <- c("Cephalopods",
                      "Crustaceans", "Demersal Fish",
                      "Freshwater Fish", "Marine Fish, Other",
-                     "Molluscs, Other", "Pelagic Fish")
+                     "Molluscs, Other", "Pelagic Fish", "Aquatic Animals, Others",
+                     "Fish, Body Oil", "Fish, Liver Oil")
 
 # Create data frame of aquatic animal and terrestrial animal products only for disaggregation by source
 fao_new_aquatic <- fao_new_raw %>%
@@ -796,11 +804,9 @@ test <- fao_aquatic_reliance_source %>%
   summarize(sum = sum(sum)) %>%
     filter(abs(sum-1) > 0.0001)
 
-# Result: Lesotho doesn't add up to 1 from 2002 and 2003.
-# This is, however not a problem with proportions not adding up, 
-# It's that ARTIS contains no consumption data during these years,
-# so the only years getting added up are Lesotho's terrestrial prop animal
-# protein. Anything disaggregated will be NA
+# Result: Countries that do not add up to one are only countries that that include the terrestrial reliance
+# i.e., these countries do not have ARTIS consumption data, so we do not have disaggregate aquatic animal protein
+# reliance.
 if(nrow(test) > 0){
   warning("Disaggregated aquatic food reliance proportions do not sum to 1")
 }
@@ -838,7 +844,7 @@ nrow_end <- fao_aquatic_reliance_source %>%
   nrow()
 
 # Result: Joining population data does not add any rows
-paste0("Check to see if the joining population does not add any rows: ", nrow_start - nrow_end == 0) 
+paste0("Check: population data does not add any rows: ", nrow_start - nrow_end == 0)  # desired output: TRUE
 
 # Look at attributes of joined dataset
 summary(fao_aquatic_reliance_source %>%
@@ -849,7 +855,7 @@ summary(fao_aquatic_reliance_source %>%
 # Global values
 df <- fao_aquatic_reliance_source %>%
   group_by(year, data_source, food_group) %>%
-  summarise(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr)) %>%
+  summarise(protein_consumed_kg_percap_peryr = sum(protein_consumed_t_peryr)) %>%
   group_by(year, data_source) %>%
   mutate(percent = 100*protein_consumed_kg_percap_peryr/sum(protein_consumed_kg_percap_peryr))
 

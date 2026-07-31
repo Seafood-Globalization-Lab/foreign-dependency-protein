@@ -1450,6 +1450,29 @@ disagg %>%
                         size = 3.5
                       )))
 ```
+```{r}
+disagg %>%
+  filter(group_label == "inland aquaculture" & estimate > 0 |
+         group_label == "marine aquaculture" & estimate > 0 |
+         group_label == "inland capture" & estimate < 0 |
+         group_label == "marine capture" & estimate < 0) %>%
+   group_by(iso3c) %>%
+  mutate(n = n_distinct(group_label)) %>%
+  filter(n == 4) %>%
+  ungroup() %>%
+  pivot_wider(names_from = c("group_label"), values_from = "estimate") %>%
+  group_by(iso3c) %>%
+  summarize(inaq_sum = sum(`inland aquaculture`, na.rm = TRUE),
+            maaq_sum = sum(`marine aquaculture`, na.rm = TRUE),
+            incap_sum = sum(`inland capture`, na.rm = TRUE),
+            macap_sum = sum(`marine capture`, na.rm = TRUE)) %>%
+  count(cap_outpaces_aq = (inaq_sum + maaq_sum) + (incap_sum + macap_sum) < 0)
+
+disagg %>%
+  ggplot(aes(x = log(estimate), y = 1)) +
+  geom_violin() +
+  facet_wrap(~ group_label)
+```
 
 
 ### How many countries have increased / decreased aggregate aquatic animal reliance?
