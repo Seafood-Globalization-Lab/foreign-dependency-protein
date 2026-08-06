@@ -7,7 +7,7 @@ output: html_document
 
 # Chapter 1 Results
 
-# Load in packages
+# Load in packages and set script inits
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -41,11 +41,8 @@ library(extrafont)
 library(svglite)
 library(rsvg)
 library(showtext)
-```
 
-# Set script inits
 
-```{r}
 # Set up global font family for plots
 # Register a specific static weight from the variable font file
 font_add(family = "Bahnschrift", regular = "/path/to/bahnschrift.ttf")
@@ -70,7 +67,6 @@ base_path <- file.path(
   paste0("var_", var_used)
 )
 ```
-
 # Read in data
 
 ## Read in aquatic reliance data & FAO population data
@@ -83,28 +79,39 @@ aquatic_reliance <- read.csv("../output/fao_aquatic_reliance_source.csv")
 aquatic_fbs <- read.csv("../output/fao_fbs_aquatic_source.csv")
 ```
 
-## Load in biophysical and socio-economic data as covariates into the Bayesian model
+## Load in biophysical and socio-economic data as covariates to be used 
 
 ```{r load data}
 # Read in adaptive capacity data
 ac_df <- read_parquet("../data/e_s_ac_data_total.parquet") %>%
   filter(scenario == "ssp126") %>%
-  select(-aa_reliance_pct, -scenario, -change_in_stock,-live_weight_t,-pct_change) %>%
+  select(
+    -aa_reliance_pct,
+    -scenario,
+    -change_in_stock,
+    -live_weight_t,
+    -pct_change
+    ) %>%
   rename(iso3c = "consumer_iso3c")
   
 # Read in ecoregion data (all shapes associated with soverign)
-ecoregion_full <- read.csv("../data/Spatially joined ecoregion to EEZ/ecoregion.csv") %>%
-  rename("iso3c" = "ISO_SOV1",
-         ecoregion = "ECOREGION",
-         province = "PROVINCE",
-         realm = "REALM",
-         shape_area = "Shape_Area")
+ecoregion_full <- 
+  read.csv("../data/Spatially joined ecoregion to EEZ/ecoregion.csv") %>%
+  rename(
+    "iso3c" = "ISO_SOV1",
+    ecoregion = "ECOREGION",
+    province = "PROVINCE",
+    realm = "REALM",
+    shape_area = "Shape_Area"
+    )
 
-# Read in ecoregions for largest soverign shape
+# Read in ecoregions for largest sovereign shape
 ecoregion_unique <- read.csv("../data/Spatially joined ecoregion to EEZ/ecoregion_clean.csv") %>%
   select(-FREQUENCY) %>%
-  rename(iso3c = "ISO_SOV1",
-         shape_area = "MAX_Shape_Area")
+  rename(
+    iso3c = "ISO_SOV1",
+    shape_area = "MAX_Shape_Area"
+    )
 
 # Read in dietary sourcing flexibility index
 dsfi_df <- read_csv("../data/covariates/food-systems-dashboard-2026-01-20 (dietary sourcing flexibility index).csv") %>%
@@ -116,8 +123,15 @@ indicator_df <- read_csv("../data/covariates/all_national_indicators.csv")
 
 # Read in coastline data
 coastline_df <- read_csv("../data/covariates/countries-by-coastline-2026.csv") %>%
-  mutate(iso3c = case_when(!is.na(flagCode) ~ countrycode(flagCode, origin = "iso2c", destination = "iso3c"),
-                           country == "Namibia" ~ "NAM")) %>%
+  # Convert iso2c to iso3c and correct Namibia country name to NAM iso3c
+  mutate(iso3c = case_when(
+    !is.na(flagCode) ~ countrycode(
+      flagCode,
+      origin = "iso2c",
+      destination = "iso3c"
+      ),
+    country == "Namibia" ~ "NAM"
+    )) %>%
   select(c(iso3c, "coastline_km" = "CountryCoastlineKm"))
 
 # Read in proportion of people within 10k of the coast
@@ -129,8 +143,13 @@ pop_10k_coast <- read.csv("../data/covariates/pop_10k_coast.csv")
 Impute countries with no denoted ecoregion as "landlocked"
 
 ```{r clean ecoregion data}
-# Join largest shape for the respective soverign country to their ecoregion names
-ecoregion <- left_join(ecoregion_unique, ecoregion_full, by = c("iso3c", "shape_area")) %>%
+# Join largest shape for the respective sovereign country
+# to their ecoregion names
+ecoregion <- left_join(
+  ecoregion_unique,
+  ecoregion_full,
+  by = c("iso3c", "shape_area")
+  ) %>%
   filter(realm != "")
 
 # Assign countries not associated with a marine ecoregion to "landlocked" code
@@ -139,113 +158,52 @@ landlocked_countries <- aquatic_reliance %>%
   drop_na() %>%
   add_region(col = "iso3c", region.col.name = "region") %>%
   filter(!iso3c %in% ecoregion$iso3c) %>%
-  # mutate(ecoregion = "Landlocked",
-  #        province = "Landlocked",
-  #        realm = "Landlocked") %>%
-  mutate(ecoregion = paste0("Landlocked, ", region),
-         province = paste0("Landlocked, ", region),
-         realm = paste0("Landlocked, ", region)) %>%
+  mutate(
+    ecoregion = paste0("Landlocked, ", region),
+    province = paste0("Landlocked, ", region),
+    realm = paste0("Landlocked, ", region)) %>%
   select(-region)
 
 # Clean ecoregion data
-ecoregion <- bind_rows(ecoregion, landlocked_countries) %>%
+ecoregion <- bind_rows(
+  ecoregion,
+  landlocked_countries
+  ) %>%
   arrange(iso3c) %>%
   select(-shape_area)
 
-# Clean up files
+# Clean up environment
 rm(list = c("ecoregion_full", "ecoregion_unique"))
-
-# Write to csv
-# write_csv(ecoregion, "../output/ecoregion_clean.csv")
 ```
 
-## Create list of response variables & their associated data to put through Bayesian model (See RQ2 for Bayesian model code)
-
-This code chunk is also in the main results. This code chunk extracts the name of each model name used in the Bayesian model. In code lines further down, we call the "response_vars" object to generate statistics and figures.
-
-```{r acquire animal consumption data to be fed through analysis}
-# Calculate animal consumption
-terr_animal_cons_cap <- aquatic_reliance %>%
-  filter(year == 2019) %>%
-  group_by(iso3c) %>%
-  summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
-
-animal_cons_cap <- terr_animal_cons_cap
-
-# Calculate aquatic animal consumption
-aquatic_animal_cons_cap <- aquatic_reliance %>%
-  filter(year == 2019, food_group == "aquatic") %>%
-  group_by(iso3c) %>%
-  summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
-
-# Calculate animal reliance consumption
-aquatic_rel <- aquatic_animal_cons_cap %>%
-  left_join(animal_cons_cap, by = "iso3c") %>%
-  group_by(iso3c) %>%
-  summarize(prop_animal_protein = protein_consumed_kg_percap_peryr.x / protein_consumed_kg_percap_peryr.y)
-
-# Add items not created in the loop to the list
-response_vars <- c("terr_animal_cons_cap", "aquatic_animal_cons_cap", "aquatic_rel")
-
-for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")) {
-  
-  # Calculate consumption per capita by method
-  if (i %in% c("capture", "aquaculture")) {
-    assign(
-      paste0(i, "_cap"),
-      aquatic_reliance %>%
-        filter(year == 2019, food_group == "aquatic", method == i) %>%
-        group_by(iso3c) %>%
-        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
-    )
-  }
-  
-  # Calculate consumption per capita by consumption source
-  if (i %in% c("domestic", "foreign")) {
-    assign(
-      paste0(i, "_cap"),
-      aquatic_reliance %>%
-        filter(year == 2019, food_group == "aquatic", consumption_source == i) %>%
-        group_by(iso3c) %>%
-        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
-    )
-  }
-  
-  # Calculate consumption per capita by habitat
-  if (i %in% c("marine", "inland")) {
-    assign(
-      paste0(i, "_cap"),
-      aquatic_reliance %>%
-        filter(year == 2019, food_group == "aquatic", habitat == i) %>%
-        group_by(iso3c) %>%
-        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
-    )
-  }
-  
-  response_vars <- c(response_vars, paste0(i, "_cap"))
-  
-  # Calculate reliance by method, production source, or habitat
-  assign(
-    paste0(i, "_rel"),
-    get(paste0(i, "_cap")) %>%
-      left_join(animal_cons_cap, by = "iso3c") %>%
-      group_by(iso3c) %>%
-      summarize(prop_animal_protein = protein_consumed_kg_percap_peryr.x / protein_consumed_kg_percap_peryr.y)
-  )
-  
-  response_vars <- c(response_vars, paste0(i, "_rel"))
-  
-}
-
-# Save response_vars to RDS format
-saveRDS(response_vars, "../data/response_vars.rds")
-```
-
-# RQ 1a: How do aquatic food reliance trends disaggregated by source differ from aggregate aquatic food reliance?
+# RQ 1a: How do aquatic food reliance trends disaggregated by source differ
+# from aggregate aquatic food reliance?
 
 ## Figure 1: Compare aggregate to disaggregate reliance
 
-Left plot: trends in global total aquatic protein (blue) reliance with respect to the terrestrial protein reliance (red). The jump in data at 2010 is the visualization data switching from FAO-FBS old methodology to the new methodology. Right plot: Trends in  aquatic animal protein reliance by sourcing, where each facet represents the habitat and method and the color represents the production source. Dotted lines represent forward and back casting of old / new methodology data to years as error estimates.
+Three panel plot:
+
+Panel A: trends in global aggregate aquatic animal protein reliance.
+
+Panel B: trends in global aquatic animal protein reliance by method of
+consumption (i.e., capture, aquaculture)
+
+Panel C: trends in global aquatic animal protein reliance disaggregated by
+method (i.e. capture vs aquaculture, inland vs marine, domestic vs foreign)
+
+Note. Because aquatic animal reliance values (1996-2023) are separated between
+two data sources, with old-FBS methods covering 1996-2013 and new-FBS methods
+covering the 2010-2023 of these datasets, we include projections to visualize
+differences between the datasets. This involves:
+
+1. Removing any overlapping years between datasets, prioritizing the new-FBS
+2. Projecting historical FAO values forward to new FBS years & projecting
+new-FBS values back to historical years. These will be represented as dashed
+lines in Figure 1.
+
+
+These projections include forward casting
+old-FBS reliance values to 
 
 ```{r compare aggregate to disaggregated reliance}
 # Define year ranges for projections
@@ -262,73 +220,105 @@ observed_ranges <- tibble(
   max_year = c(2009, 2023)
 )
 
-global_theme <- theme(axis.text = element_text(family = family),
-                      axis.title = element_text(family = family),
-                      plot.title = element_text(family = family),
-                      legend.text = element_text(family = family),
-                      legend.title = element_text(family = family))
-
-# set_theme()
-
 ##############
 ### PLOT A ###
 ##############
-
 # Calculate aggregate global aquatic animal reliance
+####################################################
 
-# For each year, calculate the share of global animal proteins that are sourced from aquatic animals. 
-aa_reliance_mean_global_trends_alt <- aquatic_reliance %>%
-  group_by(year, data_source, food_group) %>%
-  summarise(food_group_total_protein_t = sum(protein_consumed_t_peryr)) %>%
-  group_by(year, data_source) %>%
-  mutate(prop_animal_protein = 100*food_group_total_protein_t/sum(food_group_total_protein_t)) %>%
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) # Remove overlapping years, prioritizing new years
+# To calculate reliance across production sources, whether by disaggregated
+# source or aggregated across sources, we will calculate the total protein
+# consumption per year 
+
+# Calculate total tonnage of combined terrestrial and aquatic animal protein
+total_protein <- aquatic_reliance %>%
+group_by(
+  year,
+  data_source,
+  ) %>%
+ # sum terrestrial and aquatic animal proteins
+summarize(total_protein = sum(protein_consumed_t_peryr),
+          .groups = "keep")
+
+# For each year, calculate the share of global animal proteins
+# that are sourced from aquatic animals. 
+global_reliance_agg <- aquatic_reliance %>%
+  filter(food_group == "aquatic") %>%
+  group_by(
+    year,
+    data_source,
+    food_group
+    ) %>%
+  # Calculate annual global aquatic animal protein consumption
+  summarize(food_group_total_protein_t = sum(protein_consumed_t_peryr),
+  .groups = "keep") %>%
+  left_join(total_protein, by = c("year", "data_source")) %>%
+  ungroup() %>%
+  mutate(perc_animal_protein = 100 *
+           (food_group_total_protein_t / total_protein)) %>%
+  # Remove overlapping FBS years
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"))
 
 # Create forward / backward projections
-coefs_global <- aa_reliance_mean_global_trends_alt %>%
-  filter(food_group == "aquatic") %>%
+coefs_global <- global_reliance_agg %>%
+  # this grouping allows us to calculate forward and back cast linear model
+  # estimates to generate forward and back cast projections
   group_by(data_source) %>%
   nest() %>%
-  mutate(model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
+  # Generate out forward and back cast linear model estimates based on data
+  mutate(model = map(data, ~ lm(perc_animal_protein ~ year, data = .x)),
          tidy  = map(model, broom::tidy)) %>%
   unnest(tidy) %>%
-  select(data_source, term, estimate) %>%
-  pivot_wider(values_from = estimate, names_from = term) %>%
+  # Convert data to clean tidy form so that we can easily pull out linear
+  # model slope and intercept estimates for generating back and forward
+  # cast values
+  select(
+    data_source,
+    term,
+    estimate) %>%
+  pivot_wider(
+    values_from = estimate,
+    names_from = term
+    ) %>%
   rename(year_coef = year)
 
+# Generate out forward and back cast linear model estimates based on data
 projections_global <- coefs_global %>%
   left_join(year_ranges, by = "data_source") %>%
   rowwise() %>%
   mutate(year = list(start_year:end_year)) %>%
   unnest(year) %>%
   ungroup() %>%
-  mutate(prop_animal_protein = `(Intercept)` + year_coef * year,
+  mutate(perc_animal_protein = `(Intercept)` + year_coef * year,
          type = "projected") %>%
   left_join(observed_ranges, by = "data_source") %>%
+  # Keep only years outside observed range
   filter(year < min_year | year > max_year)
 
-observed_global_old <- aa_reliance_mean_global_trends_alt %>%
-  filter(food_group == "aquatic", data_source == "old FBS", year <= 2009) %>%
-  mutate(type = "observed")
-
-observed_global_new <- aa_reliance_mean_global_trends_alt %>%
-  filter(food_group == "aquatic", data_source == "new FBS", year >= 2010) %>%
-  mutate(type = "observed")
-
-combined_global <- bind_rows(observed_global_old, observed_global_new)
-
-# Join total protein to aquatic protein weights separated by protein to calculate reliance by method
+# Create plot
 aa_reliance_mean_global_trends <- ggplot() +
-  geom_area(data = combined_global %>% filter(year <= 2023),
-            aes(x = year, y = prop_animal_protein),
-            fill = "#8FACB4") +
-  geom_line(data = projections_global,
-            aes(x = year, y = prop_animal_protein, group = data_source),
-            colour = "black", linetype = "dashed", linewidth = 0.4, alpha = 0.7) +
+  geom_area(
+    data = global_reliance_agg,
+    aes(
+      x = year,
+      y = perc_animal_protein
+      ),
+    fill = "#8FACB4"
+    ) +
+  geom_line(
+    data = projections_global,
+    aes(
+      x = year,
+      y = perc_animal_protein,
+      group = data_source),
+    colour = "black",
+    linetype = "dashed",
+    linewidth = 0.3,
+    alpha = 0.7
+    ) +
   labs(x = "", y = "Global aquatic animal reliance (%)") +
   scale_y_continuous(expand = c(0,0)) +
   scale_x_continuous(expand = c(0.01,0)) +
-  # theme_minimal(base_size = 8) +
   theme(
     panel.grid.major.x = element_blank(),
     panel.grid.minor.x = element_blank(),
@@ -338,71 +328,93 @@ aa_reliance_mean_global_trends <- ggplot() +
     panel.background = element_rect(fill = "transparent", color = NA),
     plot.background = element_rect(fill = "transparent", color = NA),
     axis.text = element_text(size = 4.5, color = "black", family = family),
-    axis.title.y = element_text(size = 7, margin = margin(r = 5), face = "bold", family = family),
+    axis.title.y = element_text(
+      size = 7, margin = margin(r = 5),
+      face = "bold", family = family
+      ),
     aspect.ratio = 0.4,
     axis.ticks.x = element_line(linewidth = 0.1),
     axis.ticks.length.x=unit(0.5, "mm"),
     axis.ticks.y = element_blank()
   )
-
-# Calculate global annual terrestrial animal protein consumption
- terr_protein_sourcing <- aquatic_reliance %>%
-  group_by(
-    year,
-    data_source,
-    food_group
-    ) %>%
-  summarise(animal_protein = sum(protein_consumed_t_peryr)) %>%
-  filter(food_group == "terrestrial")
-
-# Calculate global annual aquatic animal protein consumption
- aquatic_protein_sourcing <- aquatic_reliance %>%
-  group_by(
-    year,
-    data_source,
-    food_group
-    ) %>%
-  summarise(aquatic_protein = sum(protein_consumed_t_peryr)) %>%
-  filter(food_group == "aquatic")
- 
- # Calculate total tonnage of combined terrestrial and aquatic animal protein
- total_protein <- left_join(terr_protein_sourcing, aquatic_protein_sourcing, by = c("year", "data_source")) %>%
-   group_by(year, data_source) %>%
-   summarize(total_protein = sum(animal_protein,aquatic_protein)) # add total aquatic animal protein (unseparated by sourcing) to animal proteins by year and data source
  
 ##############
 ### PLOT B ###
 ##############
-
 # Calculate global aquatic animal reliance by production method
+##############################################################
+
+# For each year, calculate the share of global animal proteins
+# that are sourced from capture and aquaculture 
 aa_reliance_method_trends <- aquatic_reliance %>%
-  group_by(year, data_source, method, food_group) %>%
-  summarise(food_group_total_protein_t = sum(protein_consumed_t_peryr)) %>%
   filter(food_group == "aquatic") %>%
-  left_join(total_protein, by = c("year", "data_source")) %>%
+  group_by(
+  year,
+  data_source,
+  method,
+  food_group
+  ) %>%
+  # Calculate annual global aquatic animal protein consumption
+  summarize(food_group_total_protein_t = sum(protein_consumed_t_peryr),
+            .groups = "keep") %>%
+  left_join(
+    total_protein,
+    by = c("year", "data_source")
+    ) %>%
   ungroup() %>%
-  mutate(prop_animal_protein = 100 * (food_group_total_protein_t / total_protein)) %>%
+  mutate(perc_animal_protein = 100 *
+           (food_group_total_protein_t / total_protein)) %>%
   filter(method != "unknown") %>%
-   mutate(method = str_to_title(method)) %>%
-   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"))
+  # Covert to title string for plot
+  mutate(method = str_to_title(method)) %>%
+  # Remove overlapping FBS years
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"))
+
+# Create forward / backward projections
+coefs <- aquatic_reliance %>%
+# this grouping allows us to calculate forward and back cast linear model
+# estimates to generate forward and back cast projections
+group_by(
+  year,
+  data_source,
+  method,
+  food_group
+  ) %>%
+summarize(
+  food_group_total_protein_t = sum(protein_consumed_t_peryr),
+  .groups = "drop"
+  ) %>%
+filter(food_group == "aquatic") %>%
+left_join(
+  total_protein,
+  by = c("year", "data_source")
+  ) %>%
+mutate(perc_animal_protein = 100 * 
+         (food_group_total_protein_t / total_protein)) %>%
+group_by(
+  data_source,
+  method
+  ) %>%
+nest() %>%
+# Generate out forward and back cast linear model estimates based on data
+mutate(model = map(data, ~ lm(perc_animal_protein ~ year, data = .x)),
+       tidy  = map(model, broom::tidy)) %>%
+unnest(tidy) %>%
+# Convert data to clean tidy form so that we can easily pull out linear
+# model slope and intercept estimates for generating back and forward
+# cast values
+select(
+  data_source,
+  method,
+  term,
+  estimate) %>%
+pivot_wider(
+  values_from = estimate,
+  names_from = term
+  ) %>%
+rename(year_coef = year)
  
- # Create forward / backward projections
- coefs <- aquatic_reliance %>%
-  group_by(year, data_source,method, food_group) %>%
-  summarise(food_group_total_protein_t = sum(protein_consumed_t_peryr), .groups = "drop") %>%
-  filter(food_group == "aquatic") %>%
-  left_join(total_protein, by = c("year", "data_source")) %>%
-  mutate(prop_animal_protein = 100 * (food_group_total_protein_t / total_protein)) %>%
-  group_by(data_source, method) %>%   # <- KEEP data_source
-  nest() %>%
-  mutate(model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
-         tidy  = map(model, broom::tidy)) %>%
-  unnest(tidy) %>%
-  select(data_source, method, term, estimate) %>%
-  pivot_wider(values_from = estimate, names_from = term) %>%
-  rename(year_coef = year)
- 
-# Convert into useable data to be joined onto plot 
+# Generate out forward and back cast linear model estimates based on data
 projections <- coefs %>%
   left_join(year_ranges, by = "data_source") %>%
   rowwise() %>%
@@ -410,50 +422,68 @@ projections <- coefs %>%
   unnest(year) %>%
   ungroup() %>%
   mutate(
-    prop_animal_protein = `(Intercept)` + year_coef * year
+    perc_animal_protein = `(Intercept)` + year_coef * year
   ) %>%
   filter(method != "unknown") %>%
-  select(year, data_source, method, prop_animal_protein) %>%
+  select(
+    year,
+    data_source,
+    method,
+    perc_animal_protein
+    ) %>%
   mutate(type = "projected",
          method = str_to_title(method)) %>%
-  left_join(observed_ranges, by = "data_source") %>%
-  filter(year < min_year | year > max_year)  # Keep only years outside observed range
+  left_join(
+    observed_ranges,
+    by = "data_source"
+    ) %>%
+  # Keep only years outside observed range
+  filter(year < min_year | year > max_year)  
 
-# Obtain old FBS observed measures
-observed_old <- aa_reliance_method_trends %>%
-  filter(data_source == "old FBS", year <= 2009) %>%
+# Obtain observed measures across old and new FBS
+obs <- aa_reliance_method_trends %>%
+  filter(data_source == "old FBS" & year <= 2009 |
+           data_source == "new FBS" & year >= 2010) %>%
   mutate(type = "observed")
 
-# Obtain New FBS observed measures
-observed_new <- aa_reliance_method_trends %>%
-  filter(data_source == "new FBS", year >= 2010) %>%
-  mutate(type = "observed")
+# Obtain projected measures (i.e., back and forward cast values)
 
-# Backcasted projections
-projections_old <- projections %>%
-  filter(data_source == "old FBS", year > 2009) %>%
-  mutate(type = "projected")
-
-# Get forwardcasted projections
-projections_new <- projections %>%
-  filter(data_source == "new FBS", year < 2010) %>%
+# back cast does not include 2010 nor does forward cast include 2009 because 
+# there is observed data on each of those years - we want projections only for
+# beyond the observed data
+proj <- projections %>%
+  filter(data_source == "old FBS" & year > 2009 |
+           data_source == "new FBS" & year < 2010) %>%
   mutate(type = "projected")
 
 # Combine both observed and projected data
-combined_method <- bind_rows(observed_old, observed_new, projections_old, projections_new)
+combined_method <- bind_rows(obs, proj)
 
 # Create plot
 aa_reliance_aq_cap <- aa_reliance_method_trends %>%
-  filter(year <= 2023) %>%
+  # Clean up row names for plt
   mutate(method = factor(method, levels = c("Capture", "Aquaculture"))) %>%
     ggplot() +
-  geom_area(aes(x = year, y = prop_animal_protein, fill = method),
-  size = 0.75) +
-  geom_line(data = filter(combined_method, type == "projected"),
-            aes(x = year, y = prop_animal_protein, group = data_source),
-            colour = "black", linetype = "dashed", linewidth = 0.4, alpha = 0.7) +
+  geom_area(
+    aes(
+      x = year,
+      y = perc_animal_protein,
+      fill = method
+      ),
+    size = 0.75) +
+  geom_line(
+    data = filter(combined_method, type == "projected"),
+            aes(
+              x = year,
+              y = perc_animal_protein,
+              group = data_source
+              ),
+    colour = "black",
+    linetype = "dashed",
+    linewidth = 0.3,
+    alpha = 0.7
+    ) +
   scale_fill_manual(values = c("#337D81","#D3983E")) +
-  # scale_fill_manual(values = c(desaturate("#08519C", amount = 0.1), desaturate("#6BAED6", amount = 0.1))) +
   labs(x = "", y = "Aquatic animal reliance (%)\n(by method)") +
   # theme_minimal(base_size = 8) +
     facet_grid(~ factor(method, levels=c("Capture", "Aquaculture"))) +
@@ -468,10 +498,16 @@ aa_reliance_aq_cap <- aa_reliance_method_trends %>%
     panel.background = element_rect(fill = "transparent", color = NA),
     plot.background = element_rect(fill = "transparent", color = NA),
     strip.background = element_blank(),
-    strip.text = element_text(size = 6, face = "bold", family = family, color = "black"),
+    strip.text = element_text(
+      size = 6, face = "bold", family = family, color = "black"
+      ),
     axis.text = element_text(size = 5, color = "black", family = family),
-    axis.title.y = element_text(size = 7, margin = margin(r = 5), face = "bold", family = family),
-    axis.text.x = element_text(size = 4.5, angle = 30, hjust = 1, face = "bold", family = family),
+    axis.title.y = element_text(
+      size = 7, margin = margin(r = 5), face = "bold", family = family
+      ),
+    axis.text.x = element_text(
+      size = 4.5, angle = 30, hjust = 1, face = "bold", family = family
+      ),
     aspect.ratio = 0.8,
     axis.ticks.y = element_blank(),
     axis.ticks.x = element_line(linewidth = 0.1),
@@ -481,43 +517,89 @@ aa_reliance_aq_cap <- aa_reliance_method_trends %>%
 ##############
 ### PLOT C ###
 ##############
-
-# Calculate global aquatic animal reliance by inland vs marine,
+# Calculate global aquatic animal protein reliance by inland vs marine,
 # aquaculture vs capture, and foreign vs domestic.
+#######################################################################
   
-# Join total protein to aquatic protein weights separated by protein to calculate reliance by habitat, method, and foreign / domestic
- aa_reliance_multiple_trends_alt <- aquatic_reliance %>%
-  group_by(year, data_source, consumption_source, habitat, method, food_group) %>%
-  summarise(food_group_total_protein_t = sum(protein_consumed_t_peryr)) %>%
+# For each year, calculate the share of global animal proteins that are sourced
+# from each disaggregate source (i.e. capture vs aquaculture, inland vs marine,
+# domestic vs foreign) 
+ aa_reliance_disaggregate <- aquatic_reliance %>%
   filter(food_group == "aquatic") %>%
-  left_join(total_protein, by = c("year", "data_source")) %>%
+  group_by(
+  year,
+  data_source,
+  habitat,
+  method,
+  consumption_source,
+  food_group
+  ) %>%
+  # Calculate annual global aquatic animal protein consumption
+  summarize(food_group_total_protein_t = sum(protein_consumed_t_peryr),
+            .groups = "keep") %>%
+  left_join(
+    total_protein,
+    by = c("year", "data_source")
+    ) %>%
   ungroup() %>%
-  mutate(prop_animal_protein = 100 * (food_group_total_protein_t / total_protein)) %>%
-  filter(habitat != "unknown") %>%
-   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) # Remove overlapping years, prioritizing new years
- 
-# Clean data text for plotting
- aa_reliance_multiple_trends_alt_1 <- aa_reliance_multiple_trends_alt %>%
+  mutate(perc_animal_protein = 100 *
+           (food_group_total_protein_t / total_protein)) %>%
+  filter(method != "unknown") %>%
+  # Covert to title string for plot
+  # Remove overlapping FBS years
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
+  # Clean row names for plot
   mutate(habitat = str_to_title(habitat)) %>%
   mutate(habitat_method = paste(habitat, method, sep = " "))
  
 # Create forward / backward projections
- coefs <- aquatic_reliance %>%
-  group_by(year, data_source, habitat, method, food_group) %>%
-  summarise(food_group_total_protein_t = sum(protein_consumed_t_peryr), .groups = "drop") %>%
-  filter(food_group == "aquatic") %>%
-  left_join(total_protein, by = c("year", "data_source")) %>%
-  mutate(prop_animal_protein = 100 * (food_group_total_protein_t / total_protein)) %>%
-  group_by(data_source, habitat, method) %>%   # <- KEEP data_source
-  nest() %>%
-  mutate(model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
-         tidy  = map(model, broom::tidy)) %>%
-  unnest(tidy) %>%
-  select(data_source, habitat, method, term, estimate) %>%
-  pivot_wider(values_from = estimate, names_from = term) %>%
-  rename(year_coef = year)
+coefs <- aquatic_reliance %>%
+# this grouping allows us to calculate forward and back cast linear model
+# estimates to generate forward and back cast projections
+group_by(
+  year,
+  data_source,
+  habitat,
+  method,
+  food_group
+  ) %>%
+summarize(
+  food_group_total_protein_t = sum(protein_consumed_t_peryr),
+  .groups = "drop"
+  ) %>%
+filter(food_group == "aquatic") %>%
+left_join(
+  total_protein,
+  by = c("year", "data_source")
+  ) %>%
+mutate(perc_animal_protein = 100 * 
+         (food_group_total_protein_t / total_protein)) %>%
+group_by(
+  data_source,
+  habitat,
+  method
+  ) %>%
+nest() %>%
+# Generate out forward and back cast linear model estimates based on data
+mutate(model = map(data, ~ lm(perc_animal_protein ~ year, data = .x)),
+       tidy  = map(model, broom::tidy)) %>%
+unnest(tidy) %>%
+# Convert data to clean tidy form so that we can easily pull out linear
+# model slope and intercept estimates for generating back and forward
+# cast values
+select(
+  data_source,
+  habitat,
+  method,
+  term,
+  estimate) %>%
+pivot_wider(
+  values_from = estimate,
+  names_from = term
+  ) %>%
+rename(year_coef = year)
 
-# Convert into useable data to be joined onto plot 
+# Generate out forward and back cast linear model estimates based on data
 projections <- coefs %>%
   left_join(year_ranges, by = "data_source") %>%
   rowwise() %>%
@@ -525,46 +607,67 @@ projections <- coefs %>%
   unnest(year) %>%
   ungroup() %>%
   mutate(
-    prop_animal_protein = `(Intercept)` + year_coef * year,
-    habitat = str_to_title(habitat)
+    perc_animal_protein = `(Intercept)` + year_coef * year
   ) %>%
-  filter(method != "unknown", habitat != "Unknown") %>%
-  select(year, data_source, habitat, method, prop_animal_protein) %>%
+  filter(method != "unknown") %>%
+  select(
+    year,
+    data_source,
+    habitat,
+    method,
+    perc_animal_protein
+    ) %>%
   mutate(type = "projected") %>%
-  left_join(observed_ranges, by = "data_source") %>%
-  filter(year < min_year | year > max_year)  # Keep only years outside observed range
+  mutate(habitat = str_to_title(habitat)) %>%
+  left_join(
+    observed_ranges,
+    by = "data_source"
+    ) %>%
+  # Keep only years outside observed range
+  filter(year < min_year | year > max_year)
 
 # Obtain old FBS observed measures
-observed_old <- aa_reliance_multiple_trends_alt_1 %>%
-  filter(data_source == "old FBS", year <= 2009) %>%
-  mutate(type = "observed")
-
-# Obtain New FBS observed measures
-observed_new <- aa_reliance_multiple_trends_alt_1 %>%
-  filter(data_source == "new FBS", year >= 2010) %>%
+obs <- aa_reliance_disaggregate %>%
+  filter(data_source == "old FBS" & year <= 2009 |
+           data_source == "new FBS" & year >= 2010) %>%
   mutate(type = "observed")
 
 # Backcasted projections
-projections_old <- projections %>%
-  filter(data_source == "old FBS", year > 2009) %>%
+proj <- projections %>%
+  filter(data_source == "old FBS" & year > 2009 |
+           data_source == "new FBS" & year < 2010) %>%
   mutate(type = "projected")
 
-# Get forwardcasted projections
-projections_new <- projections %>%
-  filter(data_source == "new FBS", year < 2010) %>%
-  mutate(type = "projected")
 
 # Combine both observed and projected data
-combined <- bind_rows(observed_old, observed_new, projections_old, projections_new) %>%
+combined <- bind_rows(
+  obs,
+  proj
+  ) %>%
+  # Clean data for plotting
   mutate(habitat_method = paste(habitat, method)) %>%
-  mutate(habitat_method = factor(habitat_method, levels = c("Marine capture", "Inland capture", "Marine aquaculture", "Inland aquaculture"))) %>%
-  mutate(habitat_method_consource = paste0(habitat_method, " ", consumption_source))
+  mutate(habitat_method = factor(
+    habitat_method,
+    levels = c("Marine capture",
+               "Inland capture",
+               "Marine aquaculture",
+               "Inland aquaculture")
+    )) %>%
+  mutate(
+    habitat_method_consource = paste0(
+      habitat_method, " ", consumption_source
+      ))
 
+# Create dataset for foreign line
 lines <- combined %>%
   mutate(foreign_val = case_when(
-    consumption_source == "foreign" ~ prop_animal_protein
+    consumption_source == "foreign" ~ perc_animal_protein
   ))
-# "#C87534" "#D3983E" "#D3AF55"  "#5DA49A" "#337D81" "#114F59"
+
+# To correctly visualize colors for each consumption source, we had to play
+# with the mechanics of the plot. This involves creating a custom color palette
+# (seen below) to then overlay a striped pattern indicating foreign consumption
+# within each habitat x method source combination.
 disagg_colors <- list("#114F59",
                       pattern(
                             grobTree(
@@ -634,6 +737,7 @@ disagg_colors <- list("#114F59",
                                         lwd = .6)
                             ))
 
+# Assign colors their respective names
 names(disagg_colors) <- 
   c("Marine capture domestic",
     "Marine capture foreign",
@@ -644,55 +748,83 @@ names(disagg_colors) <-
     "Inland aquaculture domestic",
     "Inland aquaculture foreign")
 
+# Set the linewidth of inland capture to be lower so that the striped foreign
+# lines are more visible on the plot
 disagg_linewidth <- c(0.3,0.03,0.3,0.3)
 
+# Assign line widths their respective names
 names(disagg_linewidth) <- c("Marine capture",
                              "Inland capture",
                              "Marine aquaculture",
                              "Inland aquaculture")
 
 # Create plot
-aa_reliance_multiple_trends <- ggplot() +
-  geom_area(data = filter(combined, type == "observed") %>% filter(year <= 2023),
-            aes(x = year,
-                y = prop_animal_protein,
-                fill = habitat_method_consource)) +
-  geom_line(data = filter(combined, type == "projected"),
-            aes(x = year, y = prop_animal_protein, group = data_source),
-            colour = "black", linetype = "dashed", linewidth = 0.4, alpha = 0.7) +
-  geom_line(data = lines %>% drop_na(foreign_val) %>% filter(year <= 2023), 
-            aes(x = year, y = foreign_val, linewidth = habitat_method)) +
+aa_reliance_disaggregate <- ggplot() +
+  geom_area(
+    data = filter(combined, type == "observed"),
+    aes(
+      x = year,
+      y = perc_animal_protein,
+      fill = habitat_method_consource
+      )) +
+  geom_line(
+    data = filter(combined, type == "projected"),
+    aes(
+      x = year,
+      y = perc_animal_protein,
+      group = data_source
+      ),
+    colour = "black",
+    linetype = "dashed",
+    linewidth = 0.3,
+    alpha = 0.7
+    ) +
+  geom_line(
+    data = lines %>%
+      drop_na(foreign_val),
+    aes(
+      x = year,
+      y = foreign_val,
+      linewidth = habitat_method
+      )) +
   facet_wrap(~ habitat_method) +
   scale_linewidth_manual(values = disagg_linewidth) +
-  scale_fill_manual(values = disagg_colors,
-                    breaks = c("Inland aquaculture foreign", "Marine capture domestic"),
-                    labels = c("domestic", "foreign"), # Convert arbitrary two select groups on line above
-                    # to foreign / domestic
-                    guide = guide_legend(override.aes = list(
-                        fill = list("white",
-                                    pattern(
-                                      grobTree(
-                                        polygonGrob(
-                                          x = c(0,1,1,0),
-                                          y = c(0,0,1,1)
-                                          ),
-                                        segmentsGrob(
-                                        x0 = seq(-1,1, by = 0.25),
-                                        x1 = seq(-1,1, by = 0.25) + 1,
-                                        y0 = 0, y1 = 1
-                                        )
-                                        ),
-                                        extend = "repeat",
-                                        gp = gpar(col = "black", fill = "white",
-                                                  lwd = 0.57)
-
-                                      )
-                                    ),
-                        color = "black",
-                        linewidth = 0.2
-                      ))) +
-  # scale_fill_manual(values = c("#2C5F8A", "#BDD7EE")) +
-  labs(fill = "Consumption source", x = "", y = "Aquatic animal reliance (%)\n(by habitat/method/consumption source)") +
+  # Create custom legend icon and fill for geom_area (i.e., stripe pattern)
+  scale_fill_manual(
+    values = disagg_colors,
+    breaks = c(
+      "Inland aquaculture foreign",
+      "Marine capture domestic"
+      ),
+    # Convert arbitrary two select groups on line above
+    labels = c("domestic", "foreign"), 
+    # to foreign / domestic
+    guide = guide_legend(
+      override.aes = list(
+        fill = list("white",
+                    pattern(
+                      grobTree(
+                        polygonGrob(
+                          x = c(0,1,1,0),
+                          y = c(0,0,1,1)
+                          ),
+                        segmentsGrob(
+                          x0 = seq(-1,1, by = 0.25),
+                          x1 = seq(-1,1, by = 0.25) + 1,
+                          y0 = 0, y1 = 1
+                          )),
+                      extend = "repeat",
+                      gp = gpar(
+                        col = "black", fill = "white",lwd = 0.57
+                        ))),
+        color = "black",
+        linewidth = 0.2
+        ))) +
+  labs(
+    fill = "Consumption source",
+    x = "",
+    y = "Aquatic animal reliance (%)\n(by habitat/method/consumption source)"
+    ) +
   guides(linewidth = "none") +
   # theme_minimal(base_size = 8) +
   scale_y_continuous(expand = c(0,0)) +
@@ -705,10 +837,16 @@ aa_reliance_multiple_trends <- ggplot() +
     panel.background = element_rect(fill = "transparent", color = NA),
     plot.background = element_rect(fill = "transparent", color = NA),
     strip.background = element_blank(),
-    strip.text = element_text(size = 6, face = "bold", family = family, color = "black"),
+    strip.text = element_text(
+      size = 6, face = "bold", family = family, color = "black"
+      ),
     axis.text = element_text(size = 5, color = "black", family = family),
-    axis.title.y = element_text(size = 7, margin = margin(r = 5), face = "bold", family = family),
-    axis.text.x = element_text(size = 4.5, angle = 30, hjust = 1, face = "bold", family = family),
+    axis.title.y = element_text(
+      size = 7, margin = margin(r = 5), face = "bold", family = family
+      ),
+    axis.text.x = element_text(
+      size = 4.5, angle = 30, hjust = 1, face = "bold", family = family
+      ),
     legend.position = "bottom",
     legend.title = element_blank(),
     legend.text = element_text(size = 6, family = family),
@@ -730,7 +868,7 @@ set_null_device(cairo_pdf)
 aa_reliance_mean_global_trends_plot <- cowplot::plot_grid(
   aa_reliance_mean_global_trends,
   aa_reliance_aq_cap,
-  aa_reliance_multiple_trends,
+  aa_reliance_disaggregate,
   ncol = 3,
   rel_heights = c(0.8, 0.8,2.2),  # Give more space to the faceted plot
   rel_widths = c(0.9,1,1),
@@ -756,24 +894,116 @@ ggsave(
 ### What percent has global aquatic animal reliance stayed between during 1996-2023?
 
 ```{r how much has aggregate reliance shifted since 1996?}
-# To get a conservative estimate values of the range for global aquatic animal reliance, we need to measure across three values: observed old-FBS values, observed new FBS values, and forwardcasted/backcasted values. We need to include forwardcasted / backcasted estimates because the dataset
-# is not continuous, requiring bidirectional interpolation for years not covered in old-FBS and in new-FBS 
-# Get the minimum value that aquatic animal reliance has been
+# To get a conservative estimate values of the range for global aquatic animal
+# reliance, we need to measure across three values: observed old-FBS values,
+# observed new FBS values, and forwardcasted / backcasted values. We need to
+# include forwardcasted / backcasted estimates because the dataset is not
+# continuous, requiring bidirectional interpolation for years not covered in
+# old-FBS and in new-FBS  
+
+# First, we need to calculate global aquatic animal protein reliance and measure
+# produce forward / back cast projections
+
+# For each year, calculate the share of global animal proteins
+# that are sourced from aquatic animals. 
+global_reliance_agg <- aquatic_reliance %>%
+  filter(food_group == "aquatic") %>%
+  group_by(
+    year,
+    data_source,
+    food_group
+    ) %>%
+  # Calculate annual global aquatic animal protein consumption
+  summarize(food_group_total_protein_t = sum(protein_consumed_t_peryr),
+  .groups = "keep") %>%
+  left_join(total_protein, by = c("year", "data_source")) %>%
+  ungroup() %>%
+  mutate(perc_animal_protein = 100 *
+           (food_group_total_protein_t / total_protein)) %>%
+  # Remove overlapping FBS years
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"))
+
+# Create forward / backward projections
+coefs_global <- global_reliance_agg %>%
+  # this grouping allows us to calculate forward and back cast linear model
+  # estimates to generate forward and back cast projections
+  group_by(data_source) %>%
+  nest() %>%
+  # Generate out forward and back cast linear model estimates based on data
+  mutate(model = map(data, ~ lm(perc_animal_protein ~ year, data = .x)),
+         tidy  = map(model, broom::tidy)) %>%
+  unnest(tidy) %>%
+  # Convert data to clean tidy form so that we can easily pull out linear
+  # model slope and intercept estimates for generating back and forward
+  # cast values
+  select(
+    data_source,
+    term,
+    estimate) %>%
+  pivot_wider(
+    values_from = estimate,
+    names_from = term
+    ) %>%
+  rename(year_coef = year)
+
+# Generate out forward and back cast linear model estimates based on data
+projections_global <- coefs_global %>%
+  left_join(year_ranges, by = "data_source") %>%
+  rowwise() %>%
+  mutate(year = list(start_year:end_year)) %>%
+  unnest(year) %>%
+  ungroup() %>%
+  mutate(perc_animal_protein = `(Intercept)` + year_coef * year,
+         type = "projected") %>%
+  left_join(observed_ranges, by = "data_source") %>%
+  # Keep only years outside observed range
+  filter(year < min_year | year > max_year)
+
+# Combine observations to projections
+combined_global <- bind_rows(
+  global_reliance_agg,
+  projections_global
+)
 
 # Across all three measures, calculate the *minimum* global aquatic animal reliance has been from 1996-2023
-combined_global %>%
-  filter(type == "observed") %>%
-  pull(prop_animal_protein) %>% max() %>% ceiling()
+max_global_reliance <- combined_global %>%
+  pull(perc_animal_protein) %>%
+  max() %>%
+  ceiling()
 
 # Across all three measures, calculate the *maximum* global aquatic animal reliance has been from 1996-2023
-combined_global %>%
-  filter(type == "observed") %>%
-  pull(prop_animal_protein) %>% min() %>% floor()
+min_global_reliance <- combined_global %>%
+  pull(perc_animal_protein) %>%
+  min() %>%
+  floor()
 ```
 
-> The amount that all aquatic foods contribute towards daily per capita animal protein consumption has remained stagnant since 1996, ranging between 14 and 17\% globally (Figure 1A); this flat trend masks dramatic shifts in aquatic animal protein reliance across aquatic food sources.
+In aggregate, global aquatic animal protein reliance has remained stagnant,
+ranging from `r min_global_reliance`% to `r max_global_reliance`% between 1996
+and 2023 (Figure 1A).
+
+---
 
 ### How much has aquaculture and capture reliance changed?
+
+When combining old and new FBS data into one continuous time series, there is a
+a jump in the time series from 2009 to 2010 due to methodological
+differences in the datasets. In our analysis, old FBS runs from 1996 to 2009 and
+new FBS runs from 2010 to 2023. To maximize reliability in our rate of change
+estimates, we will project new FBS animal protein reliance data back over 1996
+to 2009 (i.e., back cast) and project old FBS animal protein reliance data
+forward over 2010 to 2023 (i.e., forward cast). We will then measure
+the rate of change across four scenarios:
+
+  (old FBS)   (new FBS)
+1. observed  - observed
+2. back cast - observed
+3. observed  - forward cast
+4. back cast - forward cast
+
+For each country at the aggregate and disaggregate level, we will take the
+midpoint of the max and min of these rates of changes to be their change in
+aquatic animal protein reliance.
 
 ```{r change in capture fishery reliance} 
 # Step 0. Calculate totals in animal protein consumption to calculate reliance
@@ -791,14 +1021,22 @@ combined_global %>%
 
 ## Calculate global annual terrestrial animal protein consumption (tonnage)
  terr_protein_sourcing <- aquatic_reliance %>%
-  group_by(year, data_source, food_group) %>%
-  summarise(animal_protein = sum(protein_consumed_t_peryr)) %>%
+  group_by(
+    year,
+    data_source,
+    food_group
+    ) %>%
+  summarize(animal_protein = sum(protein_consumed_t_peryr)) %>%
   filter(food_group == "terrestrial")
 
 ## Calculate global annual aquatic animal protein consumption (tonnage)
  aquatic_protein_sourcing <- aquatic_reliance %>%
-  group_by(year, data_source, food_group) %>%
-  summarise(aquatic_protein = sum(protein_consumed_t_peryr)) %>%
+  group_by(
+    year,
+    data_source,
+    food_group
+    ) %>%
+  summarize(aquatic_protein = sum(protein_consumed_t_peryr)) %>%
   filter(food_group == "aquatic")
 
 ## Calculate total consumption of terrestrial and aquatic animal proteins
@@ -814,7 +1052,7 @@ total_protein <- left_join(
      data_source
      ) %>%
   # sum terrestrial and aquatic animal proteins
-   summarize(total_protein = sum(animal_protein, aquatic_protein)) 
+  summarize(total_protein = sum(animal_protein, aquatic_protein)) 
 
 # Step 1.
 
@@ -832,170 +1070,333 @@ observed_ranges <- tibble(
   max_year = c(2009, 2023)
 )
 
-################################# Aquaculture
-## Calculate global annual aquaculture protein reliance
-aq <- aquatic_reliance %>%
-  group_by(year, data_source, method, food_group) %>%
-  summarise(food_group_total_protein_t = sum(protein_consumed_t_peryr), .groups = "keep") %>%
+# Calculate global aquatic animal protein reliance disaggregated by method
+global_reliance_disagg_met <- aquatic_reliance %>%
+  group_by(
+    year,
+    data_source,
+    method,
+    food_group
+    ) %>%
+  summarize(food_group_total_protein_t = sum(protein_consumed_t_peryr),
+            .groups = "keep") %>%
   filter(food_group == "aquatic") %>%
   left_join(total_protein, by = c("year", "data_source")) %>%
   ungroup() %>%
-  mutate(prop_animal_protein = 100 * (food_group_total_protein_t / total_protein)) %>%
-   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
+  mutate(perc_animal_protein = 100 * (food_group_total_protein_t / total_protein)) %>%
+  # filter out overlapping FBS years
+   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"))
+
+ # Create forward / backward projections
+ coefs <- global_reliance_disagg_met %>%
+  # this grouping allows us to calculate forward and back cast linear model
+  # estimates to generate forward and back cast projections
+  group_by(
+    data_source,
+    method
+    ) %>%
+  # nest data and run linear model across all countries
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(perc_animal_protein ~ year, data = .x)),
+    tidy  = map(model, broom::tidy)
+    ) %>%
+  unnest(tidy) %>%
+  # Convert data to clean tidy form so that we can easily pull out linear
+  # model slope and intercept estimates for generating back and forward
+  # cast values
+  select(
+    data_source,
+    method,
+    term,
+    estimate
+    ) %>%
+  pivot_wider(values_from = estimate, names_from = term) %>%
+  rename(year_coef = year)
+ 
+# Convert into usable data to be joined onto plot 
+projections <- coefs %>%
+  left_join(year_ranges, by = "data_source") %>%
+  rowwise() %>%
+  mutate(year = list(start_year:end_year)) %>%
+  unnest(year) %>%
+  ungroup() %>%
+  # Generate out forward and back cast linear model estimates based on data 
+  mutate(
+    perc_animal_protein = `(Intercept)` + year_coef * year
+  ) %>%
+  filter(method != "unknown") %>%
+  select(year, data_source, method, perc_animal_protein) %>%
+  mutate(type = "projected") %>%
+  left_join(observed_ranges, by = "data_source") %>%
+  # Keep only years outside observed range
+  filter(year < min_year | year > max_year)
+
+# Obtain observed measures
+obs <- global_reliance_disagg_met %>%
+  filter(data_source == "old FBS" &  year <= 2009 |
+           data_source == "new FBS" & year >= 2010) %>%
+  mutate(type = "observed")
+
+# Get projected measures
+proj <- projections %>%
+  filter(data_source == "old FBS" & year > 2009 |
+           data_source == "new FBS" & year < 2010) %>%
+  mutate(type = "projected")
+
+
+
+# Combine observed and projected data - this will be used to compare
+# the four scenarios of projections
+combined <- bind_rows(
+  obs,
+  proj
+  ) %>%
+  # remove overlapping FBS years
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"))
+
+
+################################# Aquaculture
+## Calculate global annual aquaculture protein reliance
+aq <- global_reliance_disagg_met %>%
   filter(method == "aquaculture")
 
-## Get observed increases in aquaculture 
+## Get observed increases in aquaculture reliance (i.e., obs - obs)
 obs_increases_aq <- aq %>%
-  summarise(
-    ratio = prop_animal_protein[year == 2023] /
-            prop_animal_protein[year == 1996]
+  summarize(
+    ratio = perc_animal_protein[year == 2023] /
+            perc_animal_protein[year == 1996]
   , .groups = "keep") %>% pull(ratio)
 
 ## Extract projections to obtain forward / back casting
-aq_projections <- 
-  combined_method %>%
-    filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
-    filter(method == "Aquaculture") %>%
-  select(year, data_source, method, prop_animal_protein, type)
+aq_projections <- combined %>%
+  # remove overlapping FBS years
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
+  filter(method == "aquaculture") %>%
+  select(
+    year,
+    data_source,
+    method,
+    perc_animal_protein,
+    type
+    )
 
-## Get backcasted dataset
+## Get back cast measures
 backcasted_aq <- bind_rows(
+  
   aq_projections %>%
     filter(type == "projected" & year < 2010),
+  
   aq %>%
   filter(year > 2009) %>%
   mutate(type = "observed") %>%
-  select(year, data_source, method, prop_animal_protein, type)
+  select(year,
+         data_source,
+         method,
+         perc_animal_protein,
+         type
+         )
+  
   )
 
-## Get forwardcasted dataset
+## Get forward cast measures
 forwardcasted_aq <- bind_rows(
+  
   aq_projections %>%
     filter(type == "projected" & year >= 2010),
+  
   aq %>%
   filter(year <= 2009) %>%
   mutate(type = "observed") %>%
-  select(year, data_source, method, prop_animal_protein, type)
+  select(
+    year,
+    data_source,
+    method,
+    perc_animal_protein,
+    type
+    )
+  
   )
 
-################################# Capture fisheries
-## Get aquaculture reliance dataset
-cap <- aquatic_reliance %>%
-  group_by(year, data_source, method, food_group) %>%
-  summarise(food_group_total_protein_t = sum(protein_consumed_t_peryr), .groups = "keep") %>%
-  filter(food_group == "aquatic") %>%
-  left_join(total_protein, by = c("year", "data_source")) %>%
-  ungroup() %>%
-  mutate(prop_animal_protein = 100 * (food_group_total_protein_t / total_protein)) %>%
-   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
+################################# Capture
+## Calculate global annual capture protein reliance
+cap <- global_reliance_disagg_met %>%
   filter(method == "capture")
 
 ## Get observed decreases in marine capture 
 obs_decreases_cap <- cap %>%
-  summarise(
-    ratio = prop_animal_protein[year == 2023] /
-            prop_animal_protein[year == 1996]
+  summarize(
+    ratio = perc_animal_protein[year == 2023] /
+            perc_animal_protein[year == 1996]
   , .groups = "keep") %>% pull(ratio)
 
 ## Extract projections to obtain forward / back casting
-cap_projections <- 
-  combined_method %>%
-    filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
-    filter(method == "Capture") %>%
-  select(year, data_source, method, prop_animal_protein, type)
+cap_projections <- combined %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
+  filter(method == "capture") %>%
+  select(
+    year,
+    data_source,
+    method,
+    perc_animal_protein,
+    type
+    )
 
 ## Get backcasted dataset
 backcasted_cap <- bind_rows(
+  
   cap_projections %>%
     filter(type == "projected" & year < 2010),
+  
   cap %>%
   filter(year > 2009) %>%
   mutate(type = "observed") %>%
-  select(year, data_source, method, prop_animal_protein, type)
+  select(
+    year,
+    data_source,
+    method,
+    perc_animal_protein,
+    type)
+  
   )
 
 ## Get forwardcasted dataset
 forwardcasted_cap <- bind_rows(
+  
   cap_projections %>%
     filter(type == "projected" & year >= 2010),
+  
   cap %>%
   filter(year <= 2009) %>%
   mutate(type = "observed") %>%
-  select(year, data_source, method, prop_animal_protein, type)
+  select(
+    year,
+    data_source,
+    method,
+    perc_animal_protein,
+    type
+    )
+  
   )
 
 # Step 2.
 
 ################################# Aquaculture
 ## What is the rate of increase?
-# Get vector of all potential rates of increase
-aq_vec <- c(
-forwardcasted_aq %>% filter(year == 2023) %>%
-  pull(prop_animal_protein) / aq %>%
-  filter(year == 1996) %>% pull(prop_animal_protein),
 
+## Get vector of all potential rates of increase in percentage
+roi_aq_vec <- 100 * c(
+
+# obs - obs
+obs_increases_aq,
+
+# back cast - obs
 aq %>%
-  filter(year == 2023) %>% pull(prop_animal_protein) /
-  backcasted_aq %>% filter(year == 1996) %>%
-  pull(prop_animal_protein),
+  filter(year == 2023) %>%
+  pull(perc_animal_protein) /
+  backcasted_aq %>%
+  filter(year == 1996) %>%
+  pull(perc_animal_protein),
 
-obs_increases_aq
-) * 100 # Convert to percent
+# obs - forward cast
+forwardcasted_aq %>%
+  filter(year == 2023) %>%
+  pull(perc_animal_protein) / aq %>%
+  filter(year == 1996) %>%
+  pull(perc_animal_protein),
 
-roi_aq_lb <- min(aq_vec) %>% round(0) # Lower bound for rate of increase
-roi_aq_up <- max(aq_vec) %>% round(0) # Upper bound for rate of increase
+# back cast - forward cast
+forwardcasted_aq %>%
+  filter(year == 2023) %>%
+  pull(perc_animal_protein) / 
+backcasted_aq %>%
+  filter(year == 1996) %>%
+  pull(perc_animal_protein)
 
-roi_aq <- roi_aq %>% round(0) # Round to nearest whole number
+)
 
-## Figure out the start point and end point for the rate of increase - since obs-forwardcasted and obs-obs
-## were produced equally identical rate of changes, giving the most conservative estimates on the percent change,
-## we use the observed start and end points.
-roi_start_aq <- aq %>% filter(year == 1996) %>% 
-  pull(prop_animal_protein) %>% round(2)
-roi_end_aq <- aq %>% filter(year == 2023) %>% 
-  pull(prop_animal_protein) %>% round(2)
+roi_aq_lb <- min(roi_aq_vec) %>% round(0) # lower bound for rate of increase
+roi_aq_ub <- max(roi_aq_vec) %>% round(0) # upper bound for rate of increase
 
-################################# Capture fisheries
+# Rate of increase for  aquaculture is the midpoint of the lower
+# and upper bound for the rate of increase
+roi_aq <- (roi_aq_lb + roi_aq_ub) / 2
+
+################################# Capture
 ## What is the rate of decrease? (Get the most conservative estimate)
-## Since it's rate of decrease, we subtract from 1 to get percent decrease.
-# Get vector of all potential rates of decrease
-rod_cap_vec <- (1 - c(
-forwardcasted_cap %>% filter(year == 2023) %>%
-  pull(prop_animal_protein) / cap %>%
-  filter(year == 1996) %>% pull(prop_animal_protein),
+## We subtract from 1 to get percent decrease.
 
+## Get vector of all potential rates of decrease in percentage
+rod_cap_vec <- 100 * (1 - c(
+
+  # obs - obs
+obs_decreases_cap,
+
+# back cast - obs
 cap %>%
-  filter(year == 2023) %>% pull(prop_animal_protein) /
-  backcasted_cap %>% filter(year == 1996) %>%
-  pull(prop_animal_protein),
+  filter(year == 2023) %>%
+  pull(perc_animal_protein) /
+  backcasted_cap %>%
+  filter(year == 1996) %>%
+  pull(perc_animal_protein),
 
-obs_decreases_cap)) * 100
+# obs - forward cast
+forwardcasted_cap %>%
+  filter(year == 2023) %>%
+  pull(perc_animal_protein) / cap %>%
+  filter(year == 1996) %>%
+  pull(perc_animal_protein),
 
-rod_cap_vec_lb <- min(rod_cap_vec) %>% round(0)
-rod_cap_vec_up <- max(rod_cap_vec) %>% round(0)
+# back cast - forward cast
+forwardcasted_cap %>%
+  filter(year == 2023) %>%
+  pull(perc_animal_protein) / 
+backcasted_cap %>%
+  filter(year == 1996) %>%
+  pull(perc_animal_protein)
+  
+  ))
 
-# Round to nearest whole number
-rod_cap <- rod_cap %>% round(0)
+rod_cap_lb <- min(rod_cap_vec) %>% round(0) # lower bound for rate of increase
+rod_cap_ub <- max(rod_cap_vec) %>% round(0) # upper bound for rate of increase
 
-## Figure out the start point and end point for the rate of increase
-rod_start_cap <- backcasted_cap %>% filter(year == 1996) %>%
-  pull(prop_animal_protein) %>% round(2)
-rod_end_cap <- cap %>% filter(year == 2023) %>% 
-  pull(prop_animal_protein) %>% round(2)
+# Rate of increase for  capuaculture is the midpoint of the lower
+# and upper bound for the rate of increase
+rod_cap <- (rod_cap_lb + rod_cap_ub) / 2
 ```
 
-Capture fisheries, a historically dominant production source across the globe, declined `r rod_cap` in reliance, originally accounting for `r rod_start_cap`% all consumed animal proteins in 1996 to `r rod_end_cap`% in 2023 (B). At the same time, reliance on aquaculture increased by `r roi_aq`%, growing from `r roi_start_aq`% to `r roi_end_aq`%, surpassing capture fishery reliance in 2023 (B).
+However, disaggregating aquatic animal protein reliance unmasks opposing global trends: capture fishery reliance declined `r rod_cap`% (`r rod_cap_lb`-`r rod_cap_ub`%), while aquaculture reliance grew `r roi_aq` (`r roi_aq_lb`-`r roi_aq_ub`%).
 
+---
 
 ### What are increases in aquaculture and decreases in capture fisheries mainly attributed to?
+
+When combining old and new FBS data into one continuous time series, there is a
+a jump in the time series from 2009 to 2010 due to methodological
+differences in the datasets. In our analysis, old FBS runs from 1996 to 2009 and
+new FBS runs from 2010 to 2023. To maximize reliability in our rate of change
+estimates, we will project new FBS animal protein reliance data back over 1996
+to 2009 (i.e., back cast) and project old FBS animal protein reliance data
+forward over 2010 to 2023 (i.e., forward cast). We will then measure
+the rate of change across four scenarios:
+
+  (old FBS)   (new FBS)
+1. observed  - observed
+2. back cast - observed
+3. observed  - forward cast
+4. back cast - forward cast
+
+For each country at the aggregate and disaggregate level, we will take the
+midpoint of the max and min of these rates of changes to be their change in
+aquatic animal protein reliance.
 
 ```{r times aq reliance has increased since 1996 and marine capture has decreased}
 # Step 0. Calculate totals in animal protein consumption to calculate reliance
 
 # Step 1. Get forward / backcasted projections and fit into dataframe.
 
-# Step 2. Calculate observed percent change from 1996-2023 for both domestic
-# inland aquaculture and domestic marine capture.
+# Step 2. Calculate observed percent change from 1996-2023 for both
+# inland aquaculture and marine capture.
 
 # Step 3. We need to get a conservative of the percent change because we are
 # measuring % change across two datasets, # old-FBS and new-FBS. So we will
@@ -1004,18 +1405,20 @@ Capture fisheries, a historically dominant production source across the globe, d
 # (4) backcasted-forwardcasted and take the midpoint of the max and min values
 # of rate of change.
 
-# Step 0
+# Step 0.
 
 ## Calculate global annual terrestrial animal protein consumption (tonnage)
- terr_protein_sourcing <- aquatic_reliance %>%
+terr_protein_sourcing <- aquatic_reliance %>%
   group_by(year, data_source, food_group) %>%
-  summarise(animal_protein = sum(protein_consumed_t_peryr)) %>%
+  summarize(animal_protein = sum(protein_consumed_t_peryr),
+            .groups = "keep") %>%
   filter(food_group == "terrestrial")
 
 ## Calculate global annual aquatic animal protein consumption (tonnage)
- aquatic_protein_sourcing <- aquatic_reliance %>%
+aquatic_protein_sourcing <- aquatic_reliance %>%
   group_by(year, data_source, food_group) %>%
-  summarise(aquatic_protein = sum(protein_consumed_t_peryr)) %>%
+  summarize(aquatic_protein = sum(protein_consumed_t_peryr),
+            .groups = "keep") %>%
   filter(food_group == "aquatic")
 
 ## Calculate total consumption of terrestrial and aquatic animal proteins
@@ -1031,35 +1434,55 @@ total_protein <- left_join(
      data_source
      ) %>%
   # sum terrestrial and aquatic animal proteins
-   summarize(total_protein = sum(animal_protein, aquatic_protein)) 
+   summarize(total_protein = sum(animal_protein, aquatic_protein),
+            .groups = "keep") 
 
 # Step 1.
 
-# Create forward / backward projections
- coefs <- aquatic_reliance %>%
+# Define year ranges for forward and back cast projections
+year_ranges <- tibble(
+  data_source = c("old FBS", "new FBS"),
+  start_year  = c(1996, 1996),
+  end_year    = c(2023, 2023)
+)
+
+# Define year ranges for observed data
+observed_ranges <- tibble(
+  data_source = c("old FBS", "new FBS"),
+  min_year = c(1996, 2010),
+  max_year = c(2009, 2023)
+)
+
+# Calculate global aquatic animal protein reliance disaggregated by
+# habitat and method
+ global_reliance_disagg_hab_met <- aquatic_reliance %>%
   group_by(
     year,
     data_source,
     habitat,
     method,
-    consumption_source,
     food_group
     ) %>%
-  summarise(
-    food_group_total_protein_t = sum(protein_consumed_t_peryr),
-            .groups = "drop"
-    ) %>%
+  summarize(food_group_total_protein_t = sum(protein_consumed_t_peryr),
+            .groups = "keep") %>%
   filter(food_group == "aquatic") %>%
   left_join(total_protein, by = c("year", "data_source")) %>%
-  # Convert aquatic animal protein reliance to percentage
-  mutate(perc_animal_protein = 100 * (food_group_total_protein_t / total_protein)) %>%
+  ungroup() %>%
+  mutate(perc_animal_protein = 100 *
+           (food_group_total_protein_t / total_protein)) %>%
+  filter(habitat != "unknown") %>%
+   # remove overlapping FBS years
+   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"))
+
+
+# Create forward / backward projections
+ coefs <- global_reliance_disagg_hab_met %>%
   # this grouping allows us to calculate forward and back cast linear model
   # estimates to generate forward and back cast projections
   group_by(
     data_source,
     habitat,
-    method,
-    consumption_source
+    method
     ) %>%
   # nest data and run linear model across all countries
   nest() %>%
@@ -1073,7 +1496,6 @@ total_protein <- left_join(
     data_source,
     habitat,
     method,
-    consumption_source,
     term,
     estimate
     ) %>%
@@ -1083,99 +1505,76 @@ total_protein <- left_join(
     ) %>%
   rename(year_coef = year)
 
-# Convert into useable data to be joined onto plot 
+# Generate out forward and back cast linear model estimates based on data
 projections <- coefs %>%
   left_join(year_ranges, by = "data_source") %>%
   rowwise() %>%
   mutate(year = list(start_year:end_year)) %>%
   unnest(year) %>%
   ungroup() %>%
-  # generate out linear model estiamtes based on data source
   mutate(
-    prop_animal_protein = `(Intercept)` + year_coef * year
+    perc_animal_protein = `(Intercept)` + year_coef * year
   ) %>%
-  filter(method != "unknown", habitat != "unknown", consumption_source != "unknown") %>%
-  select(year, data_source, habitat, method, consumption_source, prop_animal_protein) %>%
+  filter(method != "unknown", habitat != "unknown") %>%
+  select(year, data_source, habitat, method, perc_animal_protein) %>%
   mutate(type = "projected") %>%
   left_join(observed_ranges, by = "data_source") %>%
-  filter(year < min_year | year > max_year)  # Keep only years outside observed range
+  # Keep only years outside observed range
+  filter(year < min_year | year > max_year)
 
-# Obtain old FBS observed measures
-observed_old <- aa_reliance_multiple_trends_alt_1 %>%
-  filter(data_source == "old FBS", year <= 2009) %>%
+# Obtain observed measures
+obs <- global_reliance_disagg_hab_met %>%
+  filter(data_source == "old FBS" &  year <= 2009 |
+           data_source == "new FBS" & year >= 2010) %>%
   mutate(type = "observed")
 
-# Obtain New FBS observed measures
-observed_new <- aa_reliance_multiple_trends_alt_1 %>%
-  filter(data_source == "new FBS", year >= 2010) %>%
-  mutate(type = "observed")
-
-# Get forwardcasted projections
-projections_new <- projections %>%
-  filter(data_source == "old FBS", year > 2009) %>%
+# Get projected measures
+proj <- projections %>%
+  filter(data_source == "old FBS" & year > 2009 |
+           data_source == "new FBS" & year < 2010) %>%
   mutate(type = "projected")
 
-# Get backcasted projections
-projections_old <- projections %>%
-  filter(data_source == "new FBS", year < 2010) %>%
-  mutate(type = "projected")
-
-# Combine both observed and projected data
+# Combine observed and projected data - this will be used to compare
+# the four scenarios of projections
 combined <- bind_rows(
-  observed_old,
-  observed_new,
-  projections_old,
-  projections_new
-  )
-
+  obs,
+  proj
+  ) %>%
+  # remove overlapping FBS years
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"))
 
 # Step 2.
 
-################################# Domestic inland aquaculture
-
+################################# Inland aquaculture
 ## Calculate global annual inland aquaculture protein reliance
-inaq <- aquatic_reliance %>%
-  group_by(
-    year,
-    data_source,
-    habitat, method,
-    consumption_source,
-    food_group
-    ) %>%
-  summarise(
-    food_group_total_protein_t = sum(protein_consumed_t_peryr),
-            .groups = "keep"
-    ) %>%
-  filter(food_group == "aquatic") %>%
-  left_join(total_protein, by = c("year", "data_source")) %>%
-  ungroup() %>%
-  mutate(prop_animal_protein = 100 *
-           (food_group_total_protein_t / total_protein)) %>%
-  filter(habitat != "unknown") %>%
-   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
-  filter(habitat == "inland", method == "aquaculture", consumption_source == "domestic")
+inaq <- global_reliance_disagg_hab_met %>%
+  filter(habitat == "inland", method == "aquaculture")
 
-## Get observed increases in domestic inland aquaculture 
+## Get observed increases in inland aquaculture (i.e., obs - obs)
 obs_increases_inaq <- inaq %>%
-  summarise(
-    ratio = prop_animal_protein[year == 2023] /
-            prop_animal_protein[year == 1996]
-  , .groups = "keep") %>% pull(ratio)
+  summarize(
+    ratio = perc_animal_protein[year == 2023] /
+            perc_animal_protein[year == 1996],
+    .groups = "keep") %>%
+  pull(ratio)
 
-## Inland aquaculture, denoted by obs_increases_inaq, has decreased by 203.5% since 1996, but since the data isn't the same between the old and new FAO-FBS from 1996-2023, we need to generate the most conservative estimate using backcasted and forwardcasted projections.
 
-## Extract projections from obs & projections dataset
-## to obtain forward / back casting
+## Filter observations and projections to inland aquaculture
 inaq_projections <- combined %>%
-  # remove overlapping FBS years
-  filter(!(year %in% c(2010, 2011, 2012, 2013) &data_source == "old FBS")) %>%
   filter(
     habitat == "inland",
-    method == "aquaculture",
-    consumption_source == "domestic") %>%
-  select(year, data_source, habitat, method, consumption_source, prop_animal_protein, type)
+    method == "aquaculture"
+    ) %>%
+  select(
+    year,
+    data_source,
+    habitat,
+    method,
+    perc_animal_protein,
+    type
+    )
 
-## Get backcasted dataset
+## Get back cast measures
 backcasted_inaq <- bind_rows(
   inaq_projections %>%
     filter(type == "projected" & year < 2010),
@@ -1186,11 +1585,11 @@ backcasted_inaq <- bind_rows(
     year,
     data_source,
     habitat, method,
-    consumption_source,
-    prop_animal_protein,type)
+    perc_animal_protein,
+    type)
   )
 
-## Get forwardcasted dataset
+## Get forward cast measures
 forwardcasted_inaq <- bind_rows(
   inaq_projections %>%
     filter(type == "projected" & year >= 2010),
@@ -1201,71 +1600,41 @@ forwardcasted_inaq <- bind_rows(
     year,
     data_source,
     habitat, method,
-    consumption_source,
-    prop_animal_protein,
+    perc_animal_protein,
     type
     )
   )
 
-################################# Domestic marine capture
-## Get marine capture reliance dataset
-maca <- aquatic_reliance %>%
-  group_by(
-    year,
-    data_source,
-    habitat,
-    method,
-    food_group,
-    consumption_source
-    ) %>%
-  summarise(food_group_total_protein_t = sum(protein_consumed_t_peryr),
-            .groups = "keep") %>%
-  filter(food_group == "aquatic") %>%
-  left_join(total_protein,
-            by = c("year", "data_source")) %>%
-  ungroup() %>%
-  mutate(prop_animal_protein = 100 * (food_group_total_protein_t / total_protein)) %>%
-  filter(habitat != "unknown") %>%
-  # remove overlapping FBS years
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
-  # filter to domestic marine capture
-  filter(habitat == "marine",
-         method == "capture",
-         consumption_source == "domestic")
+################################# Marine capture
+## Calculate global annual marine capture protein reliance
+maca <- global_reliance_disagg_hab_met %>%
+  filter(habitat == "marine", method == "capture")
 
-## Get observed decreases in domestic marine capture 
+## Get observed decreases in marine capture (i.e., obs - obs)
 obs_decreases_maca <- maca %>%
-  summarise(
-    ratio = prop_animal_protein[year == 2023] /
-            prop_animal_protein[year == 1996],
-    .groups = "keep")
-%>% pull(ratio)
+  summarize(
+    ratio = perc_animal_protein[year == 2023] /
+            perc_animal_protein[year == 1996],
+    .groups = "keep") %>%
+  pull(ratio)
 
-## 1 - obs_decreases_maca # Calculate the percent decrease
-## Marine capture has decreased by 43.7% since 1996, denoted by
-## 1 - obs_decreases_maca, but since the data isn't the same between the old
-## and new FAO-FBS, we need to generate the most conservative estimate using
-## backcasted and forwardcasted projections.
-
-## Extract projections to obtain forward / back casting
+## Filter observations and projections to marine capture
 maca_projections <- 
   combined %>%
-    filter(!(year %in% c(2010, 2011, 2012, 2013) & # remove out overlapping FBS
-               # years
-               data_source == "old FBS"),
-           habitat == "marine",
-           method == "capture",
-           consumption_source == "domestic") %>%
+    filter(
+      habitat == "marine",
+      method == "capture"
+      ) %>%
   select(
     year,
     data_source,
     habitat,
     method,
-    prop_animal_protein,
+    perc_animal_protein,
     type
     ) 
 
-## Get backcasted dataset
+## Get back cast measures
 backcasted_maca <- bind_rows(
   maca_projections %>%
     filter(type == "projected" & year < 2010),
@@ -1277,12 +1646,12 @@ backcasted_maca <- bind_rows(
     data_source,
     habitat,
     method,
-    prop_animal_protein,
+    perc_animal_protein,
     type
     )
   )
 
-## Get forwardcasted dataset
+## Get forward cast measures
 forwardcasted_maca <- bind_rows(
   maca_projections %>%
     filter(type == "projected" & year >= 2010),
@@ -1294,7 +1663,7 @@ forwardcasted_maca <- bind_rows(
     data_source,
     habitat,
     method,
-    prop_animal_protein,
+    perc_animal_protein,
     type
     )
 )
@@ -1312,30 +1681,34 @@ obs_increases_inaq,
 # back cast - obs
 inaq %>%
   filter(year == 2023) %>%
-  pull(prop_animal_protein) /
+  pull(perc_animal_protein) /
   backcasted_inaq %>%
   filter(year == 1996) %>%
-  pull(prop_animal_protein),
+  pull(perc_animal_protein),
 
 # obs - forward cast
 forwardcasted_inaq %>%
   filter(year == 2023) %>%
-  pull(prop_animal_protein) / inaq %>%
+  pull(perc_animal_protein) / inaq %>%
   filter(year == 1996) %>%
-  pull(prop_animal_protein),
+  pull(perc_animal_protein),
 
 # back cast - forward cast
 forwardcasted_inaq %>%
   filter(year == 2023) %>%
-  pull(prop_animal_protein) / 
+  pull(perc_animal_protein) / 
 backcasted_inaq %>%
   filter(year == 1996) %>%
-  pull(prop_animal_protein)
+  pull(perc_animal_protein)
 
 )
 
 roi_inaq_lb <- min(roi_inaq_vec) %>% round(0) # lower bound for rate of increase
 roi_inaq_ub <- max(roi_inaq_vec) %>% round(0) # upper bound for rate of increase
+
+# Rate of increase for inland aquaculture is the midpoint of the lower
+# and upper bound for the rate of increase
+roi_inaq <- (roi_inaq_lb + roi_inaq_ub) / 2
 
 
 ## Figure out the start point and end point for the rate of increase - since
@@ -1356,38 +1729,46 @@ obs_decreases_maca,
 # back cast - obs
 maca %>%
   filter(year == 2023) %>%
-  pull(prop_animal_protein) /
+  pull(perc_animal_protein) /
   backcasted_maca %>%
   filter(year == 1996) %>%
-  pull(prop_animal_protein),
+  pull(perc_animal_protein),
 
 # obs - forward cast
 forwardcasted_maca %>%
   filter(year == 2023) %>%
-  pull(prop_animal_protein) /
+  pull(perc_animal_protein) /
   maca %>%
   filter(year == 1996) %>%
-  pull(prop_animal_protein),
+  pull(perc_animal_protein),
 
 # back cast - forward cast
 forwardcasted_maca %>%
   filter(year == 2023) %>%
-  pull(prop_animal_protein) /
+  pull(perc_animal_protein) /
   backcasted_maca %>%
   filter(year == 1996) %>%
-  pull(prop_animal_protein)
+  pull(perc_animal_protein)
   
 
 
 
 )) * 100
 
-rod_maca_lb <- min(rod_maca_vec) %>% round(0) # lower bound for rate of increase
-rod_maca_ub <- max(rod_maca_vec) %>% round(0) # upper bound for rate of increase
-```
-> Since 1996, inland aquaculture reliance has increased by over 200% from `r roi_start_inaq`% to `r roi_end_inaq`, while marine capture reliance decreased over 30% from `r rod_start_maca`% to `r rod_end_maca`%. 
+rod_maca_lb <- min(rod_maca_vec) %>% round(0) # lower bound for rate of decrease
+rod_maca_ub <- max(rod_maca_vec) %>% round(0) # upper bound for rate of decrease
 
-> Growth in aquaculture reliance is mainly attributed to a `r roi_inaq`% increase in domestic inland aquaculture reliance from `r roi_start_inaq`% to `r roi_end_inaq`% between 1996 and 2023, while capture fishery reliance declines are mainly attributed to a `r rod_maca`% decline in domestic marine capture reliance from `r rod_start_maca`% to `r rod_end_maca`% (C).
+# Rate of increase for inland aquaculture is the midpoint of the lower
+# and upper bound for the rate of increase
+rod_maca <- (rod_maca_lb + rod_maca_ub) / 2
+```
+
+These diverging trends are driven mainly by declines in animal protein reliance
+on marine capture of `r rod_maca`% (`r rod_maca_lb`-`r rod_maca_ub`%) and growth
+in animal protein reliance on inland aquaculture of `r roi_inaq`%
+(`r roi_inaq_lb`-`r roi_inaq_ub`%; Figure 1C).
+
+---
 
 ## Figure 2: Look at contributing production sources to a country's rate of
 change in their aggregate and disaggregate aquatic animal reliance between
@@ -1443,7 +1824,9 @@ theme_reliance <- function(base_size = 8,
         color     = scales::alpha("black", 0.25),
         linewidth = 0.3
       ),
-      axis.text               = element_text(size = base_size - 3, family = family),   # 5 pt
+      axis.text               = element_text(
+        size = base_size - 3, family = family
+        ),
       axis.title.x            = element_text(
         size  = base_size,
         face  = "bold",
@@ -1452,10 +1835,16 @@ theme_reliance <- function(base_size = 8,
         family = family
       ),
       axis.title.y            = element_blank(),
-      strip.text              = element_text(size = base_size - 1, face = "bold", family = family, color = "black"),
+      strip.text              = element_text(
+        size = base_size - 1, face = "bold", family = family, color = "black"
+        ),
       legend.position         = if (legend) "bottom" else "none",
-      legend.title            = element_text(size = base_size - 1, face = "bold", family = family),
-      legend.text             = element_text(size = base_size - 2, family = family),
+      legend.title            = element_text(
+        size = base_size - 1, face = "bold", family = family
+        ),
+      legend.text             = element_text(
+        size = base_size - 2, family = family
+        ),
       legend.key.size         = unit(0.3, "cm"),
       legend.box              = "vertical",
       legend.spacing          = unit(0.1, "cm"),
@@ -1473,20 +1862,6 @@ theme_reliance <- function(base_size = 8,
   base
 }
 
-# Shared fill scale
-scale_fill_consource <- function(...) {
-  scale_fill_manual(
-    values = c(
-      "inland aquaculture"    = "#D3AF55",
-      "marine aquaculture"    = "#C87534",
-      "inland capture"        = "#5DA49A",
-      "marine capture"        = "#114F59",
-      "unknown"               = "#A8A8A8"
-    ),
-    ...,
-    drop = FALSE
-  )
-}
 
 bar_layers <- list(
   geom_col(),
@@ -1527,7 +1902,6 @@ observed_ranges <- tibble(
   max_year = c(2009, 2023)
 )
 
-
 ############ RUN THIS ANALYSIS ON DISAGGREGATE RELIANCE
 
 # Calculate country aquatic animal protein reliance by habitat and method
@@ -1540,7 +1914,7 @@ disagg_hab_met <- aquatic_reliance %>%
 
 
 # Obtain linear model intercept and slope estimates to
-create forward / backcasted projections
+# create forward / backcasted projections
 coefs_hab_met <- disagg_hab_met %>%
   group_by(iso3c, habitat, method, data_source) %>%
   nest() %>%
@@ -1568,7 +1942,16 @@ proj_hab_met <- coefs_hab_met %>%
          )) %>%
   left_join(observed_ranges, by = "data_source") %>%
   filter(year < min_year | year > max_year) %>%
-  select(data_source, iso3c, habitat, method, year_coef, year, prop_animal_protein, type)
+  select(
+    data_source,
+    iso3c,
+    habitat,
+    method,
+    year_coef,
+    year,
+    prop_animal_protein,
+    type
+    )
 
 # Obtain observed disaggregate aquatic animal protein reliance data
 obs_hab_met <- disagg_hab_met %>%
@@ -1598,8 +1981,10 @@ calc_roc_disagg <- function(data, type = type) {
     filter(term == "year") %>%
     mutate(
       group_label = paste(habitat, method),
-      group_label = if_else(group_label == "unknown unknown", "unknown", group_label)
-    ) %>%
+      group_label = case_when(
+        group_label == "unknown unknown" ~ "unknown",
+        TRUE ~ group_label
+      )) %>%
     drop_na(estimate) %>%
     group_by(group_label) %>%
     ungroup() %>%
@@ -1657,19 +2042,32 @@ back_forward <- bind_rows(
 # For each countries' trend in aquatic animal protein reliance
 # across habitat and method, we will take the midpoint of the
 # min and max rate of change and use that in the plot.
-disagg <- bind_rows(obs_obs,
-          back_obs,
-          obs_forward,
-          back_forward) %>%
-  group_by(iso3c, habitat, method) %>%
-  mutate(estimate = min(estimate) + max(estimate) / 2)
+disagg <- bind_rows(
+  obs_obs,
+  back_obs,
+  obs_forward,
+  back_forward
+  ) %>%
+  group_by(iso3c,
+           habitat,
+           method
+           ) %>%
+  filter(estimate == min(estimate) |
+         estimate == max(estimate)) %>%
+  summarize(
+    estimate = 100 *(min(estimate) + max(estimate) / 2),
+    .groups = "keep"
+    ) %>%
+  mutate(group_label = paste0(habitat, " ", method),
+         term = "year")
 
 ############ RUN THIS ANALYSIS ON AGGREGATE RELIANCE
 
 # Calculate country aggregate aquatic animal protein reliance
 agg_rel <- aquatic_reliance %>%
+  # Remove overlapping FBS years, prioritizing new years
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
-         food_group == "aquatic") %>% # Remove overlapping years, prioritizing new years
+         food_group == "aquatic") %>%
   group_by(year, iso3c, data_source) %>%
   summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop")
 
@@ -1775,32 +2173,65 @@ back_forward <- bind_rows(
            type == "backcast") %>%
   calc_roc_agg(type = "back_forward")
 
-
 # For each countries' trend in aggregate aquatic animal protein reliance
 # we will take the midpoint of the min and max rate of
 # change and use that in the plot.
-agg_estimate <- bind_rows(obs_obs,
-          back_obs,
-          obs_forward,
-          back_forward) %>%
+agg_estimate <- bind_rows(
+  obs_obs,
+  back_obs,
+  obs_forward,
+  back_forward
+  ) %>%
   group_by(iso3c) %>%
-  summarize(agg_estimate = min(estimate) + max(estimate) / 2)
+    filter(estimate == min(estimate) |
+         estimate == max(estimate)) %>%
+  summarize(
+    agg_estimate = 100 * (min(estimate) + max(estimate) / 2),
+    .groups = "keep"
+    )
 
 # Helper to build a bar panel
 make_bar_panel <- function(regions,
                            axis_x_label = FALSE,
                            legend_show  = FALSE,
                            text_size    = 4.75) {
+  
   disagg %>%
     add_region("iso3c", "region") %>%
     filter(region %in% regions) %>%
     left_join(agg_estimate, by = "iso3c") %>%
-    ggplot(aes(x = estimate, y = fct_reorder(iso3c, -agg_estimate), fill = group_label)) +
+    ggplot(
+      aes(
+        x = estimate,
+        y = fct_reorder(iso3c, -agg_estimate),
+        fill = group_label
+        )) +
     bar_layers +
-    scale_fill_consource(name = "Source") +
+    scale_fill_manual(
+      values = c(
+        "inland aquaculture"    = "#D3AF55",
+        "marine aquaculture"    = "#C87534",
+        "inland capture"        = "#5DA49A",
+        "marine capture"        = "#114F59",
+        "unknown unknown"       = "#A8A8A8"
+        ),
+      labels = c("Marine capture", "Inland capture",
+                 "Marine aquaculture", "Inland aquaculture",
+                 "Unknown"),
+      name = "Source",
+      guide = guide_legend(
+        order = 1,
+        override.aes = list(
+          fill = list(
+            "#114F59",
+            "#5DA49A",
+            "#C87534",
+            "#D3AF55",
+            "#A8A8A8"
+          )))) +
     facet_wrap(~ region, scales = "free", nrow = 1) +
     labs(
-      x    = "Average annual change in aquatic animal reliance (1996–2023)",
+      x    = "Average annual change in aquatic animal protein reliance (%; 1996–2023)",
       fill = "Source",
       color = ""
     ) +
@@ -1810,27 +2241,28 @@ make_bar_panel <- function(regions,
     ) +
     theme(axis.text = element_text(size = text_size, family = family),
           strip.text = element_text(family = family)) +
-    scale_color_manual(values = "white",
-                     label = "aggregate reliance",
-                     guide = guide_legend(override.aes = list(
-                        fill = list(pattern(
-                                      grobTree(
-                                        circleGrob(x = 0.5, 
-                                                   y = 0.5, 
-                                                   r = 0.3,
-                                                   gp = gpar(fill = "grey20"))
-                                        ),
-                                        extend = "repeat",
-                                        gp = gpar(col = "grey20", fill = "white",
-                                                  lwd = 0.25)
-
-                                      )
-                                    ),
-                        color = "grey20",
-                        linewidth = 0.2,
-                        size = 3.5
-                        
-                      )))
+    scale_color_manual(
+      values = "white",
+      label = "aggregate reliance",
+      guide = guide_legend(
+        order = 2,
+        override.aes = list(
+        fill = list(
+          pattern(
+            grobTree(
+              circleGrob(
+                x = 0.5, 
+                y = 0.5, 
+                r = 0.3,
+                gp = gpar(fill = "grey20")
+                )),
+            extend = "repeat",
+            gp = gpar(col = "grey20", fill = "white", lwd = 0.25)
+            )),
+        color = "grey20",
+        linewidth = 0.2,
+        size = 3.5
+        )))
 }
 
 
@@ -1841,16 +2273,22 @@ top_regions   <- all_regions[!all_regions %in% c("Oceania", "South America")]
 bot_regions   <- c("Oceania", "South America")
 
 # Top row of bars (i.e.. North America, Asia, Africa, Europe)
-top_row <- make_bar_panel(top_regions, axis_x_label = FALSE, legend_show = FALSE,
-                          text_size = 4.75) +
+top_row <- make_bar_panel(
+  top_regions,
+  axis_x_label = FALSE,
+  legend_show = FALSE,
+  text_size = 4.75) +
   theme(plot.margin = margin(t = 0,  # Top margin
                              r = 5,  # Right margin
                              b = 0,  # Bottom margin
                              l = 5))
 
 # Top row of bars (i.e.. Africa and Oceania)
-bottom_row <- make_bar_panel(bot_regions, axis_x_label = TRUE, legend_show = TRUE,
-                             text_size = 5.15)
+bottom_row <- make_bar_panel(
+  bot_regions,
+  axis_x_label = TRUE,
+  legend_show = TRUE,
+  text_size = 5.15)
 
 # Since there are less plots in the bottom row, add spacers in to make
 # the aspect ratio of the bottom plots look similar in size to the top plots
@@ -1870,36 +2308,48 @@ bottom_panel <- cowplot::plot_grid(
 )
 
 
+# Calculate the number of countries used in analysis
+num_countries <- agg_estimate %>%
+  ungroup() %>%
+  distinct(iso3c) %>%
+  nrow()
+
 # Top panel: # of all countries with increasing / decreasing reliance
-top_panel <- agg %>%
+top_panel <- agg_estimate %>%
   mutate(direction = case_when(
     agg_estimate < 0 ~ "Decreasing reliance",
     agg_estimate > 0 ~ "Increasing reliance"
   )) %>%
   count(direction) %>%
-  mutate(direction = factor(direction, levels = c("Increasing reliance", "Decreasing reliance"))) %>%
+  mutate(direction = factor(
+    direction,
+    levels = c("Increasing reliance", "Decreasing reliance")
+    )) %>%
   ggplot(aes(x = 1, y = n, fill = direction)) +
   coord_flip() +
   geom_col(position = "stack", width = 0.65) +
   scale_fill_manual(
-    values = c("#81B1B4" %>% darken(0.1), "#81B485" %>% darken(0.1)),
-    name   = "Direction of change",
-    labels = c("Decreasing reliance", "Increasing reliance"),
+    values = c("#7F75B1" %>% desaturate(0.05), "#A7B175"),
+    name   = "Change in aggregate aquatic animal protein reliance (1996-2023)",
+    labels = c("Decrease in reliance", "Increase in reliance"),
     guide = guide_legend(override.aes = list(
-                        fill = list("#81B485" %>% darken(0.1), "#81B1B4" %>% darken(0.1)),
+                        fill = list(
+                          "#A7B175",
+                          "#7F75B1" %>% desaturate(0.05)
+                          ),
                         linewidth = 0.15,
                         size = 3.5
                         
                       ))) +
-  labs(y = "Number of countries") +
+  labs(y = paste0("Number of countries (", num_countries, " total)")) +
   theme_reliance(axis_title_x = TRUE, legend = TRUE) +
   theme(
     axis.text.y  = element_blank(),
     axis.ticks.y = element_blank(),
-    axis.title.x = element_text(size = 6, face = "bold", family = family),
+    axis.title.x = element_text(size = 8, face = "bold", family = family),
     axis.text.x = element_text(family = family),
-    legend.title = element_text(family = family, size = 8, hjust = 1.25),
-    legend.text = element_text(family = family),
+    legend.title = element_text(family = family, size = 7, hjust = 1.25),
+    legend.text = element_text(family = family, size = 6),
 
     panel.grid.major.y = element_blank(),
     aspect.ratio = 0.05
@@ -1929,117 +2379,73 @@ ggsave(
   height   = 6
 )
 ```
+
 ### How many countries have increased / decreased aggregate aquatic animal reliance?
 
 ```{r}
 # Calculate the total number of countries in our analysis
-num_countries <- agg %>% distinct(iso3c) %>% nrow()
+num_countries <- agg_estimate %>% distinct(iso3c) %>% nrow()
 
 # Calculate the number of countries 
-num_decreasing_global <- agg %>%
-  count(is_neg = estimate > 0) %>%
+num_decreasing_global <- agg_estimate %>%
+  count(is_neg = agg_estimate > 0) %>%
   filter(is_neg == FALSE) %>%
   pull(n)
-
-[1] "#741A32" "#963032" "#B64A32" "#C87534" "#D3983E" "#D3AF55" "#A7B175" "#5DA49A" "#337D81" "#114F59"
-
-lighten("#114F59", 0.7)
-lighten("#741A32", 0.7)
 ```
 
-Following the decline in global aggregate aquatic animal protein reliance (Figure 1A), a majority `r num_decreasing_global` out of `r num_countries` (Figure 1A), have decreased their reliance on aquatic foods since 2010 (Figure 2A).
- 
-### How many countries have increased in aquaculture reliance?
+Our disaggregation of aquatic animal protein reliance also exposes a mosaic of trends across countries and regions (Figure 2B, SI Figure 9).
+In aggregate, aquatic animal protein reliance declined in `r num_decreasing_global` out of `r num_countries` countries between 1996 and 2023.
+
+### What is the percent contribution of inland and marine capture to countries' declining aggregate reliance?
 
 ```{r}
-# Fit linear models to estimate the average annual change in disaggregated
-# aquatic animal reliance (2010-2023) by production source (habitat x method)
-# for each country
-disagg_method <- aquatic_reliance %>%
-  filter(data_source == "new FBS", food_group == "aquatic") %>%
-  group_by(year, iso3c, method) %>%
-  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
+# How many countries with decreases in aggregate aquatic animal protein reliance
+# have over 80% of their declines attributed to capture?
+num_countries_cap <- disagg %>%
+  select(
+    -group_label,
+    -term
+    ) %>%
+  rename(disagg_estimate = estimate) %>%
   group_by(iso3c, method) %>%
-  nest() %>%
-  mutate(
-    model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
-    tidy  = map(model, broom::tidy)
-  ) %>%
-  unnest(tidy) %>%
-  filter(term == "year") %>%
-  drop_na(estimate) %>%
-  group_by(method) %>%
-  
-  ungroup()
-
-# Count the number of countries that have increased their reliance on aquaculture
-num_increasing_aq <- disagg_method %>%
-  group_by(method) %>%
-  count(is_pos = estimate > 0) %>%
-  filter(is_pos == TRUE) %>%
-  filter(method == "aquaculture") %>%
-  pull(n)
-
-# Where are aquaculture increases primarily coming from
-increasing_aq_countries <- disagg_method %>%
-  group_by(method) %>%
-  filter(method == "aquaculture") %>%
-  mutate(is_pos = estimate > 0) %>%
-  filter(is_pos == TRUE) %>%
-  pull(iso3c)
-
-# Which regions are aquaculture increases primarily coming from?
-data.frame(iso3c = increasing_aq_countries) %>%
-  exploreARTIS::add_region("iso3c", "region") %>%
-  count(region)
-## Primarily from North American, Asian, Africa, and European nations
-```
-
-However after disaggregation, a vast geographical mosaic of reliance emerges (Figure 2B).
-Reliance on aquaculture for animal proteins has become increasingly widespread, with `r num_increasing_aq` countries increasing their reliance between 2010 and 2023, primarily from North American, Asian, African, and European nations (SI Figures 6-9).
-
-### Number of increasing marine aquaculture reliance countries in Europe
-
-```{r}
-# Get number of increasing / decreasing aquaculture reliance countries in Europe
-eur_df <- disagg %>%
-  exploreARTIS::add_region("iso3c", "region") %>%
-  filter(region == "Europe",
-         method == "aquaculture",
-         habitat == "marine") %>%
-  count(is_positive = estimate > 0) %>%
-  mutate(total_countries = sum(n))
-
-# How many European countries have increased their marine aquaculture reliance?
-num_increasing_eur <- eur_df %>%
-  filter(is_positive == TRUE) %>%
-  pull(n)
-
-# How many countries are in Europe?
-num_countries_eur <- eur_df %>%
-  filter(is_positive == TRUE) %>%
-  pull(total_countries)
-```
-
-Europe specifically represents a marine aquaculture hotspot, with `r num_increasing_eur` out of their `r num_countries_eur` countries increasing reliance on marine aquaculture, while simultaneously declining in reliance across all other aquatic food sources for a majority of countries (SI Figure 10).
-
-### How many countries have decreased in marine capture reliance?
-
-```{r}
-# Count the number of countries that have decreased their reliance on capture fisheries
-num_decreasing_cap <- disagg_method %>%
-  group_by(method) %>%
-  count(is_neg = estimate < 0) %>%
-  filter(is_neg == TRUE) %>%
+  summarize(disagg_estimate = sum(disagg_estimate)) %>%
+  left_join(agg_estimate) %>%
+  mutate(rel_is_neg = disagg_estimate < 0) %>%
+  filter(agg_estimate < 0, rel_is_neg == TRUE) %>%
+  group_by(iso3c) %>%
+  mutate(pct_contribution = 100 *( disagg_estimate / sum(disagg_estimate))) %>%
   filter(method == "capture") %>%
-  pull(n)
+  filter(pct_contribution > 80) %>%
+  nrow()
+  
+# How many countries with moderate to steep increases in aggregate aquatic
+# animal protein reliance have over 60% of their growth attributed to
+# aquaculture?
+num_countries_aq <- disagg %>%
+  select(
+    -group_label,
+    -term
+    ) %>%
+  rename(disagg_estimate = estimate) %>%
+  group_by(iso3c, method) %>%
+  summarize(disagg_estimate = sum(disagg_estimate)) %>%
+  left_join(agg_estimate) %>%
+  mutate(rel_is_pos = disagg_estimate > 0) %>%
+  filter(agg_estimate > 0, rel_is_pos == TRUE) %>%
+  group_by(iso3c) %>%
+  mutate(pct_contribution = 100 *( disagg_estimate / sum(disagg_estimate))) %>%
+  filter(method == "aquaculture") %>%
+  filter(pct_contribution > 80) %>%
+  arrange(-agg_estimate) %>%
+  filter(agg_estimate > 0.25) %>%
+  nrow()
 ```
 
-On the other hand, capture fisheries have shown widespread declines, with `r num_decreasing_cap` countries decreasing their reliance, primarily from Asian, European, and Oceania nations (SI Figures 8, 10, 11).
-
-Oceania in particular has experienced declines in reliance on every aquatic food source across a majority of their countries, which raises questions about how much terrestrial and aquatic animals contribute to the overall reliance (SI figure 11).
-
-*See 03_Supplementary_Information.Rmd for code to generate supporting evidence for the previous sentence.*
+With the disaggregate reliance, we expose a major attributor for the shift away from aquatic animal proteins: widespread declines in animal protein reliance on capture fisheries have contributed over 80% towards negative shifts in the aggregate aquatic animal protein reliance for `r num_countries_cap` countries.
+In contrast, substantial growth in animal protein reliance on aquaculture has been concentrated, where only `r num_countries_aq` countries that moderately to sharply increased their aggregate aquatic animal protein reliance reliance attributed over 60\% of their growth to aquaculture.
+<!---data obtained from the following sentences through 03_Supplementary_Information.Rmd --->
+We find nations throughout much of Asia, Africa, South America, and Oceania decreased their reliance on capture fisheries, whereas North American nations widely increased their reliance on aquaculture (SI Figures 10-15).
+Uniquely, nearly every nation in Europe, 38 out of 40, increased their reliance on marine aquaculture, underscoring the widely varying aquatic animal protein reliance (SI Figures 10-15).
 
 # RQ 1b: How does aquatic animal reliance change with the relative contribution of aquatic versus terrestrial animal consumption
 
@@ -2097,7 +2503,7 @@ aquatic_protein_quant <-  aquatic_reliance %>%
   group_by(iso3c) %>%
   mutate(n_years = n()) %>%
   ungroup() %>%
-  filter(n_years > 5) %>%
+  filter(n_years >= 5) %>%
   distinct() 
 
 # Obtain linear model intercept and slope estimates to create forward / backcasted projections
@@ -2184,10 +2590,12 @@ back_forward <- bind_rows(
 # For each countries' trend in aggregate aquatic animal protein reliance
 # we will take the midpoint of the min and max rate of
 # change and use that in the plot.
-aquatic_protein_quant <- bind_rows(obs_obs,
-          back_obs,
-          obs_forward,
-          back_forward) %>%
+aquatic_protein_quant <- bind_rows(
+  obs_obs,
+  back_obs,
+  obs_forward,
+  back_forward
+  ) %>%
   group_by(iso3c) %>%
   summarize(aquatic_estimate = min(estimate) + max(estimate) / 2)
 
@@ -2203,7 +2611,7 @@ terrestrial_protein_quant <-  aquatic_reliance %>%
   group_by(iso3c) %>%
   mutate(n_years = n()) %>%
   ungroup() %>%
-  filter(n_years > 5) %>%
+  filter(n_years >= 5) %>%
   distinct() 
 
 # Obtain linear model intercept and slope estimates to create forward / backcasted projections
@@ -2290,38 +2698,24 @@ back_forward <- bind_rows(
 # For each countries' trend in aggregate aquatic animal protein reliance
 # we will take the midpoint of the min and max rate of
 # change and use that in the plot.
-terrestrial_protein_quant <- bind_rows(obs_obs,
-          back_obs,
-          obs_forward,
-          back_forward) %>%
+terrestrial_protein_quant <- bind_rows(
+  obs_obs,
+  back_obs,
+  obs_forward,
+  back_forward) %>%
   group_by(iso3c) %>%
   summarize(terrestrial_estimate = min(estimate) + max(estimate) / 2)
 
-# Fit linear models to estimate the average annual change in aggregate
-# global aquatic animal reliance (2010-2023)
-aquatic_protein_reliance <- aquatic_reliance %>%
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
-         data_source == "new FBS", food_group == "aquatic") %>%
-  group_by(iso3c, year) %>%
-  summarize(prop_animal_protein = sum(prop_animal_protein, na.rm = TRUE),
-            .groups = "drop") %>%
-  # Filter time series so that each country has at least 5 data points
-  group_by(iso3c) %>%
-  mutate(n_years = n()) %>%
-  ungroup() %>%
-  filter(n_years > 5) %>%
-  distinct() %>%
-  split(.$iso3c) %>%
-  map(~ lm(prop_animal_protein ~ year, data = .x)) %>%
-  map_df(broom::tidy, .id = "iso3c") %>%
-  filter(term == "year") %>%
-  select(iso3c, aquatic_reliance_estimate = estimate)
+
+######### PLOTTING
 
 # Join all three model outputs and add region
-plot_df <- aquatic_protein_quant %>%
-  full_join(terrestrial_protein_quant, by = "iso3c") %>%
-  full_join(aquatic_protein_reliance,  by = "iso3c") %>%
-  add_region(col = "iso3c", region.col.name = "region")
+plot_df <- full_join(
+  aquatic_protein_quant,
+  terrestrial_protein_quant,
+  by = "iso3c"
+  ) %>%
+  add_region("iso3c", "region")
 
 # Pre-compute quadrant membership for corner insets
 quad_counts <- plot_df %>%
@@ -2332,7 +2726,7 @@ quad_counts <- plot_df %>%
     aquatic_estimate > 0 & terrestrial_estimate < 0 ~ "Q4"
   )) %>%
   group_by(quadrant, region) %>%
-  summarise(n = n_distinct(iso3c), .groups = "drop")
+  summarize(n = n_distinct(iso3c), .groups = "drop")
 
 max_count <- max(quad_counts$n)
 
@@ -2341,7 +2735,7 @@ max_count <- max(quad_counts$n)
 # than the point/circle keys that come from geom_point
 p_region_legend_source <- plot_df %>%
   group_by(region) %>%
-  summarise(n = n(), .groups = "drop") %>%
+  summarize(n = n(), .groups = "drop") %>%
   ggplot(aes(x = region, y = n, fill = region)) +
   geom_col() +
   scale_fill_manual(
@@ -2372,7 +2766,7 @@ p_scatter_base <- plot_df %>%
     fill  = aquatic_outpaces_terrestrial,
     label = iso3c
   )) +
-  scale_fill_manual(labels = c("Terr. outpaces aq. animal protein cons.", "Aq. outpaces terr animal protein cons."), values = c("#81B485", "#81B1B4")) +
+  scale_fill_manual(labels = c("Terr. outpaces aq. animal protein cons.", "Aq. outpaces terr animal protein cons."), values = c("#A7B175", "#7F75B1" %>% desaturate(0.05))) +
   # scale_fill_manual(values = artis_palette(6)) +
   geom_hline(yintercept = 0, linewidth = 0.4, color = "black") +
   geom_vline(xintercept = 0, linewidth = 0.4, color = "black") +
@@ -2479,9 +2873,6 @@ ggsave(
 ```
 
 ## Statistic: How many countries have increased their total animal protein consumption from 2010-2023?
-
-
-
 
 ```{r rate of change in animal protein consumption}
 # Calculate the rate of change in total animal protein consumption across 2010 per country
@@ -2616,8 +3007,6 @@ plot_df %>% group_by(region) %>%
   mutate(n = terrestrial_estimate > aquatic_estimate) %>%
   summarize(mean = round(mean(n) * 100,0))
 ```
-One strategy is to come up with a series of key result messages/headlines/facts 
-that could stand alone without the rest of the context of the paper. What are the sound bites?
 
 Aquatic animal protein reliance depends not only on the amount of aquatic animal consumed, but also on the total animal source foods consumed.
 This means that aquatic animal protein reliance can increase due to increases in aquatic animal consumption or decreases in terrestrial animal consumption.
@@ -2656,6 +3045,172 @@ Senegal, another country who has also shown decreases in aquatic animal protein 
 These case studies highlight the variability in the aquatic animal reliance and a need for understanding the inter-working relationships between reliance and socio-economic contexts.
 
 
+# NEW RESULTS
+
+### How many countries increased their animal protein consumption between 1996 and 2023?
+
+```{r}
+######### ANIMAL PROTEIN CONSUMPTION RATE OF CHANGE (1996-2023)
+
+# Calculate country aggregate aquatic animal protein reliance
+animal_protein_quant <-  aquatic_reliance %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
+  group_by(data_source, iso3c, year) %>%
+  summarize(
+    protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr,
+                                           na.rm = TRUE),
+            .groups = "drop"
+    ) %>%
+  # Filter time series so that each country has at least 5 data points
+  group_by(iso3c) %>%
+  mutate(n_years = n()) %>%
+  ungroup() %>%
+  filter(n_years > 5) %>%
+  distinct() 
+
+# Obtain linear model intercept and slope estimates to create forward
+# backcasted projections
+coefs_aq_cons <- animal_protein_quant %>%
+  group_by(data_source, iso3c) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(protein_consumed_kg_percap_peryr ~ year, data = .x)),
+    tidy  = map(model, broom::tidy)
+    ) %>%
+  unnest(tidy) %>%
+  select(data_source, iso3c, term, estimate) %>%
+  pivot_wider(values_from = estimate, names_from = term) %>%
+  rename(year_coef = year)
+
+# Calculate forwardcasts and backcasts from linear model intercept
+# and slope estimates
+proj_animal_cons <- coefs_aq_cons %>%
+  left_join(year_ranges, by = "data_source") %>%
+  rowwise() %>%
+  mutate(year = list(start_year:end_year)) %>%
+  unnest(year) %>%
+  ungroup() %>%
+  mutate(protein_consumed_kg_percap_peryr = `(Intercept)` + year_coef * year,
+         type = case_when(
+           
+           year < 2010 ~ "backcast",
+           year >= 2010 ~ "forwardcast"
+           
+         )) %>%
+  left_join(observed_ranges, by = "data_source") %>%
+  filter(year < min_year | year > max_year)
+
+# Obtain observed aggregate aquatic animal protein reliance data
+obs_animal_cons <- animal_protein_quant %>%
+  filter(data_source == "old FBS" & year <= 2009 |
+           data_source == "new FBS" & year >= 2010) %>%
+  mutate(type = "observed")
+
+# Time series notations:
+# left side of the _ indicates old FBS years, whereas the right side of the 
+# _ indicates new FBS years
+
+# obs_obs - observed to observed
+# back_obs - back casted to observed
+# obs_forward - observed to forward casted 
+# back_forward - back casted to forward casted
+
+# Calculate four different types of rate of change for disaggregate:
+
+# 1. observed - observed
+obs_obs <- bind_rows(
+  obs_animal_cons,
+  proj_animal_cons
+  ) %>%
+  filter(type == "observed") %>%
+  calc_roc_agg(type = "obs_obs", var_name = "protein_consumed_kg_percap_peryr")
+
+# 2. back casted to observed
+back_obs <- bind_rows(
+  obs_animal_cons,
+  proj_animal_cons
+  ) %>%
+  filter(type == "backcast" |
+           type == "observed" & data_source == "new FBS") %>%
+  calc_roc_agg(type = "back_obs", var_name = "protein_consumed_kg_percap_peryr")
+  
+# 3. observed to forward casted
+obs_forward <- bind_rows(
+  obs_animal_cons,
+  proj_animal_cons
+  ) %>%
+  filter(type == "forwardcast" |
+           type == "observed" & data_source == "old FBS") %>%
+  calc_roc_agg(type = "obs_forward", var_name = "protein_consumed_kg_percap_peryr")
+
+# 4. observed to forward casted
+back_forward <- bind_rows(
+  obs_animal_cons,
+  proj_animal_cons
+  ) %>%
+  filter(type == "forwardcast" |
+           type == "backcast") %>%
+  calc_roc_agg(type = "back_forward", var_name = "protein_consumed_kg_percap_peryr")
+
+
+# For each countries' trend in aggregate aquatic animal protein reliance
+# we will take the midpoint of the min and max rate of
+# change and use that in the plot.
+animal_protein_quant <- bind_rows(
+  obs_obs,
+  back_obs,
+  obs_forward,
+  back_forward
+  ) %>%
+  group_by(iso3c) %>%
+  summarize(animal_protein_estimate = min(estimate) + max(estimate) / 2)
+
+# Get the number of countries that increased their animal protein consumption
+num_increasing_animal <- animal_protein_quant %>%
+  count(roc_is_pos = animal_protein_estimate > 0) %>%
+  filter(roc_is_pos == TRUE) %>%
+  pull(n)
+```
+
+### What is the global annual change in animal protein consumption?
+
+```{r}
+# Load in population data
+population <- read_csv("../data/world_population.csv")
+
+# Calculate annual global population
+pop <- population %>%
+  mutate(
+    # remove spaces from population rows and convert to string
+    population_thousands = gsub("[[:space:]]", "", population_thousands),
+    population_thousands = as.numeric(population_thousands),
+    # Convert population to  units of one
+    population = population_thousands * 1000
+    ) %>%
+  select(-population_thousands)
+  
+# Calculate the global animal protein consumption in kilograms / year / cap
+animal_cons <- aquatic_reliance %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
+  group_by(year) %>%
+  summarize(protein_consumed_t_peryr = sum(protein_consumed_t_peryr)) %>%
+  left_join(pop) %>%
+  # Convert to kg / year / cap
+  mutate(kg_year_cap = (protein_consumed_t_peryr / 0.001) / population) %>%
+  select(year, kg_year_cap)
+
+# Calculate global rate of change per year
+lm <- lm(kg_year_cap ~ year, data = animal_cons)
+animal_cons_global_roc <- lm$coefficients[2] %>% round(3) %>% unname()
+```
+
+In total, animal protein intake has broadly increased since 1996, with `r num_increasing_animal` nations increasing their animal protein consumption and a global increase of `r animal_cons_global_roc` kg cap$^{-1}$ yr$^{-1}$
+
+```{r}
+plot_df %>%
+  mutate(aquatic_outpaces_terrestrial = aquatic_estimate > terrestrial_estimate) %>%
+  View()
+```
 
 
 ```{r}
@@ -2710,6 +3265,104 @@ Of those countries, 86 have increased both in their terrestrial and aquatic anim
 
 
 # RQ 2: What biophysical and socioeconomic factors are associated with reliance on farmed and wild aquatic animals for protein and overall consumption?
+
+## Create list of response variables & their associated data to put
+## through Bayesian model
+
+This reads in and grabs the response variable data used across Bayesian models.
+The list of response variables will be held in **response_vars**, and the length
+of response_vars will represent the number of Bayesian models run.
+
+```{r acquire animal consumption data to be fed through analysis}
+# Calculate animal consumption
+terr_animal_cons_cap <- aquatic_reliance %>%
+  filter(year == 2019) %>%
+  group_by(iso3c) %>%
+  summarize(
+    protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr),
+    .groups = "drop"
+    )
+
+animal_cons_cap <- terr_animal_cons_cap
+
+# Calculate aquatic animal consumption
+aquatic_animal_cons_cap <- aquatic_reliance %>%
+  filter(year == 2019, food_group == "aquatic") %>%
+  group_by(iso3c) %>%
+  summarize(
+    protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr),
+    .groups = "drop"
+    )
+
+# Calculate countries' aggregate aquatic animal protein reliance in 2019
+aquatic_rel <- aquatic_animal_cons_cap %>%
+  left_join(animal_cons_cap, by = "iso3c") %>%
+  group_by(iso3c) %>%
+  summarize(
+    prop_animal_protein = protein_consumed_kg_percap_peryr.x / protein_consumed_kg_percap_peryr.y,
+    .groups = "drop"
+    )
+
+# We want to run a
+
+# Start list of response variables that are used in the Bayesian model
+response_vars <- c("terr_animal_cons_cap", "aquatic_animal_cons_cap", "aquatic_rel")
+
+for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")) {
+  
+  # Calculate consumption per capita by method
+  if (i %in% c("capture", "aquaculture")) {
+    assign(
+      paste0(i, "_cap"),
+      aquatic_reliance %>%
+        filter(year == 2019, food_group == "aquatic", method == i) %>%
+        group_by(iso3c) %>%
+        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
+    )
+  }
+  
+  # Calculate consumption per capita by consumption source
+  if (i %in% c("domestic", "foreign")) {
+    assign(
+      paste0(i, "_cap"),
+      aquatic_reliance %>%
+        filter(year == 2019, food_group == "aquatic", consumption_source == i) %>%
+        group_by(iso3c) %>%
+        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
+    )
+  }
+  
+  # Calculate consumption per capita by habitat
+  if (i %in% c("marine", "inland")) {
+    assign(
+      paste0(i, "_cap"),
+      aquatic_reliance %>%
+        filter(year == 2019, food_group == "aquatic", habitat == i) %>%
+        group_by(iso3c) %>%
+        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
+    )
+  }
+  
+  response_vars <- c(response_vars, paste0(i, "_cap"))
+  
+  # Calculate reliance by method, production source, or habitat
+  assign(
+    paste0(i, "_rel"),
+    get(paste0(i, "_cap")) %>%
+      left_join(animal_cons_cap, by = "iso3c") %>%
+      group_by(iso3c) %>%
+      summarize(
+        prop_animal_protein = protein_consumed_kg_percap_peryr.x /protein_consumed_kg_percap_peryr.y,
+        .groups = "keep")
+  )
+  
+  response_vars <- c(response_vars, paste0(i, "_rel"))
+  
+}
+
+# Save response_vars to RDS format
+saveRDS(response_vars, "../data/response_vars.rds")
+```
 
 ## Model: Hierarchical Bayesian regression
 
@@ -2891,7 +3544,7 @@ for (i in seq_along(response_vars)) {
       var   = vars[k]
     ) %>%
     group_by(var) %>%
-    summarise(
+    summarize(
       lo95 = quantile(value, 0.025),
       lo80 = quantile(value, 0.10),
       lo50 = quantile(value, 0.25),
