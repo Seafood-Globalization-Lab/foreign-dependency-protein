@@ -3752,15 +3752,6 @@ legend_bayesian <- cowplot::get_plot_component(
 )
 legend_bayesian <- Filter(function(x) !inherits(x, "zeroGrob"), legend_bayesian)[[1]]
 
-ggsave(
-  filename = "../images/x.pdf",
-  plot     = x,
-  device   = cairo_pdf,
-  width    = 5,
-  height   = 4,
-  units    = "in"
-)
-
 # Assemble 3×3 grid
 grid_plot <- (
     (panels[[1]] | panels[[2]] | panels[[3]]) /
