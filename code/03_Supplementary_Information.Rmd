@@ -231,11 +231,11 @@ theme_si <- function(base_size = 8,
       plot.background       = element_rect(fill = "transparent", color = NA),
       panel.background      = element_rect(fill = "transparent", color = NA),
       panel.grid.minor      = element_blank(),
-      panel.grid.major.y    = element_line(
-        color = scales::alpha("black", 0.06), linewidth = 0.3
+      panel.grid.major.x = element_line(
+        color = scales::alpha("black", 0.3), linewidth = 0.15
       ),
-      panel.grid.major.x    = element_line(
-        color = scales::alpha("black", 0.25), linewidth = 0.3
+      panel.grid.major.y = element_line(
+        color = scales::alpha("black", 0.06), linewidth = 0.15
       ),
       axis.text             = element_text(
         size = base_size - 2.5, color = "black", family = family
@@ -496,134 +496,16 @@ disagg <- bind_rows(
   mutate(group_label = paste0(habitat, " ", method),
          term = "year")
 
-############ RUN THIS ANALYSIS ON AGGREGATE RELIANCE
+############ AGGREGATE RELIANCE
+
+# Because slopes are additive to the aggregate reliance slope, we add the best
+# fitting disaggregate slopes for each country to calculate the aggregate
+# change in aquatic animal protein reliance
 
 # Calculate country aggregate aquatic animal protein reliance
-agg_rel <- aquatic_reliance %>%
-  # Remove overlapping FBS years, prioritizing new years
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
-         food_group == "aquatic") %>%
-  group_by(year, iso3c, data_source) %>%
-  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop")
-
-# Obtain linear model intercept and slope estimates to create
-# forward / backcasted projections
-coefs_agg <- agg_rel %>%
-  group_by(data_source, iso3c) %>%
-  nest() %>%
-  mutate(model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
-         tidy  = map(model, broom::tidy)) %>%
-  unnest(tidy) %>%
-  select(data_source, iso3c, term, estimate) %>%
-  pivot_wider(values_from = estimate, names_from = term) %>%
-  rename(year_coef = year)
-
-# Calculate estimates via forward and back cast from linear model's
-# intercept and slope estimates
-proj_agg <- coefs_agg %>%
-  left_join(year_ranges, by = "data_source") %>%
-  rowwise() %>%
-  mutate(year = list(start_year:end_year)) %>%
-  unnest(year) %>%
-  ungroup() %>%
-  mutate(prop_animal_protein = `(Intercept)` + year_coef * year,
-         type = case_when(
-           
-           year < 2010 ~ "backcast",
-           year >= 2010 ~ "forwardcast"
-           
-         )) %>%
-  left_join(observed_ranges, by = "data_source") %>%
-  filter(year < min_year | year > max_year)
-
-# Obtain observed aggregate aquatic animal protein reliance data
-obs_agg <- agg_rel %>%
-  filter(data_source == "old FBS" & year <= 2009 |
-           data_source == "new FBS" & year >= 2010) %>%
-  mutate(type = "observed")
-
-# Create function for calculating rate of change in aggregate reliance
-
-# Time series notations:
-# left side of the _ indicates old FBS years, whereas the right side of the 
-# _ indicates new FBS years
-
-# obs_obs - observed to observed
-# back_obs - back casted to observed
-# obs_forward - observed to forward casted 
-# back_forward - back casted to forward casted
-calc_roc_agg <- function(data, type = type, var_name = "prop_animal_protein") {
-  
-  data %>%
+agg_estimate <- disagg %>%
   group_by(iso3c) %>%
-  nest() %>%
-  mutate(
-    model = map(data, ~ lm(!!sym(var_name) ~ year, data = .x)),
-    tidy  = map(model, broom::tidy)
-  ) %>%
-  unnest(tidy) %>%
-  filter(term == "year") %>%
-  mutate(group_label = "aggregate") %>%
-  drop_na(estimate) %>%
-  group_by(group_label) %>%
-  ungroup() %>%
-    mutate(type = type)
-  
-}
-
-# Calculate four different types of rate of change for disaggregate:
-
-# 1. observed - observed
-obs_obs <- bind_rows(
-  obs_agg,
-  proj_agg
-  ) %>%
-  filter(type == "observed") %>%
-  calc_roc_agg(type = "obs_obs")
-
-# 2. back casted to observed
-back_obs <- bind_rows(
-  obs_agg,
-  proj_agg
-  ) %>%
-  filter(type == "backcast" |
-           type == "observed" & data_source == "new FBS") %>%
-  calc_roc_agg(type = "back_obs")
-  
-# 3. observed to forward casted
-obs_forward <- bind_rows(
-  obs_agg,
-  proj_agg
-  ) %>%
-  filter(type == "forwardcast" |
-           type == "observed" & data_source == "old FBS") %>%
-  calc_roc_agg(type = "obs_forward")
-
-# 4. observed to forward casted
-back_forward <- bind_rows(
-  obs_agg,
-  proj_agg
-  ) %>%
-  filter(type == "forwardcast" |
-           type == "backcast") %>%
-  calc_roc_agg(type = "back_forward")
-
-# For each countries' trend in aggregate aquatic animal protein reliance
-# we will take the midpoint of the min and max rate of
-# change and use that in the plot.
-agg_estimate <- bind_rows(
-  obs_obs,
-  back_obs,
-  obs_forward,
-  back_forward
-  ) %>%
-  group_by(iso3c) %>%
-    filter(estimate == min(estimate) |
-         estimate == max(estimate)) %>%
-  summarize(
-    agg_estimate = 100 * (min(estimate) + max(estimate) / 2),
-    .groups = "keep"
-    )
+  summarize(agg_estimate = sum(estimate))
 
 counts_by_region <- agg_estimate %>%
   mutate(
@@ -659,7 +541,7 @@ for (i in regions) {
     left_join(agg_estimate, by = "iso3c") %>%
     ggplot(aes(x = estimate, y = fct_reorder(iso3c, -agg_estimate), fill = group_label)) +
     geom_col() +
-    geom_vline(xintercept = 0, linewidth = 0.4, color = "#434343") +
+    geom_vline(xintercept = 0, linewidth = 0.4, color = "black") +
     agg_point() +
     scale_fill_manual(
       values = c(
@@ -732,7 +614,7 @@ for (i in regions) {
       "decreasing" = "#A7B175",
       "increasing" = "#7F75B1" %>% desaturate(0.05)
       ),
-    name   = "Change in aggregate aquatic animal\nprotein reliance (1996-2023)",
+    name   = "Change in aggregate\naquatic animal protein\nreliance (1996-2023)",
     labels = c("Decrease in reliance", "Increase in reliance"),
     guide = guide_legend(
       nrow = 2,
@@ -901,11 +783,15 @@ reliance_scale <- function(limit = disagg_max) {
   )
 }
 
+# set up aquatic reliance dataframe so everything is in percents
+aquatic_reliance_pct <- aquatic_reliance %>%
+  mutate(perc_animal_protein = prop_animal_protein * 100)
+
 # Set up plot themes
 theme_map_middle_bottom_rows <- theme(
-      plot.title            = element_text(size = 7.5, hjust = 0.5),
+      plot.title            = element_text(size = 7.5, hjust = 0.5, family = family),
       legend.title          = element_blank(),
-      legend.text           = element_text(size = 6)
+      legend.text           = element_text(size = 6, family)
     )
 
 tight_spacing <- theme(
@@ -914,21 +800,21 @@ tight_spacing <- theme(
 ################################### Inland aquaculture
 
 ######### Domestic
-dia <- aquatic_reliance %>%
+dia <- aquatic_reliance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "inland",
          method == "aquaculture") %>%
   filter(year == 2020)
 
 p_dia <- dia %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(dia$prop_animal_protein)) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = max(dia$perc_animal_protein)) +
   labs(fill = "", title = "Domestic inland aquaculture") +
   tight_spacing +
   theme_map_middle_bottom_rows
 ######### Foreign
 # Gather data
-fia <- aquatic_reliance %>%
+fia <- aquatic_reliance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "inland",
          method == "aquaculture") %>%
@@ -936,8 +822,8 @@ fia <- aquatic_reliance %>%
 
 # Plot data
 p_fia <- fia %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(fia$prop_animal_protein)) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = max(fia$perc_animal_protein)) +
   labs(fill = "", title = "Foreign inland aquaculture") +
   tight_spacing +
   theme_map_middle_bottom_rows
@@ -948,7 +834,7 @@ inaq <- plot_grid(p_dia, p_fia, nrow = 2) # Inland aquaculture plot (D + F)
 
 ######### Domestic
 # Gather data
-dic <- aquatic_reliance %>%
+dic <- aquatic_reliance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "inland",
          method == "capture") %>%
@@ -956,15 +842,15 @@ dic <- aquatic_reliance %>%
 
 # Plot data
 p_dic <- dic %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(dic$prop_animal_protein)) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = max(dic$perc_animal_protein)) +
   labs(fill = "", title = "Domestic inland capture") +
   tight_spacing +
   theme_map_middle_bottom_rows
 
 ######### Foreign
 # Gather data
-fic <- aquatic_reliance %>%
+fic <- aquatic_reliance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "inland",
          method == "capture") %>%
@@ -972,8 +858,8 @@ fic <- aquatic_reliance %>%
 
 # Plot data
 p_fic <- fic %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(fic$prop_animal_protein)) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = max(fic$perc_animal_protein)) +
   labs(fill = "", title = "Foreign inland capture") +
   tight_spacing + theme_map_middle_bottom_rows
 
@@ -983,21 +869,21 @@ incap <- plot_grid(p_dic, p_fic, nrow = 2) # Inland capture plot (D + F)
 
 ######### Domestic
 # Gather data
-dma <- aquatic_reliance %>%
+dma <- aquatic_reliance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "marine",
          method == "aquaculture") %>%
   filter(year == 2020)
 # Plot data
 p_dma <- dma %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(dma$prop_animal_protein)) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = max(dma$perc_animal_protein)) +
   labs(fill = "", title = "Domestic marine aquaculture") +
   tight_spacing + theme_map_middle_bottom_rows
 
 ######### Foreign
 # Gather data
-fma <- aquatic_reliance %>%
+fma <- aquatic_reliance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "marine",
          method == "aquaculture") %>%
@@ -1005,8 +891,8 @@ fma <- aquatic_reliance %>%
 
 # Plot data
 p_fma <- fma %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(fma$prop_animal_protein)) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = max(fma$perc_animal_protein)) +
   labs(fill = "", title = "Foreign marine aquaculture") +
   tight_spacing +
   theme_map_middle_bottom_rows
@@ -1017,7 +903,7 @@ maaq <- plot_grid(p_dma, p_fma, nrow = 2) # Marine aquaculture plot (D + F)
 
 ######### Domestic
 # Gather data
-dmc <- aquatic_reliance %>%
+dmc <- aquatic_reliance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "marine",
          method == "capture") %>%
@@ -1025,15 +911,15 @@ dmc <- aquatic_reliance %>%
 
 # Plot data
 p_dmc <- dmc %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = dmc$prop_animal_protein %>% max()) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = dmc$perc_animal_protein %>% max()) +
   labs(fill = "", title = "Domestic marine capture") +
   tight_spacing +
   theme_map_middle_bottom_rows
 
 ######### Foreign
 # Gather data
-fmc <- aquatic_reliance %>%
+fmc <- aquatic_reliance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "marine",
          method == "capture") %>%
@@ -1041,30 +927,33 @@ fmc <- aquatic_reliance %>%
 
 # Plot data
 p_fmc <- fmc %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = fmc$prop_animal_protein %>% max()) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = fmc$perc_animal_protein %>% max()) +
   labs(fill = " ", title = "Foreign marine capture") +
   tight_spacing + theme_map_middle_bottom_rows
 
 macap <- plot_grid(p_dmc, p_fmc, nrow = 2) # Marine capture plot (F + D)
 
-agg_rel <- aquatic_reliance %>%
+agg_rel <- aquatic_reliance_pct %>%
   filter(year == 2020,
          food_group == "aquatic") %>%
   group_by(iso3c) %>%
-  summarize(prop_animal_protein = sum(prop_animal_protein))
+  summarize(perc_animal_protein = sum(perc_animal_protein))
 # Aggregate reliance plot
 p_agg_rel <- agg_rel %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = agg_rel$prop_animal_protein %>% max()) +
-  labs(fill = "Aquatic animal protein reliance (%)")
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = agg_rel$perc_animal_protein %>% max()) +
+  labs(fill = "Aquatic animal protein reliance (%)") +
+  theme(plot.title   = element_text(family = family),
+        legend.title = element_text(family = family),
+        legend.text  = element_text(family = family))
 
 # Plot layout:
 bottom_half <- plot_grid(macap, incap, maaq, inaq, ncol = 4)
 final_plot <- plot_grid(p_agg_rel, bottom_half, nrow = 2, rel_heights = c(0.5, 1))
 
 ggsave(
-  filename = "../images/SI/aquatic_reliance_maps.pdf",
+  filename = "../images/SI/aquatic_animal_protein_reliance_maps.pdf",
   plot     = final_plot,
   device   = cairo_pdf,
   width    = 7.5,
@@ -1074,120 +963,120 @@ ggsave(
 ```
 
 ```{r}
-dia <- aquatic_reliance %>%
+dia <- aquatic_reliance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "inland",
          method == "aquaculture") %>%
   filter(year == 2020)
 
 p_dia <- dia %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(dia$prop_animal_protein)) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = max(dia$perc_animal_protein)) +
   labs(fill = "", title = "Domestic inland aquaculture")
 
-fia <- aquatic_reliance %>%
+fia <- aquatic_reliance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "inland",
          method == "aquaculture") %>%
   filter(year == 2020)
 
 p_fia <- fia %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(fia$prop_animal_protein)) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = max(fia$perc_animal_protein)) +
   labs(fill = "", title = "Foreign inland aquaculture")
 
 # Inland aquaculture plot
 inaq <- plot_grid(p_dia, p_fia, nrow = 2)
 
-dic <- aquatic_reliance %>%
+dic <- aquatic_reliance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "inland",
          method == "capture") %>%
   filter(year == 2020)
 
 p_dic <- dic %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(dic$prop_animal_protein)) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = max(dic$perc_animal_protein)) +
   labs(fill = "", title = "Domestic inland capture")
 
-fic <- aquatic_reliance %>%
+fic <- aquatic_reliance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "inland",
          method == "capture") %>%
   filter(year == 2020)
 
 p_fic <- fic %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(fic$prop_animal_protein)) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = max(fic$perc_animal_protein)) +
   labs(fill = "", title = "Foreign inland capture")
 
 # Inland capture plot
 incap <- plot_grid(p_dic, p_fic, nrow = 2)
 
-dma <- aquatic_reliance %>%
+dma <- aquatic_reliance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "marine",
          method == "aquaculture") %>%
   filter(year == 2020)
 
 p_dma <- dma %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(dma$prop_animal_protein)) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = max(dma$perc_animal_protein)) +
   labs(fill = "", title = "Domestic marine aquaculture")
 
-fma <- aquatic_reliance %>%
+fma <- aquatic_reliance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "marine",
          method == "aquaculture") %>%
   filter(year == 2020)
 
 p_fma <- fma %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(fma$prop_animal_protein)) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = max(fma$perc_animal_protein)) +
   labs(fill = "", title = "Foreign marine aquaculture")
 
 # Marine aquaculture plot
 maaq <- plot_grid(p_dma, p_fma, nrow = 2)
 
-dmc <- aquatic_reliance %>%
+dmc <- aquatic_reliance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "marine",
          method == "capture") %>%
   filter(year == 2020)
 
 p_dmc <- dmc %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = dmc$prop_animal_protein %>% max()) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = dmc$perc_animal_protein %>% max()) +
   labs(fill = "", title = "Domestic marine capture")
 
-fmc <- aquatic_reliance %>%
+fmc <- aquatic_reliance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "marine",
          method == "capture") %>%
   filter(year == 2020)
 
 p_fmc <- fmc %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = fmc$prop_animal_protein %>% max()) +
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = fmc$perc_animal_protein %>% max()) +
   labs(fill = "", title = "Foreign marine capture")
 
 # Marine capture plot
 macap <- plot_grid(p_dmc, p_fmc, nrow = 2)
 
 agg_rel %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = agg_rel$prop_animal_protein %>% max())
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = agg_rel$perc_animal_protein %>% max())
 
 
-agg_rel <- aquatic_reliance %>%
+agg_rel <- aquatic_reliance_pct %>%
   filter(year == 2020,
          food_group == "aquatic") %>%
   group_by(iso3c) %>%
-  summarize(prop_animal_protein = sum(prop_animal_protein))
+  summarize(perc_animal_protein = sum(perc_animal_protein))
 # Aggregate reliance plot
 p_agg_rel <- agg_rel %>%
-  create_map(fill = "prop_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = agg_rel$prop_animal_protein %>% max())
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  reliance_scale(limit = agg_rel$perc_animal_protein %>% max())
 
 # Plot layout:
 
@@ -1607,7 +1496,8 @@ plot <- ggplot() +
     size  = 1.8,
     color = "grey55",
     hjust = 0,
-    vjust = 0
+    vjust = 0,
+    family = family
   ) +
 
   facet_wrap(~ region, nrow = 2) +
@@ -1633,7 +1523,7 @@ plot <- ggplot() +
     panel.background      = element_rect(fill = "transparent", color = NA),
     plot.background       = element_rect(fill = "transparent", color = NA),
     strip.background      = element_blank(),
-    strip.text            = element_text(size = 6.5, face = "bold"),
+    strip.text            = element_text(size = 6.5, face = "bold", family = family),
     axis.text             = element_blank(),
     axis.title.x          = element_text(size = 6, face = "bold",
                                           margin = margin(t = 2)),
@@ -1959,7 +1849,7 @@ var_labels <- c(
   coastline_km               = "Coastline length (km)",
   gdp_trade                  = "GDP from trade (%)",
   inundation_area_log1000km2 = "Inundated area (log 1000 km²)",
-  log_gdp                    = "GDP (log scale)",
+  log_gdp                    = "GDP per capita (log scale)",
   pop_10k_pct_coast          = "Pop. within 10 km of coast (%)",
   supermarkets               = "Supermarkets per 100,000",
   eez_total                  = "Log EEZ area km²"
@@ -1969,7 +1859,7 @@ var_labels <- c(
 model_type = "realm"
 
 # Read in explanatory variables to assess collinearity
-X <- readRDS(file.path(base_path, paste0("X_", response_vars[i], ".rds")))
+X <- readRDS(file.path(base_path, paste0("X_", response_vars[1], ".rds")))
 
 # Rename columns to clean labels before computing correlation
 # so axis-adjacent labels are publication-ready throughout
@@ -2016,7 +1906,8 @@ plot <- ggplot() +
     data  = upper_melt,
     aes(x = Var2, y = Var1, label = label, color = value),
     size  = 2.2,
-    fontface = "plain"
+    fontface = "plain",
+    family = family
   ) +
 
   # Diagonal variable name labels
@@ -2026,7 +1917,8 @@ plot <- ggplot() +
     size     = 1.9,
     fontface = "bold",
     color    = "grey15",
-    lineheight = 0.9
+    lineheight = 0.9,
+    family = family
   ) +
 
   # Fill scale - aligned with project diverging palette
@@ -2066,7 +1958,7 @@ plot <- ggplot() +
     axis.text         = element_blank(),
     axis.ticks        = element_blank(),
     panel.grid        = element_blank(),
-    legend.title      = element_text(size = 6.5, face = "bold"),
+    legend.title      = element_text(size = 6.5, face = "bold", family = family),
     legend.text       = element_text(size = 6),
     plot.background   = element_rect(fill = "transparent", color = NA),
     panel.background  = element_rect(fill = "transparent", color = NA),
@@ -2210,15 +2102,15 @@ theme_minimal(base_size = 8) +
   theme(
     plot.tag            = element_blank(),
     strip.text          = element_text(size = 5.5, face = "bold", hjust = 0.5,
-                                       margin = margin(b = 2)),
+                                       margin = margin(b = 2), family = family),
     panel.grid.major.y  = element_line(color = scales::alpha("black", 0.10),
                                        linewidth = 0.25),
     panel.grid.minor    = element_blank(),
     panel.grid.major.x  = element_blank(),
-    axis.text.x         = element_text(size = 4.5, color = "black"),
-    axis.text.y         = element_text(size = 5, color = "black"),
-    axis.title.x        = element_text(size = 6, face = "bold", margin = margin(t = 4)),
-    axis.title.y        = element_text(size = 6, face = "bold", margin = margin(r = 4)),
+    axis.text.x         = element_text(size = 4.5, color = "black", family = family),
+    axis.text.y         = element_text(size = 5, color = "black", family = family),
+    axis.title.x        = element_text(size = 6, face = "bold", margin = margin(t = 4), family = family),
+    axis.title.y        = element_text(size = 6, face = "bold", margin = margin(r = 4), family = family),
     axis.ticks          = element_blank(),
     panel.spacing       = unit(4, "pt"),
     plot.margin         = margin(6, 8, 4, 6)
@@ -2279,21 +2171,21 @@ ordered_names <- plot_df %>%
   theme(
     plot.tag            = element_blank(),
     strip.text          = element_text(size = 5.5, face = "bold", hjust = 0.5,
-                                       margin = margin(b = 2)),
+                                       margin = margin(b = 2), family = family),
     panel.grid.major.x  = element_line(color = scales::alpha("black", 0.10),
                                        linewidth = 0.25),
     panel.grid.minor    = element_blank(),
     panel.grid.major.y  = element_blank(),
-    axis.text.x         = element_text(size = 4.5, color = "black"),
-    axis.text.y         = element_text(size = 5, color = "black"),
-    axis.title.x        = element_text(size = 6, face = "bold", margin = margin(t = 4)),
-    axis.title.y        = element_text(size = 6, face = "bold", margin = margin(r = 4)),
+    axis.text.x         = element_text(size = 4.5, color = "black", family = family),
+    axis.text.y         = element_text(size = 5, color = "black", family = family),
+    axis.title.x        = element_text(size = 6, face = "bold", margin = margin(t = 4), family = family),
+    axis.title.y        = element_text(size = 6, face = "bold", margin = margin(r = 4), family = family),
     axis.ticks          = element_blank(),
     panel.spacing       = unit(4, "pt"),
     plot.margin         = margin(6, 8, 4, 6),
     legend.position = "bottom",
-    legend.title            = element_text(size = 7, face = "bold"),
-      legend.text             = element_text(size = 6),
+    legend.title            = element_text(size = 7, face = "bold", family = family),
+      legend.text             = element_text(size = 6, family = family),
       legend.key.size         = unit(0.3, "cm"),
       legend.box              = "vertical",
       legend.spacing          = unit(0.1, "cm"),
@@ -2460,7 +2352,7 @@ make_ppd_panel <- function(df, title = "", tag = "",
     labs(title = title, tag = tag) +
     theme_minimal(base_size = 8) +
     theme(
-      text              = element_text(family = "sans", color = "black"),
+      text              = element_text(color = "black", family = family),
       plot.background   = element_rect(fill = "transparent", color = NA),
       panel.background  = element_rect(fill = "transparent", color = NA),
       panel.grid.minor  = element_blank(),
@@ -2469,10 +2361,8 @@ make_ppd_panel <- function(df, title = "", tag = "",
         color = scales::alpha("black", 0.12), linewidth = 0.3
       ),
       plot.title        = element_text(size = 4, face = "bold", hjust = 0.5,
-                                        margin = margin(b = 2)),
-      plot.tag          = element_text(size = 7, face = "bold"),
-      plot.tag.position = tag_pos,
-      axis.text         = element_text(size = 5.5, color = "black"),
+                                        margin = margin(b = 2), family = family),
+      axis.text         = element_text(size = 5.5, color = "black", family = family),
       axis.title.x      = element_blank(),
       axis.title.y      = element_blank(),
       plot.margin       = margin(3, 4, 3, 4)
@@ -2497,7 +2387,6 @@ panels <- lapply(seq_along(panel_names), function(i) {
   make_ppd_panel(
     df_sub,
     title    = nm,
-    tag      = letters[i],
     left_col = i %in% c(1, 5, 9, 13),
     bot_row  = i %in% c(13, 14, 15)
   )
@@ -2522,6 +2411,19 @@ final_plot <- wrap_plots(row1, row2, row3, row4, ncol = 1) +
 To see how well each model performs on unseen data, we can run a cross validation on each model. Additionally, we can calculate the Pareto k values to see if there are influential points that may have an impact on the LOO values.
 
 ```{r PSIS-LOO plot}
+# Model colours - harmonized palette
+# model_colors <- c(
+#   "Terrestrial animal consumption per capita" = "#8C1A11",
+#   "Aquatic animal consumption per capita"     = "#2B6AA8",
+#   "Aquatic reliance"                          = "#1A7A6E",
+#   "Capture consumption per capita"            = "#D4601A",
+#   "Aquaculture consumption per capita"        = "#E8B000",
+#   "Domestic consumption per capita"           = "#7BAEC4",
+#   "Foreign consumption per capita"            = "#C45C3A",
+#   "Marine consumption per capita"             = "#9B6DC5",
+#   "Inland consumption per capita"             = "#D4956A"
+# )
+
 # Paths and model info
 combined_model_path <- base_path
 n_models <- length(response_vars)
@@ -2569,15 +2471,15 @@ model_data <- as.data.frame(loo_compare_matrix) %>%
 
 
 # Assign colours; fall back to grey for any model not in the palette
-model_data <- model_data %>%
-  mutate(
-    pt_color = coalesce(model_colors[as.character(clean_name)], "grey50"),
-    pt_fill  = if_else(is_best, "white", pt_color),
-    # Non-significant intervals (CI crosses zero) rendered lighter
-    bar_color = if_else(nonzero,
-                        colorspace::lighten(pt_color, 0.25),
-                        colorspace::lighten(pt_color, 0.60))
-  )
+# model_data <- model_data %>%
+#   mutate(
+#     pt_color = coalesce(model_colors[as.character(clean_name)], "grey50"),
+#     pt_fill  = if_else(is_best, "white", pt_color),
+#     # Non-significant intervals (CI crosses zero) rendered lighter
+#     bar_color = if_else(nonzero,
+#                         colorspace::lighten(pt_color, 0.25),
+#                         colorspace::lighten(pt_color, 0.60))
+#   )
 
 # create plot
 psis_plot <- ggplot(model_data,
@@ -2618,10 +2520,10 @@ psis_plot <- ggplot(model_data,
       color     = scales::alpha("black", 0.12),
       linewidth = 0.3
     ),
-    axis.text.x  = element_text(size = 5.5, color = "black"),
-    axis.text.y  = element_text(size = 5.5, color = "black", hjust = 1),
+    axis.text.x  = element_text(size = 5.5, color = "black", family = family),
+    axis.text.y  = element_text(size = 5.5, color = "black", hjust = 1, family = family),
     axis.title.x = element_text(size = 6, face = "bold",
-                                margin = margin(t = 4)),
+                                margin = margin(t = 4), family = family),
     axis.ticks.y = element_blank(),
     plot.margin  = margin(6, 8, 4, 6)
   )
@@ -2722,6 +2624,7 @@ pareto_plot <- ggplot(pareto_k_df,
     color            = pt_bad,
     size             = 1.8,
     fontface         = "bold",
+    family           = family,
     segment.color    = pt_bad,
     segment.size     = 0.25,
     segment.alpha    = 0.6,
@@ -2743,7 +2646,8 @@ pareto_plot <- ggplot(pareto_k_df,
     vjust       = 0,
     size        = 1.8,
     color       = "grey30",
-    fontface    = "italic"
+    fontface    = "italic",
+    family = family
   ) +
 
   scale_y_continuous(
@@ -2760,15 +2664,15 @@ pareto_plot <- ggplot(pareto_k_df,
   theme(
     plot.tag            = element_blank(),
     strip.text          = element_text(size = 5.5, face = "bold", hjust = 0.5,
-                                       margin = margin(b = 2)),
+                                       margin = margin(b = 2), family = family),
     panel.grid.major.y  = element_line(color = scales::alpha("black", 0.10),
                                        linewidth = 0.25),
     panel.grid.minor    = element_blank(),
     panel.grid.major.x  = element_blank(),
-    axis.text.x         = element_text(size = 4.5, color = "black"),
-    axis.text.y         = element_text(size = 5, color = "black"),
-    axis.title.x        = element_text(size = 6, face = "bold", margin = margin(t = 4)),
-    axis.title.y        = element_text(size = 6, face = "bold", margin = margin(r = 4)),
+    axis.text.x         = element_text(size = 4.5, color = "black", family = family),
+    axis.text.y         = element_text(size = 5, color = "black", family = family),
+    axis.title.x        = element_text(size = 6, face = "bold", margin = margin(t = 4), family = family),
+    axis.title.y        = element_text(size = 6, face = "bold", margin = margin(r = 4), family = family),
     axis.ticks          = element_blank(),
     panel.spacing       = unit(4, "pt"),
     plot.margin         = margin(6, 8, 4, 6)
