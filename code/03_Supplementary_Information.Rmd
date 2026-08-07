@@ -210,8 +210,8 @@ The bottom panel visualizes for each country in each region the average annual c
 # ARTIS color palette: "#741A32" "#963032" "#B64A32" "#C87534" "#D3983E" "#D3AF55" "#A7B175" "#5DA49A" "#337D81" "#114F59"
 # Diverging palette for direction-of-change panels
 pal_direction <- c(
-  "decreasing" = "#A7B175",
-  "increasing" = "#7F75B1" %>% desaturate(0.05)
+  "decreasing" = "#b8cb5b",
+  "increasing" = "#8FACB4"
 )
 
 # Neutral fill for reliance bar chart
@@ -337,15 +337,33 @@ observed_ranges <- tibble(
   max_year = c(2009, 2023)
 )
 
+# First we will exclude any countries that have short time series - these short
+# time series may have exaggerated rates of change in the aquatic animal protein
+# reliance
+iso3c_with_at_least_5_yrs <- aquatic_reliance %>%
+  # Remove overlapping FBS years
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         food_group == "aquatic") %>%
+  group_by(iso3c, year) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein)) %>%
+  # Calculate the number of years for each country
+  group_by(iso3c) %>%
+  summarize(n_years = n()) %>%
+  filter(n_years > 5) %>%
+  # Only get countries with over five years of data
+  pull(iso3c)
+
 ############ RUN THIS ANALYSIS ON DISAGGREGATE RELIANCE
 
 # Calculate country aquatic animal protein reliance by habitat and method
 disagg_hab_met <- aquatic_reliance %>%
+   # Remove overlapping years, prioritizing new years
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
-         food_group == "aquatic") %>% # Remove overlapping years,
-  # prioritizing new years
+         food_group == "aquatic") %>%
+    # Filter to only countries with greater than 5 year time series
+  filter(iso3c %in% iso3c_with_at_least_5_yrs) %>%
   group_by(year, iso3c, habitat, method, data_source) %>%
-  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop")
+  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") 
 
 
 # Obtain linear model intercept and slope estimates to
@@ -566,7 +584,7 @@ for (i in regions) {
             "#D3AF55",
             "#A8A8A8"
           )))) +
-    labs(x = "Average annual change in aquatic animal protein reliance (1996–2023)",
+    labs(x = "Average annual change in aquatic animal protein reliance (%; 1996–2023)",
          color = "") +
     theme_si(show_y_title = FALSE, show_legend = TRUE) +
     # Manually add black and white dot "aggregate reliance" onto legend
@@ -611,8 +629,8 @@ for (i in regions) {
     geom_col(width = 0.55) +
     scale_fill_manual(
     values = c(
-      "decreasing" = "#A7B175",
-      "increasing" = "#7F75B1" %>% desaturate(0.05)
+      "decreasing" = "#b8cb5b",
+      "increasing" = "#8FACB4"
       ),
     name   = "Change in aggregate\naquatic animal protein\nreliance (1996-2023)",
     labels = c("Decrease in reliance", "Increase in reliance"),
@@ -620,8 +638,8 @@ for (i in regions) {
       nrow = 2,
       override.aes = list(
         fill = list(
-          "#A7B175",
-          "#7F75B1"%>% desaturate(0.05)
+          "#b8cb5b",
+          "#8FACB4"
           ),
         linewidth = 0.15,
         size = 3.5
@@ -666,7 +684,7 @@ for (i in regions) {
     ggplot(aes(y = group_label, x = n, fill = direction)) +
     geom_col(width = 0.55) +
     scale_fill_manual(
-    values = c("#7F75B1" %>% desaturate(0.05),"#A7B175")
+    values = c("#8FACB4","#b8cb5b")
     ) +
     labs(
       x = paste0(
@@ -678,7 +696,11 @@ for (i in regions) {
 
   # Panel 4: 2020 reliance, ordered by rate of change
   p_reliance <- aquatic_reliance %>%
-    filter(year == 2023, food_group == "aquatic") %>%
+    filter(
+      year == 2023,
+      food_group == "aquatic",
+      iso3c %in% unique(disagg$iso3c)
+      ) %>%
     group_by(iso3c) %>%
     summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
     left_join(agg_estimate, by = "iso3c") %>%
@@ -689,7 +711,7 @@ for (i in regions) {
       y = prop_animal_protein * 100
     )) +
     geom_col(fill = col_reliance_bar, width = 0.7) +
-    labs(y = "Aquatic animal protein\nreliance, 2023 (%)") +
+    labs(y = "Aquatic animal protein\nreliance (%; 2023)") +
     theme_si(show_x_title = FALSE, show_legend = FALSE) +
     theme(
       axis.text.x        = element_text(size = 4.5, angle = 45, hjust = 1),
@@ -700,8 +722,12 @@ for (i in regions) {
     )
 
   # Assemble legends
-  legend_bars       <- extract_legend(p_bars)
-  legend_agg_counts <- extract_legend(p_agg_counts)
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+  legend_bars       <- extract_legend(p_bars) %>%
+    suppressWarnings()
+  legend_agg_counts <- extract_legend(p_agg_counts) %>%
+    suppressWarnings()
 
   p_bars_nl       <- p_bars       + theme(legend.position = "none")
   p_agg_counts_nl <- p_agg_counts + theme(legend.position = "none")
@@ -733,7 +759,10 @@ for (i in regions) {
     p_disagg_counts,
     ncol       = 2,
     rel_widths = c(1, 1)
-  )
+  ) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+    suppressWarnings()
 
   # Final assembly
   
@@ -746,7 +775,10 @@ final_plot <- cowplot::plot_grid(
     legend_row,
     ncol        = 1,
     rel_heights = c(0.12, 0.04, 0.5, 0.8, 2.5, 0.42)
-  )
+  )  %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+    suppressWarnings()
 
   # Save plot
   ggsave(
@@ -767,19 +799,24 @@ final_plot <- cowplot::plot_grid(
 # Single small addition: tightens the vertical gap between the two
 # stacked (domestic/foreign) maps by shrinking legend box spacing and
 # panel margins. Nothing else about your layout is changed.
-reliance_scale <- function(limit = disagg_max) {
+reliance_scale <- function(limit = disagg_max, show_title = TRUE) {
   scale_fill_gradientn(
-    colors = c("#F7FCF0", "#7BCCC4", "#2B8CBE", "#08306B"),
-    limits = c(0, limit),
-    oob    = scales::squish,
-    guide  = guide_colorbar(
-      title.position = "top",
-      title.hjust    = 0.5,
-      barwidth       = unit(3.2, "cm"),
-      barheight      = unit(0.25, "cm"),
-      frame.colour   = "grey40",
-      ticks.colour   = "grey40"
-    )
+    colors  = c("#F7FCF0", "#7BCCC4", "#2B8CBE", "#08306B"),
+    limits  = c(0, limit),
+    oob     = scales::squish,
+    breaks  = scales::pretty_breaks(n = 3),
+    guide   = guide_colorbar(
+      title           = if (show_title) waiver() else NULL,
+      title.position  = "top",
+      title.hjust     = 0.5,
+      barwidth        = unit(3.2, "cm"),
+      barheight       = unit(0.25, "cm"),
+      frame.colour    = NA,
+      ticks.colour    = "black",
+      ticks.linewidth = 0.3,
+      nbin            = 100
+    ),
+    na.value = "#f2f2f2"
   )
 }
 
@@ -789,10 +826,14 @@ aquatic_reliance_pct <- aquatic_reliance %>%
 
 # Set up plot themes
 theme_map_middle_bottom_rows <- theme(
-      plot.title            = element_text(size = 7.5, hjust = 0.5, family = family),
-      legend.title          = element_blank(),
-      legend.text           = element_text(size = 6, family)
-    )
+  plot.title         = element_text(size = 7.5, hjust = 0.5, family = family),
+  legend.title       = element_blank(),
+  legend.text        = element_text(size = 6, family = family),
+  legend.margin      = margin(0, 0, 0, 0),
+  legend.box.spacing = unit(0, "pt"),
+  legend.box.margin  = margin(0, 0, 0, 0),
+  legend.spacing.y   = unit(0, "pt")
+)
 
 tight_spacing <- theme(
   plot.margin        = margin(2, 2, 2, 2)
@@ -804,11 +845,11 @@ dia <- aquatic_reliance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "inland",
          method == "aquaculture") %>%
-  filter(year == 2020)
+  filter(year == 2023)
 
 p_dia <- dia %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(dia$perc_animal_protein)) +
+  reliance_scale(limit = max(dia$perc_animal_protein), show_title = FALSE) +
   labs(fill = "", title = "Domestic inland aquaculture") +
   tight_spacing +
   theme_map_middle_bottom_rows
@@ -818,12 +859,12 @@ fia <- aquatic_reliance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "inland",
          method == "aquaculture") %>%
-  filter(year == 2020)
+  filter(year == 2023)
 
 # Plot data
 p_fia <- fia %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(fia$perc_animal_protein)) +
+  reliance_scale(limit = max(fia$perc_animal_protein), show_title = FALSE) +
   labs(fill = "", title = "Foreign inland aquaculture") +
   tight_spacing +
   theme_map_middle_bottom_rows
@@ -838,12 +879,12 @@ dic <- aquatic_reliance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "inland",
          method == "capture") %>%
-  filter(year == 2020)
+  filter(year == 2023)
 
 # Plot data
 p_dic <- dic %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(dic$perc_animal_protein)) +
+  reliance_scale(limit = max(dic$perc_animal_protein), show_title = FALSE) +
   labs(fill = "", title = "Domestic inland capture") +
   tight_spacing +
   theme_map_middle_bottom_rows
@@ -854,12 +895,12 @@ fic <- aquatic_reliance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "inland",
          method == "capture") %>%
-  filter(year == 2020)
+  filter(year == 2023)
 
 # Plot data
 p_fic <- fic %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(fic$perc_animal_protein)) +
+  reliance_scale(limit = max(fic$perc_animal_protein), show_title = FALSE) +
   labs(fill = "", title = "Foreign inland capture") +
   tight_spacing + theme_map_middle_bottom_rows
 
@@ -873,11 +914,11 @@ dma <- aquatic_reliance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "marine",
          method == "aquaculture") %>%
-  filter(year == 2020)
+  filter(year == 2023)
 # Plot data
 p_dma <- dma %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(dma$perc_animal_protein)) +
+  reliance_scale(limit = max(dma$perc_animal_protein), show_title = FALSE) +
   labs(fill = "", title = "Domestic marine aquaculture") +
   tight_spacing + theme_map_middle_bottom_rows
 
@@ -887,12 +928,12 @@ fma <- aquatic_reliance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "marine",
          method == "aquaculture") %>%
-  filter(year == 2020) 
+  filter(year == 2023) 
 
 # Plot data
 p_fma <- fma %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(fma$perc_animal_protein)) +
+  reliance_scale(limit = max(fma$perc_animal_protein), show_title = FALSE) +
   labs(fill = "", title = "Foreign marine aquaculture") +
   tight_spacing +
   theme_map_middle_bottom_rows
@@ -907,12 +948,12 @@ dmc <- aquatic_reliance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "marine",
          method == "capture") %>%
-  filter(year == 2020)
+  filter(year == 2023)
 
 # Plot data
 p_dmc <- dmc %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = dmc$perc_animal_protein %>% max()) +
+  reliance_scale(limit = dmc$perc_animal_protein %>% max(), show_title = FALSE) +
   labs(fill = "", title = "Domestic marine capture") +
   tight_spacing +
   theme_map_middle_bottom_rows
@@ -923,19 +964,19 @@ fmc <- aquatic_reliance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "marine",
          method == "capture") %>%
-  filter(year == 2020)
+  filter(year == 2023)
 
 # Plot data
 p_fmc <- fmc %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = fmc$perc_animal_protein %>% max()) +
+  reliance_scale(limit = fmc$perc_animal_protein %>% max(), show_title = FALSE) +
   labs(fill = " ", title = "Foreign marine capture") +
   tight_spacing + theme_map_middle_bottom_rows
 
 macap <- plot_grid(p_dmc, p_fmc, nrow = 2) # Marine capture plot (F + D)
 
 agg_rel <- aquatic_reliance_pct %>%
-  filter(year == 2020,
+  filter(year == 2023,
          food_group == "aquatic") %>%
   group_by(iso3c) %>%
   summarize(perc_animal_protein = sum(perc_animal_protein))
@@ -953,7 +994,7 @@ bottom_half <- plot_grid(macap, incap, maaq, inaq, ncol = 4)
 final_plot <- plot_grid(p_agg_rel, bottom_half, nrow = 2, rel_heights = c(0.5, 1))
 
 ggsave(
-  filename = "../images/SI/aquatic_animal_protein_reliance_maps.pdf",
+  filename = "../images/SI/aquatic_animal_protein_reliance_maps2.pdf",
   plot     = final_plot,
   device   = cairo_pdf,
   width    = 7.5,
@@ -2314,7 +2355,10 @@ df_plot <- ppd_all_models %>%
       str_detect(clean_name, "reliance")
   ) %>%
   filter(draw %in% draw_sample) %>%
-  mutate(clean_name = factor(clean_name))
+  mutate(
+    clean_name = clean_model_name(model),
+    clean_name = factor(clean_name)
+    )
 
 panel_names <- levels(df_plot$clean_name)
 
@@ -2395,13 +2439,13 @@ panels <- lapply(seq_along(panel_names), function(i) {
 # Assemble 4×4 grid - bottom row centered with half-column empty spacers
 empty <- ggplot() + theme_void()
 
-row1 <- panels[[1]]  | panels[[2]]  | panels[[3]]  | panels[[4]]
-row2 <- panels[[5]]  | panels[[6]]  | panels[[7]]  | panels[[8]]
-row3 <- panels[[9]]  | panels[[10]] | panels[[11]] | panels[[12]]
-row4 <- (empty | panels[[13]] | panels[[14]] | panels[[15]] | empty) +
+row1 <- panels[[15]]  | panels[[9]]  | panels[[13]]  | panels[[3]]
+row2 <- panels[[7]]  | panels[[5]]  | panels[[14]]  | panels[[6]]
+row3 <- panels[[1]]  | panels[[8]] | panels[[4]] | panels[[10]]
+row4 <- (empty | panels[[12]] | panels[[11]] | panels[[2]] | empty) +
   plot_layout(widths = c(0.5, 1, 1, 1, 0.5))
 
-final_plot <- wrap_plots(row1, row2, row3, row4, ncol = 1) +
+ppd_plot <- wrap_plots(row1, row2, row3, row4, ncol = 1) +
   plot_layout(heights = c(1, 1, 1, 1)) &
   theme(plot.margin = margin(2, 3, 2, 3))
 ```
@@ -2411,19 +2455,6 @@ final_plot <- wrap_plots(row1, row2, row3, row4, ncol = 1) +
 To see how well each model performs on unseen data, we can run a cross validation on each model. Additionally, we can calculate the Pareto k values to see if there are influential points that may have an impact on the LOO values.
 
 ```{r PSIS-LOO plot}
-# Model colours - harmonized palette
-# model_colors <- c(
-#   "Terrestrial animal consumption per capita" = "#8C1A11",
-#   "Aquatic animal consumption per capita"     = "#2B6AA8",
-#   "Aquatic reliance"                          = "#1A7A6E",
-#   "Capture consumption per capita"            = "#D4601A",
-#   "Aquaculture consumption per capita"        = "#E8B000",
-#   "Domestic consumption per capita"           = "#7BAEC4",
-#   "Foreign consumption per capita"            = "#C45C3A",
-#   "Marine consumption per capita"             = "#9B6DC5",
-#   "Inland consumption per capita"             = "#D4956A"
-# )
-
 # Paths and model info
 combined_model_path <- base_path
 n_models <- length(response_vars)
@@ -2468,18 +2499,6 @@ model_data <- as.data.frame(loo_compare_matrix) %>%
   ) %>%
   arrange(elpd_diff) %>%
   mutate(clean_name = factor(clean_name, levels = clean_name))
-
-
-# Assign colours; fall back to grey for any model not in the palette
-# model_data <- model_data %>%
-#   mutate(
-#     pt_color = coalesce(model_colors[as.character(clean_name)], "grey50"),
-#     pt_fill  = if_else(is_best, "white", pt_color),
-#     # Non-significant intervals (CI crosses zero) rendered lighter
-#     bar_color = if_else(nonzero,
-#                         colorspace::lighten(pt_color, 0.25),
-#                         colorspace::lighten(pt_color, 0.60))
-#   )
 
 # create plot
 psis_plot <- ggplot(model_data,
@@ -2670,7 +2689,7 @@ pareto_plot <- ggplot(pareto_k_df,
     panel.grid.minor    = element_blank(),
     panel.grid.major.x  = element_blank(),
     axis.text.x         = element_text(size = 4.5, color = "black", family = family),
-    axis.text.y         = element_text(size = 5, color = "black", family = family),
+    axis.text.y         = element_text(size = 4, color = "black", family = family),
     axis.title.x        = element_text(size = 6, face = "bold", margin = margin(t = 4), family = family),
     axis.title.y        = element_text(size = 6, face = "bold", margin = margin(r = 4), family = family),
     axis.ticks          = element_blank(),
@@ -2686,15 +2705,28 @@ pareto_plot <- pareto_plot + labs(tag = "B") +
   theme(plot.tag.position = c(0.01, 1))  # consistent with psis_plot
 
 # Stack side by side with patchwork
-combined_plot <- plot_grid(psis_plot, pareto_plot, rel_widths = c(1,1.5), labels = c("B", "C"))
+combined_plot <- plot_grid(
+  psis_plot,
+  pareto_plot,
+  rel_widths = c(1,1.5),
+  labels = c("B", "C")
+  ) %>%
+  suppressWarnings()
 
 
 
-final <- plot_grid(final_plot, combined_plot, nrow = 1, labels = "A", rel_widths = c(1,1.6))
+final_plot <- plot_grid(
+  ppd_plot,
+  combined_plot,
+  nrow = 1,
+  labels = "A",
+  rel_widths = c(1,1.6)
+  ) %>%
+  suppressWarnings()
 
 ggsave(
   filename = "../images/SI/bayesian_fit_diagnostics.pdf",
-  plot     = final,
+  plot     = final_plot,
   device   = cairo_pdf,
   width    = 15,   # wider to accommodate both panels comfortably
   height   = 4,
