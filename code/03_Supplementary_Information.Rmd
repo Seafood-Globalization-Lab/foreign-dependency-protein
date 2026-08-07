@@ -812,7 +812,7 @@ reliance_scale <- function(limit = disagg_max, show_title = TRUE) {
       barwidth        = unit(3.2, "cm"),
       barheight       = unit(0.25, "cm"),
       frame.colour    = NA,
-      ticks.colour    = "black",
+      ticks.colour    = "grey40",
       ticks.linewidth = 0.3,
       nbin            = 100
     ),
@@ -994,7 +994,7 @@ bottom_half <- plot_grid(macap, incap, maaq, inaq, ncol = 4)
 final_plot <- plot_grid(p_agg_rel, bottom_half, nrow = 2, rel_heights = c(0.5, 1))
 
 ggsave(
-  filename = "../images/SI/aquatic_animal_protein_reliance_maps2.pdf",
+  filename = "../images/SI/aquatic_animal_protein_reliance_maps.pdf",
   plot     = final_plot,
   device   = cairo_pdf,
   width    = 7.5,
