@@ -1,0 +1,68 @@
+---
+title: "Introduction"
+author: "Connor Quiroz, Lana Huang, Christopher D. Golden, Sarah Glaser, and Jessica A. Gephart"
+date: "2026-08-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+inland <- consumption_full %>%
+  group_by(year, consumer_iso3c, habitat) %>%
+  summarize(consumption_live_t = sum(consumption_live_t)) %>%
+  group_by(year, consumer_iso3c) %>%
+  mutate(prop_consumption = consumption_live_t / sum(consumption_live_t)) %>% 
+  filter(year == 2023) %>%
+  filter(habitat == "inland") %>%
+  left_join(
+    ecoregion %>%
+      select(consumer_iso3c = iso3c, realm)
+  ) %>%
+  group_by(realm) %>%
+  mutate(realm_prop = mean(prop_consumption > 0.6),
+         n_countries = n()) %>%
+  distinct(realm, realm_prop, n_countries) %>%
+  arrange(-realm_prop) %>%
+  drop_na()
+
+marine <- consumption_full %>%
+  group_by(year, consumer_iso3c, habitat) %>%
+  summarize(consumption_live_t = sum(consumption_live_t)) %>%
+  group_by(year, consumer_iso3c) %>%
+  mutate(prop_consumption = consumption_live_t / sum(consumption_live_t)) %>% 
+  filter(year == 2023) %>%
+  filter(habitat == "marine") %>%
+  left_join(
+    ecoregion %>%
+      select(consumer_iso3c = iso3c, realm)
+  ) %>%
+  group_by(realm) %>%
+  mutate(realm_prop = mean(prop_consumption > 0.8),
+         n_countries = n()) %>%
+  distinct(realm, realm_prop, n_countries) %>%
+  arrange(-realm_prop) %>%
+  drop_na()
+
+inland
+marine
+```
+
+For example, nations in the Central Indo-Pacific, Tropical Atlantic, and Temperate Northern Atlantic majorly consume marine species, whereas landlocked nations in Asia, Africa, and South America consume more inland species.
+
+```{r}
+ consumption_full %>%
+  group_by(year, consumer_iso3c, consumption_source) %>%
+  summarize(consumption_live_t = sum(consumption_live_t)) %>%
+  group_by(year, consumer_iso3c) %>%
+  mutate(prop_consumption = consumption_live_t / sum(consumption_live_t)) %>% 
+  filter(year == 2023) %>%
+  filter(consumption_source == "foreign") %>%
+  add_region("consumer_iso3c", "region") %>%
+  filter(region %in% c("North America", "Europe", "Africa")) %>%
+  View()
+```
+
+North America, Europe, and Africa have particularly increased their foreign consumption over the years, exceeding domestic consumption in some countries like the United States, Germany, and Botswana
