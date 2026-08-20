@@ -7,9 +7,80 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
 ```
 
+# Read in data
+
 ```{r}
+# Read in aquatic reliance data
+aquatic_reliance <- read.csv("../output/fao_aquatic_reliance_source.csv")
+
+# Read in consumption data
+consumption_full <- read_parquet("../data/consumption_full.parquet")
+
+# Read in ecoregion data (all shapes associated with soverign)
+ecoregion_full <- 
+  read.csv("../data/Spatially joined ecoregion to EEZ/ecoregion.csv") %>%
+  rename(
+    "iso3c" = "ISO_SOV1",
+    ecoregion = "ECOREGION",
+    province = "PROVINCE",
+    realm = "REALM",
+    shape_area = "Shape_Area"
+    )
+
+# Read in ecoregions for largest sovereign shape
+ecoregion_unique <- read.csv("../data/Spatially joined ecoregion to EEZ/ecoregion_clean.csv") %>%
+  select(-FREQUENCY) %>%
+  rename(
+    iso3c = "ISO_SOV1",
+    shape_area = "MAX_Shape_Area"
+    )
+
+# Join largest shape for the respective sovereign country
+# to their ecoregion names
+ecoregion <- left_join(
+  ecoregion_unique,
+  ecoregion_full,
+  by = c("iso3c", "shape_area")
+  ) %>%
+  filter(realm != "")
+
+# Assign countries not associated with a marine ecoregion to "landlocked" code
+landlocked_countries <- aquatic_reliance %>%
+  distinct(iso3c) %>%
+  drop_na() %>%
+  add_region(col = "iso3c", region.col.name = "region") %>%
+  filter(!iso3c %in% ecoregion$iso3c) %>%
+  mutate(
+    ecoregion = paste0("Landlocked, ", region),
+    province = paste0("Landlocked, ", region),
+    realm = paste0("Landlocked, ", region)) %>%
+  select(-region)
+
+# Clean ecoregion data
+ecoregion <- bind_rows(
+  ecoregion,
+  landlocked_countries
+  ) %>%
+  arrange(iso3c) %>%
+  select(-shape_area)
+
+# Clean up environment
+rm(list = c("ecoregion_full", "ecoregion_unique"))
+```
+
+# Analysis
+
+## Consumption hotspots for inland- and marine-source aquatic animal foods
+
+```{r}
+# Here, we calculate the proportion of countries in each realm and the
+# total number of countries in each realm to find: 
+
+# What proportion of countries in each realm source more than 60% of their
+# aquatic food consumption from inland sources? Use 2023
 inland <- consumption_full %>%
   group_by(year, consumer_iso3c, habitat) %>%
   summarize(consumption_live_t = sum(consumption_live_t)) %>%
@@ -28,6 +99,8 @@ inland <- consumption_full %>%
   arrange(-realm_prop) %>%
   drop_na()
 
+# What proportion of countries in each realm source more than 60% of their
+# aquatic food consumption from inland sources? Use 2023
 marine <- consumption_full %>%
   group_by(year, consumer_iso3c, habitat) %>%
   summarize(consumption_live_t = sum(consumption_live_t)) %>%
@@ -52,6 +125,8 @@ marine
 
 For example, nations in the Central Indo-Pacific, Tropical Atlantic, and Temperate Northern Atlantic majorly consume marine species, whereas landlocked nations in Asia, Africa, and South America consume more inland species.
 
+## Which countries source a majority of their consumed aquatic foods from foreign sources?
+
 ```{r}
  consumption_full %>%
   group_by(year, consumer_iso3c, consumption_source) %>%
@@ -65,4 +140,4 @@ For example, nations in the Central Indo-Pacific, Tropical Atlantic, and Tempera
   View()
 ```
 
-North America, Europe, and Africa have particularly increased their foreign consumption over the years, exceeding domestic consumption in some countries like the United States, Germany, and Botswana
+North America, Europe, and Africa have particularly increased their foreign consumption over the years, exceeding domestic consumption in some countries like the United States, Germany, and Botswana.
