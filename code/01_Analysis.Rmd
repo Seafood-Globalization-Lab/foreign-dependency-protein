@@ -61,8 +61,13 @@ if (!file.exists("../data/consumption_full.parquet")) {
   consumption_full <- artis_ts_result %>%
     collect() %>%
     # Simplify consumption source to just indicate foreign vs domestic
-    mutate(consumption_source = str_replace(consumption_source, " step 1", ""),
-           consumption_source = str_replace(consumption_source, " step 2", ""))
+    mutate(
+      consumption_source = str_replace(consumption_source, " step 1", ""),
+      consumption_source = str_replace(consumption_source, " step 2", "")
+      ) %>%
+    # Calculate consumption total by year, consumer, source, habitat and method 
+    group_by(year, consumer_iso3c, consumption_source, habitat, method) %>%
+    summarise(consumption_live_t = sum(consumption_live_t, na.rm = TRUE))
   
   # Save data to .parquet
   write_parquet(consumption_full, "../data/consumption_full.parquet")  
@@ -394,8 +399,7 @@ elements_select <- c("Food supply (kcal)",
 aquatic_animals <- c("Cephalopods",
                      "Crustaceans", "Demersal Fish",
                      "Freshwater Fish", "Marine Fish, Other",
-                     "Molluscs, Other", "Pelagic Fish", "Aquatic Animals, Others",
-                     "Fish, Body Oil", "Fish, Liver Oil")
+                     "Molluscs, Other", "Pelagic Fish", "Aquatic Animals, Others")
 
 # Create data frame of aquatic animal and terrestrial animal products only for disaggregation by source
 fao_new_aquatic <- fao_new_raw %>%
