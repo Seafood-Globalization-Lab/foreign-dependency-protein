@@ -79,7 +79,7 @@ aquatic_reliance <- read.csv("../output/fao_aquatic_reliance_source.csv")
 aquatic_fbs <- read.csv("../output/fao_fbs_aquatic_source.csv")
 ```
 
-## Load in biophysical and socio-economic data as covariates to be used 
+## Load in biophysical and socio-economic data as covariates that we use in the Bayesian model 
 
 ```{r load data}
 # Read in adaptive capacity data
@@ -874,7 +874,10 @@ aa_reliance_mean_global_trends_plot <- cowplot::plot_grid(
   rel_widths = c(0.9,1,1),
   labels = c("A", "B", "C"),
   label_size = 10
-)
+) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+  suppressWarnings()
 
 # Print final plot
 print(aa_reliance_mean_global_trends_plot)
@@ -2196,7 +2199,10 @@ bottom_row_narrowed <- cowplot::plot_grid(
   NULL, bottom_row, NULL,
   ncol       = 3,
   rel_widths = c(0.1, 0.3, 0.1)
-)
+) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+  suppressWarnings()
 
 # combine the bottom and top bar plots (this will make up the bottom panel of
 # the plot)
@@ -2205,7 +2211,10 @@ bottom_panel <- cowplot::plot_grid(
   bottom_row_narrowed,
   nrow        = 2,
   rel_heights = c(2, 1.25)
-)
+) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+  suppressWarnings()
 
 
 # Calculate the number of countries used in analysis
@@ -2264,7 +2273,10 @@ final_plot <- cowplot::plot_grid(
   rel_heights   = c(0.35, 2),
   labels        = c("A", "B"),
   label_size    = 9.5
-)
+) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+  suppressWarnings()
 
 # Print final plot
 print(final_plot)
@@ -2316,6 +2328,7 @@ num_countries_cap <- disagg %>%
   mutate(pct_contribution = 100 *( disagg_estimate / sum(disagg_estimate))) %>%
   filter(method == "capture") %>%
   filter(pct_contribution > 80) %>%
+  filter(agg_estimate < -0.15) %>%
   nrow()
   
 # How many countries with moderate to steep increases in aggregate aquatic
@@ -2337,7 +2350,7 @@ num_countries_aq <- disagg %>%
   filter(method == "aquaculture") %>%
   filter(pct_contribution > 60) %>%
   arrange(-agg_estimate) %>%
-  filter(agg_estimate > 0.25) %>%
+  filter(agg_estimate > 0.15) %>%
   nrow()
 ```
 
@@ -2493,7 +2506,23 @@ obs_aq_cons <- aquatic_protein_quant %>%
 # obs_forward - observed to forward casted 
 # back_forward - back casted to forward casted
 
-# Calculate four different types of rate of change for disaggregate:
+# Helper function to calculate the rate of change in a variable over time
+calc_roc <- function(data, type = type, var_name = "prop_animal_protein") {
+  
+  data %>%
+  group_by(iso3c) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(!!sym(var_name) ~ year, data = .x)),
+    tidy  = map(model, broom::tidy)
+  ) %>%
+  unnest(tidy) %>%
+  filter(term == "year") %>%
+  drop_na(estimate) %>%
+  ungroup() %>%
+    mutate(type = type)
+  
+}
 
 # 1. observed - observed
 obs_obs <- bind_rows(
@@ -2501,7 +2530,7 @@ obs_obs <- bind_rows(
   proj_aq_cons
   ) %>%
   filter(type == "observed") %>%
-  calc_roc_agg(type = "obs_obs", var_name = "protein_consumed_kg_percap_peryr")
+  calc_roc(type = "obs_obs", var_name = "protein_consumed_kg_percap_peryr")
 
 # 2. back casted to observed
 back_obs <- bind_rows(
@@ -2510,7 +2539,7 @@ back_obs <- bind_rows(
   ) %>%
   filter(type == "backcast" |
            type == "observed" & data_source == "new FBS") %>%
-  calc_roc_agg(type = "back_obs", var_name = "protein_consumed_kg_percap_peryr")
+  calc_roc(type = "back_obs", var_name = "protein_consumed_kg_percap_peryr")
   
 # 3. observed to forward casted
 obs_forward <- bind_rows(
@@ -2519,7 +2548,7 @@ obs_forward <- bind_rows(
   ) %>%
   filter(type == "forwardcast" |
            type == "observed" & data_source == "old FBS") %>%
-  calc_roc_agg(type = "obs_forward", var_name = "protein_consumed_kg_percap_peryr")
+  calc_roc(type = "obs_forward", var_name = "protein_consumed_kg_percap_peryr")
 
 # 4. observed to forward casted
 back_forward <- bind_rows(
@@ -2528,7 +2557,7 @@ back_forward <- bind_rows(
   ) %>%
   filter(type == "forwardcast" |
            type == "backcast") %>%
-  calc_roc_agg(type = "back_forward", var_name = "protein_consumed_kg_percap_peryr")
+  calc_roc(type = "back_forward", var_name = "protein_consumed_kg_percap_peryr")
 
 
 # For each countries' trend in aggregate aquatic animal protein reliance
@@ -2605,7 +2634,7 @@ obs_obs <- bind_rows(
   proj_terr_cons
   ) %>%
   filter(type == "observed") %>%
-  calc_roc_agg(type = "obs_obs", var_name = "protein_consumed_kg_percap_peryr")
+  calc_roc(type = "obs_obs", var_name = "protein_consumed_kg_percap_peryr")
 
 # 2. back casted to observed
 back_obs <- bind_rows(
@@ -2614,7 +2643,7 @@ back_obs <- bind_rows(
   ) %>%
   filter(type == "backcast" |
            type == "observed" & data_source == "new FBS") %>%
-  calc_roc_agg(type = "back_obs", var_name = "protein_consumed_kg_percap_peryr")
+  calc_roc(type = "back_obs", var_name = "protein_consumed_kg_percap_peryr")
   
 # 3. observed to forward casted
 obs_forward <- bind_rows(
@@ -2623,7 +2652,7 @@ obs_forward <- bind_rows(
   ) %>%
   filter(type == "forwardcast" |
            type == "observed" & data_source == "old FBS") %>%
-  calc_roc_agg(type = "obs_forward", var_name = "protein_consumed_kg_percap_peryr")
+  calc_roc(type = "obs_forward", var_name = "protein_consumed_kg_percap_peryr")
 
 # 4. observed to forward casted
 back_forward <- bind_rows(
@@ -2632,7 +2661,7 @@ back_forward <- bind_rows(
   ) %>%
   filter(type == "forwardcast" |
            type == "backcast") %>%
-  calc_roc_agg(type = "back_forward", var_name = "protein_consumed_kg_percap_peryr")
+  calc_roc(type = "back_forward", var_name = "protein_consumed_kg_percap_peryr")
 
 
 # For each countries' trend in aggregate aquatic animal protein reliance
@@ -2788,7 +2817,10 @@ p_with_insets <- p_scatter +
 # Place colorbar and region legend side by side below the main panel
 legend_row <- cowplot::plot_grid(
   legend_reliance, legend_regions
-)
+) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+  suppressWarnings()
 
 # Stack main panel above legend row
 final_plot <- cowplot::plot_grid(
@@ -2796,7 +2828,10 @@ final_plot <- cowplot::plot_grid(
   legend_row,
   ncol        = 1,
   rel_heights = c(1, 0.16)
-)
+) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+  suppressWarnings()
 
 # Print final plot
 print(final_plot)
@@ -2813,6 +2848,24 @@ ggsave(
 ```
 
 ### How many countries increased their animal protein consumption between 1996 and 2023?
+
+```{r}
+plot_df %>%
+  mutate(quadrant = case_when(
+    aquatic_estimate > 0 & terrestrial_estimate > 0 ~ "Q1",
+    aquatic_estimate < 0 & terrestrial_estimate > 0 ~ "Q2",
+    aquatic_estimate < 0 & terrestrial_estimate < 0 ~ "Q3",
+    aquatic_estimate > 0 & terrestrial_estimate < 0 ~ "Q4"
+  )) %>%
+  filter(quadrant == "Q3",
+         region == "Africa") %>%
+  mutate(aq_outpaces_terr = case_when(
+    aquatic_estimate > terrestrial_estimate ~ TRUE,
+    aquatic_estimate < terrestrial_estimate ~ FALSE,
+  )) %>%
+  count(aq_outpaces_terr)
+```
+
 
 ```{r}
 ######### ANIMAL PROTEIN CONSUMPTION RATE OF CHANGE (1996-2023)
@@ -2888,7 +2941,7 @@ obs_obs <- bind_rows(
   proj_animal_cons
   ) %>%
   filter(type == "observed") %>%
-  calc_roc_agg(type = "obs_obs", var_name = "protein_consumed_kg_percap_peryr")
+  calc_roc(type = "obs_obs", var_name = "protein_consumed_kg_percap_peryr")
 
 # 2. back casted to observed
 back_obs <- bind_rows(
@@ -2897,7 +2950,7 @@ back_obs <- bind_rows(
   ) %>%
   filter(type == "backcast" |
            type == "observed" & data_source == "new FBS") %>%
-  calc_roc_agg(type = "back_obs", var_name = "protein_consumed_kg_percap_peryr")
+  calc_roc(type = "back_obs", var_name = "protein_consumed_kg_percap_peryr")
   
 # 3. observed to forward casted
 obs_forward <- bind_rows(
@@ -2906,7 +2959,7 @@ obs_forward <- bind_rows(
   ) %>%
   filter(type == "forwardcast" |
            type == "observed" & data_source == "old FBS") %>%
-  calc_roc_agg(type = "obs_forward", var_name = "protein_consumed_kg_percap_peryr")
+  calc_roc(type = "obs_forward", var_name = "protein_consumed_kg_percap_peryr")
 
 # 4. observed to forward casted
 back_forward <- bind_rows(
@@ -2915,7 +2968,7 @@ back_forward <- bind_rows(
   ) %>%
   filter(type == "forwardcast" |
            type == "backcast") %>%
-  calc_roc_agg(type = "back_forward", var_name = "protein_consumed_kg_percap_peryr")
+  calc_roc(type = "back_forward", var_name = "protein_consumed_kg_percap_peryr")
 
 
 # For each countries' trend in aggregate aquatic animal protein reliance
@@ -2935,6 +2988,12 @@ num_increasing_animal <- animal_protein_quant %>%
   count(roc_is_pos = animal_protein_estimate > 0) %>%
   filter(roc_is_pos == TRUE) %>%
   pull(n)
+
+
+mean_increase <- animal_protein_quant %>%
+  mutate(roc_is_pos = animal_protein_estimate > 0) %>%
+  filter(roc_is_pos == TRUE) %>%
+  summarize(mean_increase = mean(animal_protein_estimate))
 ```
 
 ### What is the global annual change in animal protein consumption?
@@ -3039,27 +3098,32 @@ The list of response variables will be held in **response_vars**, and the length
 of response_vars will represent the number of Bayesian models run.
 
 ```{r acquire animal consumption data to be fed through analysis}
+years = 2019:2023
 # Calculate animal consumption
 terr_animal_cons_cap <- aquatic_reliance %>%
-  filter(year == 2019) %>%
-  group_by(iso3c) %>%
+  filter(year %in% years) %>%
+  group_by(iso3c, year) %>%
   summarize(
     protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr),
     .groups = "drop"
-    )
+    ) %>%
+  group_by(iso3c) %>%
+  summarize(protein_consumed_kg_percap_peryr = mean(protein_consumed_kg_percap_peryr))
 
 animal_cons_cap <- terr_animal_cons_cap
 
 # Calculate aquatic animal consumption
 aquatic_animal_cons_cap <- aquatic_reliance %>%
-  filter(year == 2019, food_group == "aquatic") %>%
-  group_by(iso3c) %>%
+  filter(year %in% years, food_group == "aquatic") %>%
+  group_by(iso3c, year) %>%
   summarize(
     protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr),
     .groups = "drop"
-    )
+    ) %>%
+  group_by(iso3c) %>%
+  summarize(protein_consumed_kg_percap_peryr = mean(protein_consumed_kg_percap_peryr))
 
-# Calculate countries' aggregate aquatic animal protein reliance in 2019
+# Calculate countries' aggregate aquatic animal protein reliance in 2023
 aquatic_rel <- aquatic_animal_cons_cap %>%
   left_join(animal_cons_cap, by = "iso3c") %>%
   group_by(iso3c) %>%
@@ -3080,9 +3144,11 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
     assign(
       paste0(i, "_cap"),
       aquatic_reliance %>%
-        filter(year == 2019, food_group == "aquatic", method == i) %>%
+        filter(year %in% years, food_group == "aquatic", method == i) %>%
         group_by(iso3c) %>%
-        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
+        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr)) %>%
+        group_by(iso3c) %>%
+        summarize(protein_consumed_kg_percap_peryr = mean(protein_consumed_kg_percap_peryr))
     )
   }
   
@@ -3091,9 +3157,11 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
     assign(
       paste0(i, "_cap"),
       aquatic_reliance %>%
-        filter(year == 2019, food_group == "aquatic", consumption_source == i) %>%
+        filter(year %in% years, food_group == "aquatic", consumption_source == i) %>%
         group_by(iso3c) %>%
-        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
+        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr)) %>%
+        group_by(iso3c) %>%
+        summarize(protein_consumed_kg_percap_peryr = mean(protein_consumed_kg_percap_peryr))
     )
   }
   
@@ -3102,9 +3170,11 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
     assign(
       paste0(i, "_cap"),
       aquatic_reliance %>%
-        filter(year == 2019, food_group == "aquatic", habitat == i) %>%
+        filter(year %in% years, food_group == "aquatic", habitat == i) %>%
         group_by(iso3c) %>%
-        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
+        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr)) %>%
+        group_by(iso3c) %>%
+        summarize(protein_consumed_kg_percap_peryr = mean(protein_consumed_kg_percap_peryr))
     )
   }
   
@@ -3129,7 +3199,7 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
 saveRDS(response_vars, "../data/response_vars.rds")
 ```
 
-## Model: Hierarchical Bayesian regression
+## Bayesian Model
 
 Only run this code chunk if all models aren't already saved
 
@@ -3440,8 +3510,7 @@ panels <- lapply(seq_along(panel_names), function(i) {
   make_panel(df_sub,
              show_yaxis = show_y,
              left_col   = left_col,
-             title      = name,
-             tag        = letters[i])
+             title      = name)
 })
 
 # Centered x-axis label placed below the grid
@@ -3532,7 +3601,10 @@ plot <- cowplot::plot_grid(
   xlab_plot,
   ncol        = 1,
   rel_heights = c(1, 0.07)
-)
+) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+  suppressWarnings()
 
 # add on legend
 final_plot_w_legend <- cowplot::plot_grid(
@@ -3540,13 +3612,16 @@ final_plot_w_legend <- cowplot::plot_grid(
   legend_bayesian,
   ncol        = 1,
   rel_heights = c(1, 0.1)
-)
+) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+  suppressWarnings()
 
 # Print final plot
 print(final_plot_w_legend)
 
 ggsave(
-  filename = "../images/posteriors_partial_slopes.pdf",
+  filename = "../images/posteriors_partial_slopes_average.pdf",
   plot     = final_plot_w_legend,
   device   = cairo_pdf,
   width    = 5,
