@@ -725,8 +725,12 @@ for (i in regions) {
   # Supress warning - this warning only has to do with fonts, no data
   # or visualization is harmed via this warning
   legend_bars       <- extract_legend(p_bars) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
     suppressWarnings()
   legend_agg_counts <- extract_legend(p_agg_counts) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
     suppressWarnings()
 
   p_bars_nl       <- p_bars       + theme(legend.position = "none")
@@ -1764,8 +1768,7 @@ panels <- lapply(seq_along(panel_names), function(i) {
   make_panel(df_sub,
              show_yaxis = show_y,
              left_col   = left_col,
-             title      = name,
-             tag        = letters[i])
+             title      = name)
 })
 
 # Centered x-axis label placed below the grid
@@ -1869,7 +1872,7 @@ final_plot_w_legend <- cowplot::plot_grid(
 
 
 ggsave(
-  filename = "../images/SI/posteriors_partial_slopes_SI.pdf",
+  filename = "../images/SI/posteriors_partial_slopes_SI_average.pdf",
   plot     = final_plot_w_legend,
   device   = cairo_pdf,
   width    = 5,
@@ -2711,6 +2714,8 @@ combined_plot <- plot_grid(
   rel_widths = c(1,1.5),
   labels = c("B", "C")
   ) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
   suppressWarnings()
 
 
@@ -2722,6 +2727,8 @@ final_plot <- plot_grid(
   labels = "A",
   rel_widths = c(1,1.6)
   ) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
   suppressWarnings()
 
 ggsave(
