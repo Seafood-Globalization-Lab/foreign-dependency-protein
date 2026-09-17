@@ -3230,9 +3230,7 @@ all_outputs_exist <- all(
   })
 )
 
-
-
-# Initialize the progress bar
+# Initialize progress bar
 pb <- progress_bar$new(
   format = "  [:bar] :percent :elapsedfull",
   total = length(response_vars), # Number of models to run
