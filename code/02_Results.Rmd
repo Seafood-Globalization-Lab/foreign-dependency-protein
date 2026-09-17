@@ -1,5 +1,5 @@
 ---
-title: "02_results"
+title: "02_Results"
 author: "Connor Quiroz, Lana Huang, Christopher D. Golden, Sarah Glaser, and Jessica A. Gephart"
 date: "2025-09-05"
 output: html_document
