@@ -82,8 +82,8 @@ aquatic_fbs <- read.csv("../output/fao_fbs_aquatic_source.csv")
 ## Load in biophysical and socio-economic data as covariates that we use in the Bayesian model 
 
 ```{r load data}
-# Read in adaptive capacity data
-ac_df <- read_parquet("../data/e_s_ac_data_total.parquet") %>%
+# Read in socio-economic variables
+ac_df <- read_parquet("../data/covariates/e_s_ac_data_total.parquet") %>%
   filter(scenario == "ssp126") %>%
   select(
     -aa_reliance_pct,
@@ -2787,12 +2787,20 @@ make_inset <- function(q) {
     theme_minimal(base_size = 6) +
     theme(
       axis.title.x    = element_blank(),
-      axis.title.y    = if (show_y) element_text(size = 4.5, color = "black", family = family) else element_blank(),
+      axis.title.y    = if (show_y)
+        element_text(size = 4.5, color = "black", family = family)
+      else element_blank(),
       axis.text.x     = element_blank(),
-      axis.text.y     = if (show_y) element_text(size = 4.5, color = "black", family = family) else element_blank(),
-      axis.ticks.y    = if (show_y) element_line(linewidth = 0.2, color = "black") else element_blank(),
+      axis.text.y     = if (show_y)
+        element_text(size = 4.5, color = "black", family = family)
+      else element_blank(),
+      axis.ticks.y    = if (show_y)
+        element_line(linewidth = 0.2, color = "black") else
+          element_blank(),
       panel.grid      = element_blank(),
-      plot.background = element_rect(fill = scales::alpha("white", 0.75), color = NA),
+      plot.background = element_rect(
+        fill = scales::alpha("white", 0.75), color = NA
+        ),
       legend.position = "none",
       plot.margin     = margin(0, 0, 0, 0)
     )
@@ -2809,10 +2817,14 @@ shrink_x <- 0.18
 shrink_y <- 0.18
 
 p_with_insets <- p_scatter +
-  inset_element(p_q1, left = 1 - shrink_x, right = 1, bottom = 1 - shrink_y, top = 1) +
-  inset_element(p_q2, left = 0,             right = shrink_x, bottom = 1 - shrink_y, top = 1) +
-  inset_element(p_q3, left = 0,             right = shrink_x, bottom = 0,            top = shrink_y) +
-  inset_element(p_q4, left = 1 - shrink_x, right = 1,        bottom = 0,            top = shrink_y)
+  inset_element(
+    p_q1, left = 1 - shrink_x, right = 1, bottom = 1 - shrink_y, top = 1) +
+  inset_element(
+    p_q2, left = 0, right = shrink_x, bottom = 1 - shrink_y, top = 1) +
+  inset_element(
+    p_q3, left = 0, right = shrink_x, bottom = 0, top = shrink_y) +
+  inset_element(
+    p_q4, left = 1 - shrink_x, right = 1, bottom = 0, top = shrink_y)
 
 # Place colorbar and region legend side by side below the main panel
 legend_row <- cowplot::plot_grid(
@@ -3108,7 +3120,9 @@ terr_animal_cons_cap <- aquatic_reliance %>%
     .groups = "drop"
     ) %>%
   group_by(iso3c) %>%
-  summarize(protein_consumed_kg_percap_peryr = mean(protein_consumed_kg_percap_peryr))
+  summarize(
+    protein_consumed_kg_percap_peryr = mean(protein_consumed_kg_percap_peryr)
+    )
 
 animal_cons_cap <- terr_animal_cons_cap
 
@@ -3128,7 +3142,8 @@ aquatic_rel <- aquatic_animal_cons_cap %>%
   left_join(animal_cons_cap, by = "iso3c") %>%
   group_by(iso3c) %>%
   summarize(
-    prop_animal_protein = protein_consumed_kg_percap_peryr.x / protein_consumed_kg_percap_peryr.y,
+    prop_animal_protein = protein_consumed_kg_percap_peryr.x /
+      protein_consumed_kg_percap_peryr.y,
     .groups = "drop"
     )
 
@@ -3146,9 +3161,13 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
       aquatic_reliance %>%
         filter(year %in% years, food_group == "aquatic", method == i) %>%
         group_by(iso3c) %>%
-        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr)) %>%
+        summarize(
+          protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr)
+          ) %>%
         group_by(iso3c) %>%
-        summarize(protein_consumed_kg_percap_peryr = mean(protein_consumed_kg_percap_peryr))
+        summarize(
+          protein_consumed_kg_percap_peryr = mean(protein_consumed_kg_percap_peryr)
+          )
     )
   }
   
@@ -3157,11 +3176,19 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
     assign(
       paste0(i, "_cap"),
       aquatic_reliance %>%
-        filter(year %in% years, food_group == "aquatic", consumption_source == i) %>%
+        filter(
+          year %in% years, food_group == "aquatic", consumption_source == i
+          ) %>%
         group_by(iso3c) %>%
-        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr)) %>%
+        summarize(
+          protein_consumed_kg_percap_peryr =
+            sum(protein_consumed_kg_percap_peryr)
+          ) %>%
         group_by(iso3c) %>%
-        summarize(protein_consumed_kg_percap_peryr = mean(protein_consumed_kg_percap_peryr))
+        summarize(
+          protein_consumed_kg_percap_peryr =
+            mean(protein_consumed_kg_percap_peryr)
+          )
     )
   }
   
@@ -3172,9 +3199,15 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
       aquatic_reliance %>%
         filter(year %in% years, food_group == "aquatic", habitat == i) %>%
         group_by(iso3c) %>%
-        summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr)) %>%
+        summarize(
+          protein_consumed_kg_percap_peryr =
+            sum(protein_consumed_kg_percap_peryr)
+          ) %>%
         group_by(iso3c) %>%
-        summarize(protein_consumed_kg_percap_peryr = mean(protein_consumed_kg_percap_peryr))
+        summarize(
+          protein_consumed_kg_percap_peryr =
+            mean(protein_consumed_kg_percap_peryr)
+          )
     )
   }
   
@@ -3187,9 +3220,10 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
       left_join(animal_cons_cap, by = "iso3c") %>%
       group_by(iso3c) %>%
       summarize(
-        prop_animal_protein = protein_consumed_kg_percap_peryr.x /protein_consumed_kg_percap_peryr.y,
-        .groups = "keep")
-  )
+        prop_animal_protein = protein_consumed_kg_percap_peryr.x /
+          protein_consumed_kg_percap_peryr.y,
+        .groups = "keep"
+        ))
   
   response_vars <- c(response_vars, paste0(i, "_rel"))
   
@@ -3274,9 +3308,6 @@ if (all_outputs_exist) {
       select(iso3c, 2, all_of(predictors), realm) %>%
       drop_na() %>%
       filter(realm != "")
-    
-    # Save used countries in a vector
-    saveRDS(joined_df$iso3c,"../data/model_countries")
 
     # Design matrix — z-scored predictors
     X <- joined_df %>%
@@ -3364,7 +3395,9 @@ for (i in seq_along(response_vars)) {
     permuted = TRUE
   )
   beta_global <- x$beta
-  X           <- readRDS(file.path(base_path, paste0("X_", response_vars[i], ".rds")))
+  X           <- readRDS(
+    file.path(base_path, paste0("X_", response_vars[i], ".rds"))
+    )
 
   n_iter <- nrow(beta_global)
   K      <- ncol(beta_global)
@@ -3489,13 +3522,18 @@ make_panel <- function(df, show_yaxis = FALSE, title = "", tag = "",
       panel.grid.major.x = element_line(
         color = scales::alpha("black", 0.15), linewidth = 0.15
       ),
-      axis.text.x        = element_text(size = 5.5, color = "black", family = family),
+      axis.text.x        = element_text(
+        size = 5.5, color = "black", family = family
+        ),
       axis.title         = element_blank(),
       plot.margin        = margin(4, 6, 4, 6),
-      axis.text.y        = if (show_yaxis) element_text(size = 5.5, color = "black", family = family,
-                                                         hjust = 1) else element_blank(),
+      axis.text.y        = if (show_yaxis) 
+        element_text(size = 5.5, color = "black", family = family, hjust = 1)
+      else element_blank(),
       axis.ticks.y       = element_blank(),
-      axis.ticks.x = element_line(linewidth = 0.15, color = scales::alpha("black", 0.15))
+      axis.ticks.x = element_line(
+        linewidth = 0.15, color = scales::alpha("black", 0.15)
+        )
     )
 }
 
@@ -3524,7 +3562,11 @@ xlab_plot <- ggplot() +
 
 
 # Create custom legend for plot
-legend_bayesian_plot <- data.frame(group = c("ci50", "ci80", "ci95"), type = c("med", "med", "med"), x = c(1,1,1), y = c(2,2,2)) %>%
+legend_bayesian_plot <- data.frame(
+  group = c("ci50", "ci80", "ci95"),
+  type = c("med", "med", "med"),
+  x = c(1,1,1), y = c(2,2,2)
+  ) %>%
   ggplot(aes(x = x, y = y, fill = group)) +
   geom_col(aes()) +
   geom_point(aes(color = type), shape = 21,
@@ -3555,7 +3597,9 @@ legend_bayesian_plot <- data.frame(group = c("ci50", "ci80", "ci95"), type = c("
                         
                       ))) +
   theme(legend.position       = "bottom",
-      legend.title            = element_text(size = 7, face = "bold", family = family),
+      legend.title            = element_text(
+        size = 7, face = "bold", family = family
+        ),
       legend.text             = element_text(size = 6, family = family),
       legend.key.size         = unit(0.3, "cm"),
       legend.box              = "vertical",
@@ -3563,7 +3607,9 @@ legend_bayesian_plot <- data.frame(group = c("ci50", "ci80", "ci95"), type = c("
       legend.margin           = margin(t = 1, b = 0),
       legend.box.margin       = margin(t = -2, b = -2),
       legend.background       = element_rect(fill = "transparent", color = NA),
-      legend.box.background   = element_rect(fill = "transparent", color = NA)) +
+      legend.box.background   = element_rect(
+        fill = "transparent", color = NA)
+      ) +
   # labs(fill = "Credibility intervals") +
   scale_fill_manual(labels = c("50%", "80%", "95%"),
                     name = "Bayesian credibility intervals",
@@ -3582,7 +3628,9 @@ legend_bayesian_plot <- data.frame(group = c("ci50", "ci80", "ci95"), type = c("
 legend_bayesian <- cowplot::get_plot_component(
   legend_bayesian_plot, "guide-box", return_all = TRUE
 )
-legend_bayesian <- Filter(function(x) !inherits(x, "zeroGrob"), legend_bayesian)[[1]]
+legend_bayesian <- Filter(
+  function(x) !inherits(x, "zeroGrob"), legend_bayesian
+  )[[1]]
 
 # Assemble 3×3 grid
 grid_plot <- (

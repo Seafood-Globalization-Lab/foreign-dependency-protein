@@ -83,7 +83,7 @@ consumption_full <- read_parquet("../data/consumption_full.parquet")
 ```{r convert FAO data to .parquet}
 if(!file.exists("../output/fao_food.parquet")) {
   # Read in FAO consumer data
-fao_food <- read_csv("../data/FoodBalanceSheets_E_All_Data/FoodBalanceSheets_E_All_Data_2026.csv")
+fao_food <- read_csv("../data/FAO_FBS/FoodBalanceSheets_E_All_Data/FoodBalanceSheets_E_All_Data_2026.csv")
 
 # Save to .parquet
 write_parquet(fao_food, "../output/fao_food.parquet")
@@ -91,7 +91,7 @@ write_parquet(fao_food, "../output/fao_food.parquet")
 
 if (!file.exists("../output/fao_historical.parquet")) {
   # Read in FAO historical data
-fao_historical <- read_csv("../data/FoodBalanceSheetsHistoric_E_All_Data/FoodBalanceSheetsHistoric_E_All_Data.csv") %>%
+fao_historical <- read_csv("../data/FAO_FBS/FoodBalanceSheetsHistoric_E_All_Data/FoodBalanceSheetsHistoric_E_All_Data.csv") %>%
   # Use area codes to correct names with special characters
   mutate(Area = case_when(
     `Area Code` == 107 ~ "Cote d'Ivoire",
