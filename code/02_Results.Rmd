@@ -73,7 +73,7 @@ base_path <- file.path(
 
 ```{r read in FAO derived data}
 # Read in aquatic reliance data
-aquatic_reliance <- read.csv("../output/fao_aquatic_reliance_source.csv")
+aquatic_reliance <- read.csv("../output/fao_aquatic_dominance_source.csv")
 
 # Read in FAO sourcing data
 aquatic_fbs <- read.csv("../output/fao_fbs_aquatic_source.csv")
