@@ -1,6 +1,6 @@
 ---
 title: "01_Analysis"
-author: "Connor Quiroz and Jessica Gephart"
+author: "Connor Quiroz, Lana Huang, Christopher D. Golden, Sarah Glaser, and Jessica A. Gephart"
 date: "2025-09-05"
 output: html_document
 ---
