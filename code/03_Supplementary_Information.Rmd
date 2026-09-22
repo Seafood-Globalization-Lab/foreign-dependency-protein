@@ -49,11 +49,11 @@ family = "Bahnschrift"
 
 # Read in data
 
-### Read in aquatic reliance data & FAO population data
+### Read in aquatic dominance data & FAO population data
 
 ```{r read in FAO derived data}
-# Read in aquatic reliance data
-aquatic_reliance <- read.csv("../output/fao_aquatic_reliance_source.csv")
+# Read in aquatic dominance data
+aquatic_dominance <- read.csv("../output/fao_aquatic_dominance_source.csv")
 
 # Read in FAO sourcing data
 aquatic_fbs <- read.csv("../output/fao_fbs_aquatic_source.csv")
@@ -65,7 +65,7 @@ This code chunk is also in the main results. This code chunk extracts the name o
 
 ```{r acquire animal consumption data to be fed through analysis}
 # Calculate animal consumption
-terr_animal_cons_cap <- aquatic_reliance %>%
+terr_animal_cons_cap <- aquatic_dominance %>%
   filter(year == 2019) %>%
   group_by(iso3c) %>%
   summarize(
@@ -76,7 +76,7 @@ terr_animal_cons_cap <- aquatic_reliance %>%
 animal_cons_cap <- terr_animal_cons_cap
 
 # Calculate aquatic animal consumption
-aquatic_animal_cons_cap <- aquatic_reliance %>%
+aquatic_animal_cons_cap <- aquatic_dominance %>%
   filter(year == 2019, food_group == "aquatic") %>%
   group_by(iso3c) %>%
   summarize(
@@ -84,7 +84,7 @@ aquatic_animal_cons_cap <- aquatic_reliance %>%
     .groups = "drop"
     )
 
-# Calculate countries' aggregate aquatic animal protein reliance in 2019
+# Calculate countries' aggregate aquatic animal protein dominance in 2019
 aquatic_rel <- aquatic_animal_cons_cap %>%
   left_join(animal_cons_cap, by = "iso3c") %>%
   group_by(iso3c) %>%
@@ -104,7 +104,7 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
   if (i %in% c("capture", "aquaculture")) {
     assign(
       paste0(i, "_cap"),
-      aquatic_reliance %>%
+      aquatic_dominance %>%
         filter(year == 2019, food_group == "aquatic", method == i) %>%
         group_by(iso3c) %>%
         summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
@@ -115,7 +115,7 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
   if (i %in% c("domestic", "foreign")) {
     assign(
       paste0(i, "_cap"),
-      aquatic_reliance %>%
+      aquatic_dominance %>%
         filter(year == 2019, food_group == "aquatic", consumption_source == i) %>%
         group_by(iso3c) %>%
         summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
@@ -126,7 +126,7 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
   if (i %in% c("marine", "inland")) {
     assign(
       paste0(i, "_cap"),
-      aquatic_reliance %>%
+      aquatic_dominance %>%
         filter(year == 2019, food_group == "aquatic", habitat == i) %>%
         group_by(iso3c) %>%
         summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr))
@@ -135,7 +135,7 @@ for (i in c("capture", "aquaculture", "domestic", "foreign", "marine", "inland")
   
   response_vars <- c(response_vars, paste0(i, "_cap"))
   
-  # Calculate reliance by method, production source, or habitat
+  # Calculate dominance by method, production source, or habitat
   assign(
     paste0(i, "_rel"),
     get(paste0(i, "_cap")) %>%
@@ -191,19 +191,19 @@ base_path <- file.path(
 ```
 
 
-# RQ 1a: How do aquatic food reliance trends disaggregated by source differ from aggregate aquatic food reliance?
+# RQ 1a: How do aquatic food dominance trends disaggregated by source differ from aggregate aquatic food dominance?
 
 ## SI figure: Multi metric plot with 4 panels created for each individual region
 
 The first row of the figure has 2 panels, and the following two rows have 1 panel, making a 4 panel plot. The regions include Africa, Asia, South America, North America, Europe, and Oceania.
 
-The top left panel highlights the number of countries with increasing / decreasing *aggregate* aquatic animal reliance
+The top left panel highlights the number of countries with increasing / decreasing *aggregate* aquatic animal dominance
 
-The top right panel highlights the number of countries with increasing / decreasing *disaggregate* aquatic animal reliance. Where the y-axis represents the disaggregated production sources for aquatic foods.
+The top right panel highlights the number of countries with increasing / decreasing *disaggregate* aquatic animal dominance. Where the y-axis represents the disaggregated production sources for aquatic foods.
 
-The middle panel measures the 2020 aggregate aquatic animal reliance for each country.
+The middle panel measures the 2020 aggregate aquatic animal dominance for each country.
 
-The bottom panel visualizes for each country in each region the average annual change in their aggregate aquatic animal reliance, with separate colors as stacked bars representing the disaggregate reliance.
+The bottom panel visualizes for each country in each region the average annual change in their aggregate aquatic animal dominance, with separate colors as stacked bars representing the disaggregate dominance.
 
 ```{r individual region production contribution}
 # shared color palettes
@@ -214,8 +214,8 @@ pal_direction <- c(
   "increasing" = "#8FACB4"
 )
 
-# Neutral fill for reliance bar chart
-col_reliance_bar <- "#606060"
+# Neutral fill for dominance bar chart
+col_dominance_bar <- "#606060"
 
 
 # Shared base theme
@@ -309,8 +309,8 @@ agg_point <- function() {
 
 # FAOSTAT Food balance Sheets are divided into old methodology (-2013)
 # and new methodology (2010-). This creates a jump in the data sources in
-# aquatic animal protein reliance. To account for this, we will forward cast
-# old FAO reliance values to new years and back cast new FAO reliance
+# aquatic animal protein dominance. To account for this, we will forward cast
+# old FAO dominance values to new years and back cast new FAO dominance
 # values to old years. Then, we will calculate the rate of change across:
 
 # 1. obs - obs
@@ -319,7 +319,7 @@ agg_point <- function() {
 # 4. back cast - forward cast
 
 # We will take the maximum and minimum values of these as the ranges for
-# rate of change in aquatic animal reliance, and will plot the midpoint of these
+# rate of change in aquatic animal dominance, and will plot the midpoint of these
 # ranges.
 
 # Define year ranges for projections (add this before the existing
@@ -339,8 +339,8 @@ observed_ranges <- tibble(
 
 # First we will exclude any countries that have short time series - these short
 # time series may have exaggerated rates of change in the aquatic animal protein
-# reliance
-iso3c_with_at_least_5_yrs <- aquatic_reliance %>%
+# dominance
+iso3c_with_at_least_5_yrs <- aquatic_dominance %>%
   # Remove overlapping FBS years
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
          food_group == "aquatic") %>%
@@ -353,10 +353,10 @@ iso3c_with_at_least_5_yrs <- aquatic_reliance %>%
   # Only get countries with over five years of data
   pull(iso3c)
 
-############ RUN THIS ANALYSIS ON DISAGGREGATE RELIANCE
+############ RUN THIS ANALYSIS ON DISAGGREGATE dominance
 
-# Calculate country aquatic animal protein reliance by habitat and method
-disagg_hab_met <- aquatic_reliance %>%
+# Calculate country aquatic animal protein dominance by habitat and method
+disagg_hab_met <- aquatic_dominance %>%
    # Remove overlapping years, prioritizing new years
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
          food_group == "aquatic") %>%
@@ -406,7 +406,7 @@ proj_hab_met <- coefs_hab_met %>%
     type
     )
 
-# Obtain observed disaggregate aquatic animal protein reliance data
+# Obtain observed disaggregate aquatic animal protein dominance data
 obs_hab_met <- disagg_hab_met %>%
   filter(data_source == "old FBS" & year <= 2009 |
            data_source == "new FBS" & year >= 2010) %>%
@@ -492,7 +492,7 @@ back_forward <- bind_rows(
            type == "backcast") %>%
   calc_roc_disagg(type = "back_forward")
 
-# For each countries' trend in aquatic animal protein reliance
+# For each countries' trend in aquatic animal protein dominance
 # across habitat and method, we will take the midpoint of the
 # min and max rate of change and use that in the plot.
 disagg <- bind_rows(
@@ -514,13 +514,13 @@ disagg <- bind_rows(
   mutate(group_label = paste0(habitat, " ", method),
          term = "year")
 
-############ AGGREGATE RELIANCE
+############ AGGREGATE dominance
 
-# Because slopes are additive to the aggregate reliance slope, we add the best
+# Because slopes are additive to the aggregate dominance slope, we add the best
 # fitting disaggregate slopes for each country to calculate the aggregate
-# change in aquatic animal protein reliance
+# change in aquatic animal protein dominance
 
-# Calculate country aggregate aquatic animal protein reliance
+# Calculate country aggregate aquatic animal protein dominance
 agg_estimate <- disagg %>%
   group_by(iso3c) %>%
   summarize(agg_estimate = sum(estimate))
@@ -584,12 +584,12 @@ for (i in regions) {
             "#D3AF55",
             "#A8A8A8"
           )))) +
-    labs(x = "Average annual change in aquatic animal protein reliance (%; 1996–2023)",
+    labs(x = "Average annual change in aquatic animal protein dominance (%; 1996–2023)",
          color = "") +
     theme_si(show_y_title = FALSE, show_legend = TRUE) +
-    # Manually add black and white dot "aggregate reliance" onto legend
+    # Manually add black and white dot "aggregate dominance" onto legend
     scale_color_manual(values = "white",
-                     label = "aggregate reliance",
+                     label = "aggregate dominance",
                      guide = guide_legend(
                        order = 2,
                        override.aes = list(
@@ -632,8 +632,8 @@ for (i in regions) {
       "decreasing" = "#b8cb5b",
       "increasing" = "#8FACB4"
       ),
-    name   = "Change in aggregate\naquatic animal protein\nreliance (1996-2023)",
-    labels = c("Decrease in reliance", "Increase in reliance"),
+    name   = "Change in aggregate\naquatic animal protein\ndominance (1996-2023)",
+    labels = c("Decrease in dominance", "Increase in dominance"),
     guide = guide_legend(
       nrow = 2,
       override.aes = list(
@@ -694,8 +694,8 @@ for (i in regions) {
     theme_si(show_y_title = FALSE, show_legend = FALSE) +
     theme(panel.grid.major.y = element_blank())
 
-  # Panel 4: 2020 reliance, ordered by rate of change
-  p_reliance <- aquatic_reliance %>%
+  # Panel 4: 2020 dominance, ordered by rate of change
+  p_dominance <- aquatic_dominance %>%
     filter(
       year == 2023,
       food_group == "aquatic",
@@ -710,8 +710,8 @@ for (i in regions) {
       x = fct_reorder(iso3c, agg_estimate),
       y = prop_animal_protein * 100
     )) +
-    geom_col(fill = col_reliance_bar, width = 0.7) +
-    labs(y = "Aquatic animal protein\nreliance (%; 2023)") +
+    geom_col(fill = col_dominance_bar, width = 0.7) +
+    labs(y = "Aquatic animal protein\ndominance (%; 2023)") +
     theme_si(show_x_title = FALSE, show_legend = FALSE) +
     theme(
       axis.text.x        = element_text(size = 4.5, angle = 45, hjust = 1),
@@ -774,7 +774,7 @@ final_plot <- cowplot::plot_grid(
     title_panel,
     divider_panel,
     top_counts,
-    p_reliance,
+    p_dominance,
     p_bars_nl,
     legend_row,
     ncol        = 1,
@@ -799,11 +799,11 @@ final_plot <- cowplot::plot_grid(
 
 ## SI figure: Maps in aggregate by source
 
-```{r aquatic_reliance_maps}
+```{r aquatic_dominance_maps}
 # Single small addition: tightens the vertical gap between the two
 # stacked (domestic/foreign) maps by shrinking legend box spacing and
 # panel margins. Nothing else about your layout is changed.
-reliance_scale <- function(limit = disagg_max, show_title = TRUE) {
+dominance_scale <- function(limit = disagg_max, show_title = TRUE) {
   scale_fill_gradientn(
     colors  = c("#F7FCF0", "#7BCCC4", "#2B8CBE", "#08306B"),
     limits  = c(0, limit),
@@ -824,8 +824,8 @@ reliance_scale <- function(limit = disagg_max, show_title = TRUE) {
   )
 }
 
-# set up aquatic reliance dataframe so everything is in percents
-aquatic_reliance_pct <- aquatic_reliance %>%
+# set up aquatic dominance dataframe so everything is in percents
+aquatic_dominance_pct <- aquatic_dominance %>%
   mutate(perc_animal_protein = prop_animal_protein * 100)
 
 # Set up plot themes
@@ -845,7 +845,7 @@ tight_spacing <- theme(
 ################################### Inland aquaculture
 
 ######### Domestic
-dia <- aquatic_reliance_pct %>%
+dia <- aquatic_dominance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "inland",
          method == "aquaculture") %>%
@@ -853,13 +853,13 @@ dia <- aquatic_reliance_pct %>%
 
 p_dia <- dia %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(dia$perc_animal_protein), show_title = FALSE) +
+  dominance_scale(limit = max(dia$perc_animal_protein), show_title = FALSE) +
   labs(fill = "", title = "Domestic inland aquaculture") +
   tight_spacing +
   theme_map_middle_bottom_rows
 ######### Foreign
 # Gather data
-fia <- aquatic_reliance_pct %>%
+fia <- aquatic_dominance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "inland",
          method == "aquaculture") %>%
@@ -868,7 +868,7 @@ fia <- aquatic_reliance_pct %>%
 # Plot data
 p_fia <- fia %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(fia$perc_animal_protein), show_title = FALSE) +
+  dominance_scale(limit = max(fia$perc_animal_protein), show_title = FALSE) +
   labs(fill = "", title = "Foreign inland aquaculture") +
   tight_spacing +
   theme_map_middle_bottom_rows
@@ -879,7 +879,7 @@ inaq <- plot_grid(p_dia, p_fia, nrow = 2) # Inland aquaculture plot (D + F)
 
 ######### Domestic
 # Gather data
-dic <- aquatic_reliance_pct %>%
+dic <- aquatic_dominance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "inland",
          method == "capture") %>%
@@ -888,14 +888,14 @@ dic <- aquatic_reliance_pct %>%
 # Plot data
 p_dic <- dic %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(dic$perc_animal_protein), show_title = FALSE) +
+  dominance_scale(limit = max(dic$perc_animal_protein), show_title = FALSE) +
   labs(fill = "", title = "Domestic inland capture") +
   tight_spacing +
   theme_map_middle_bottom_rows
 
 ######### Foreign
 # Gather data
-fic <- aquatic_reliance_pct %>%
+fic <- aquatic_dominance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "inland",
          method == "capture") %>%
@@ -904,7 +904,7 @@ fic <- aquatic_reliance_pct %>%
 # Plot data
 p_fic <- fic %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(fic$perc_animal_protein), show_title = FALSE) +
+  dominance_scale(limit = max(fic$perc_animal_protein), show_title = FALSE) +
   labs(fill = "", title = "Foreign inland capture") +
   tight_spacing + theme_map_middle_bottom_rows
 
@@ -914,7 +914,7 @@ incap <- plot_grid(p_dic, p_fic, nrow = 2) # Inland capture plot (D + F)
 
 ######### Domestic
 # Gather data
-dma <- aquatic_reliance_pct %>%
+dma <- aquatic_dominance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "marine",
          method == "aquaculture") %>%
@@ -922,13 +922,13 @@ dma <- aquatic_reliance_pct %>%
 # Plot data
 p_dma <- dma %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(dma$perc_animal_protein), show_title = FALSE) +
+  dominance_scale(limit = max(dma$perc_animal_protein), show_title = FALSE) +
   labs(fill = "", title = "Domestic marine aquaculture") +
   tight_spacing + theme_map_middle_bottom_rows
 
 ######### Foreign
 # Gather data
-fma <- aquatic_reliance_pct %>%
+fma <- aquatic_dominance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "marine",
          method == "aquaculture") %>%
@@ -937,7 +937,7 @@ fma <- aquatic_reliance_pct %>%
 # Plot data
 p_fma <- fma %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(fma$perc_animal_protein), show_title = FALSE) +
+  dominance_scale(limit = max(fma$perc_animal_protein), show_title = FALSE) +
   labs(fill = "", title = "Foreign marine aquaculture") +
   tight_spacing +
   theme_map_middle_bottom_rows
@@ -948,7 +948,7 @@ maaq <- plot_grid(p_dma, p_fma, nrow = 2) # Marine aquaculture plot (D + F)
 
 ######### Domestic
 # Gather data
-dmc <- aquatic_reliance_pct %>%
+dmc <- aquatic_dominance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "marine",
          method == "capture") %>%
@@ -957,14 +957,14 @@ dmc <- aquatic_reliance_pct %>%
 # Plot data
 p_dmc <- dmc %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = dmc$perc_animal_protein %>% max(), show_title = FALSE) +
+  dominance_scale(limit = dmc$perc_animal_protein %>% max(), show_title = FALSE) +
   labs(fill = "", title = "Domestic marine capture") +
   tight_spacing +
   theme_map_middle_bottom_rows
 
 ######### Foreign
 # Gather data
-fmc <- aquatic_reliance_pct %>%
+fmc <- aquatic_dominance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "marine",
          method == "capture") %>%
@@ -973,22 +973,22 @@ fmc <- aquatic_reliance_pct %>%
 # Plot data
 p_fmc <- fmc %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = fmc$perc_animal_protein %>% max(), show_title = FALSE) +
+  dominance_scale(limit = fmc$perc_animal_protein %>% max(), show_title = FALSE) +
   labs(fill = " ", title = "Foreign marine capture") +
   tight_spacing + theme_map_middle_bottom_rows
 
 macap <- plot_grid(p_dmc, p_fmc, nrow = 2) # Marine capture plot (F + D)
 
-agg_rel <- aquatic_reliance_pct %>%
+agg_rel <- aquatic_dominance_pct %>%
   filter(year == 2023,
          food_group == "aquatic") %>%
   group_by(iso3c) %>%
   summarize(perc_animal_protein = sum(perc_animal_protein))
-# Aggregate reliance plot
+# Aggregate dominance plot
 p_agg_rel <- agg_rel %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = agg_rel$perc_animal_protein %>% max()) +
-  labs(fill = "Aquatic animal protein reliance (%)") +
+  dominance_scale(limit = agg_rel$perc_animal_protein %>% max()) +
+  labs(fill = "Aquatic animal protein dominance (%)") +
   theme(plot.title   = element_text(family = family),
         legend.title = element_text(family = family),
         legend.text  = element_text(family = family))
@@ -998,7 +998,7 @@ bottom_half <- plot_grid(macap, incap, maaq, inaq, ncol = 4)
 final_plot <- plot_grid(p_agg_rel, bottom_half, nrow = 2, rel_heights = c(0.5, 1))
 
 ggsave(
-  filename = "../images/SI/aquatic_animal_protein_reliance_maps.pdf",
+  filename = "../images/SI/aquatic_animal_protein_dominance_maps.pdf",
   plot     = final_plot,
   device   = cairo_pdf,
   width    = 7.5,
@@ -1008,7 +1008,7 @@ ggsave(
 ```
 
 ```{r}
-dia <- aquatic_reliance_pct %>%
+dia <- aquatic_dominance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "inland",
          method == "aquaculture") %>%
@@ -1016,10 +1016,10 @@ dia <- aquatic_reliance_pct %>%
 
 p_dia <- dia %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(dia$perc_animal_protein)) +
+  dominance_scale(limit = max(dia$perc_animal_protein)) +
   labs(fill = "", title = "Domestic inland aquaculture")
 
-fia <- aquatic_reliance_pct %>%
+fia <- aquatic_dominance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "inland",
          method == "aquaculture") %>%
@@ -1027,13 +1027,13 @@ fia <- aquatic_reliance_pct %>%
 
 p_fia <- fia %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(fia$perc_animal_protein)) +
+  dominance_scale(limit = max(fia$perc_animal_protein)) +
   labs(fill = "", title = "Foreign inland aquaculture")
 
 # Inland aquaculture plot
 inaq <- plot_grid(p_dia, p_fia, nrow = 2)
 
-dic <- aquatic_reliance_pct %>%
+dic <- aquatic_dominance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "inland",
          method == "capture") %>%
@@ -1041,10 +1041,10 @@ dic <- aquatic_reliance_pct %>%
 
 p_dic <- dic %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(dic$perc_animal_protein)) +
+  dominance_scale(limit = max(dic$perc_animal_protein)) +
   labs(fill = "", title = "Domestic inland capture")
 
-fic <- aquatic_reliance_pct %>%
+fic <- aquatic_dominance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "inland",
          method == "capture") %>%
@@ -1052,13 +1052,13 @@ fic <- aquatic_reliance_pct %>%
 
 p_fic <- fic %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(fic$perc_animal_protein)) +
+  dominance_scale(limit = max(fic$perc_animal_protein)) +
   labs(fill = "", title = "Foreign inland capture")
 
 # Inland capture plot
 incap <- plot_grid(p_dic, p_fic, nrow = 2)
 
-dma <- aquatic_reliance_pct %>%
+dma <- aquatic_dominance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "marine",
          method == "aquaculture") %>%
@@ -1066,10 +1066,10 @@ dma <- aquatic_reliance_pct %>%
 
 p_dma <- dma %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(dma$perc_animal_protein)) +
+  dominance_scale(limit = max(dma$perc_animal_protein)) +
   labs(fill = "", title = "Domestic marine aquaculture")
 
-fma <- aquatic_reliance_pct %>%
+fma <- aquatic_dominance_pct %>%
   filter(consumption_source == "foreign",
          habitat == "marine",
          method == "aquaculture") %>%
@@ -1077,13 +1077,13 @@ fma <- aquatic_reliance_pct %>%
 
 p_fma <- fma %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = max(fma$perc_animal_protein)) +
+  dominance_scale(limit = max(fma$perc_animal_protein)) +
   labs(fill = "", title = "Foreign marine aquaculture")
 
 # Marine aquaculture plot
 maaq <- plot_grid(p_dma, p_fma, nrow = 2)
 
-dmc <- aquatic_reliance_pct %>%
+dmc <- aquatic_dominance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "marine",
          method == "capture") %>%
@@ -1091,10 +1091,10 @@ dmc <- aquatic_reliance_pct %>%
 
 p_dmc <- dmc %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = dmc$perc_animal_protein %>% max()) +
+  dominance_scale(limit = dmc$perc_animal_protein %>% max()) +
   labs(fill = "", title = "Domestic marine capture")
 
-fmc <- aquatic_reliance_pct %>%
+fmc <- aquatic_dominance_pct %>%
   filter(consumption_source == "domestic",
          habitat == "marine",
          method == "capture") %>%
@@ -1102,7 +1102,7 @@ fmc <- aquatic_reliance_pct %>%
 
 p_fmc <- fmc %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = fmc$perc_animal_protein %>% max()) +
+  dominance_scale(limit = fmc$perc_animal_protein %>% max()) +
   labs(fill = "", title = "Foreign marine capture")
 
 # Marine capture plot
@@ -1110,18 +1110,18 @@ macap <- plot_grid(p_dmc, p_fmc, nrow = 2)
 
 agg_rel %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = agg_rel$perc_animal_protein %>% max())
+  dominance_scale(limit = agg_rel$perc_animal_protein %>% max())
 
 
-agg_rel <- aquatic_reliance_pct %>%
+agg_rel <- aquatic_dominance_pct %>%
   filter(year == 2020,
          food_group == "aquatic") %>%
   group_by(iso3c) %>%
   summarize(perc_animal_protein = sum(perc_animal_protein))
-# Aggregate reliance plot
+# Aggregate dominance plot
 p_agg_rel <- agg_rel %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  reliance_scale(limit = agg_rel$perc_animal_protein %>% max())
+  dominance_scale(limit = agg_rel$perc_animal_protein %>% max())
 
 # Plot layout:
 
@@ -1130,7 +1130,7 @@ bottom_half <- plot_grid(macap, incap, maaq, inaq, ncol = 4)
 final_plot <- plot_grid(p_agg_rel,bottom_half, nrow = 2, rel_heights = c(0.5,1)) 
 
 # ggsave(
-#   filename = "../images/SI/aquatic_reliance_map2.pdf",
+#   filename = "../images/SI/aquatic_dominance_map2.pdf",
 #   plot     = final_plot,
 #   device   = cairo_pdf,
 #   width    = 7.5,
@@ -1140,7 +1140,7 @@ final_plot <- plot_grid(p_agg_rel,bottom_half, nrow = 2, rel_heights = c(0.5,1))
 ```
 
 
-# RQ 1b: How does aquatic animal reliance change with the relative contribution of aquatic versus terrestrial animal consumption
+# RQ 1b: How does aquatic animal dominance change with the relative contribution of aquatic versus terrestrial animal consumption
 
 ## SI Figure: Proportion of countries in each quadrant by region
 
@@ -1165,7 +1165,7 @@ observed_ranges <- tibble(
 ##### -------------------------------- PROBLEM:
 
 # FAOSTAT Food balance Sheets are divided into old methodology (-2013) and new methodology (2010-). This creates a jump in the data sources in
-# aquatic animal protein reliance. To account for this, we will forward cast old FAO reliance values to new years and back cast new FAO reliance
+# aquatic animal protein dominance. To account for this, we will forward cast old FAO dominance values to new years and back cast new FAO dominance
 # values to old years. Then, we will calculate the rate of change across:
 
 # 1. obs - obs
@@ -1173,13 +1173,13 @@ observed_ranges <- tibble(
 # 3. back cast - obs
 # 4. back cast - forward cast
 
-# We will take the maximum and minimum values of these as the ranges for rate of change in aquatic animal reliance, and will plot the midpoint of these
+# We will take the maximum and minimum values of these as the ranges for rate of change in aquatic animal dominance, and will plot the midpoint of these
 # ranges.
 
 ######### AQUATIC ANIMAL PROTEIN CONSUMPTION RATE OF CHANGE (1996-2023)
 
-# Calculate country aggregate aquatic animal protein reliance
-aquatic_protein_quant <-  aquatic_reliance %>%
+# Calculate country aggregate aquatic animal protein dominance
+aquatic_protein_quant <-  aquatic_dominance %>%
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"), food_group == "aquatic") %>%
   group_by(data_source, iso3c, year) %>%
   summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr, na.rm = TRUE),
@@ -1219,7 +1219,7 @@ proj_aq_cons <- coefs_aq_cons %>%
   left_join(observed_ranges, by = "data_source") %>%
   filter(year < min_year | year > max_year)
 
-# Obtain observed aggregate aquatic animal protein reliance data
+# Obtain observed aggregate aquatic animal protein dominance data
 obs_aq_cons <- aquatic_protein_quant %>%
   filter(data_source == "old FBS" & year <= 2009 |
            data_source == "new FBS" & year >= 2010) %>%
@@ -1272,7 +1272,7 @@ back_forward <- bind_rows(
   calc_roc_agg(type = "back_forward", var_name = "protein_consumed_kg_percap_peryr")
 
 
-# For each countries' trend in aggregate aquatic animal protein reliance
+# For each countries' trend in aggregate aquatic animal protein dominance
 # we will take the midpoint of the min and max rate of
 # change and use that in the plot.
 aquatic_protein_quant <- bind_rows(obs_obs,
@@ -1284,8 +1284,8 @@ aquatic_protein_quant <- bind_rows(obs_obs,
 
 ######### TERRESTRIAL ANIMAL PROTEIN CONSUMPTION RATE OF CHANGE (1996-2023)
 
-# Calculate country aggregate aquatic animal protein reliance
-terrestrial_protein_quant <-  aquatic_reliance %>%
+# Calculate country aggregate aquatic animal protein dominance
+terrestrial_protein_quant <-  aquatic_dominance %>%
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"), food_group == "terrestrial") %>%
   group_by(data_source, iso3c, year) %>%
   summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr, na.rm = TRUE),
@@ -1325,7 +1325,7 @@ proj_terr_cons <- coefs_terr_cons %>%
   left_join(observed_ranges, by = "data_source") %>%
   filter(year < min_year | year > max_year)
 
-# Obtain observed aggregate aquatic animal protein reliance data
+# Obtain observed aggregate aquatic animal protein dominance data
 obs_terr_cons <- terrestrial_protein_quant %>%
   filter(data_source == "old FBS" & year <= 2009 |
            data_source == "new FBS" & year >= 2010) %>%
@@ -1341,6 +1341,25 @@ obs_terr_cons <- terrestrial_protein_quant %>%
 # back_forward - back casted to forward casted
 
 # Calculate four different types of rate of change for disaggregate:
+
+calc_roc_agg <- function(data, type = type, var_name = "prop_animal_protein") {
+  
+  data %>%
+  group_by(iso3c) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(!!sym(var_name) ~ year, data = .x)),
+    tidy  = map(model, broom::tidy)
+  ) %>%
+  unnest(tidy) %>%
+  filter(term == "year") %>%
+  mutate(group_label = "aggregate") %>%
+  drop_na(estimate) %>%
+  group_by(group_label) %>%
+  ungroup() %>%
+    mutate(type = type)
+  
+}
 
 # 1. observed - observed
 obs_obs <- bind_rows(
@@ -1378,7 +1397,7 @@ back_forward <- bind_rows(
   calc_roc_agg(type = "back_forward", var_name = "protein_consumed_kg_percap_peryr")
 
 
-# For each countries' trend in aggregate aquatic animal protein reliance
+z`# For each countries' trend in aggregate aquatic animal protein dominance
 # we will take the midpoint of the min and max rate of
 # change and use that in the plot.
 terrestrial_protein_quant <- bind_rows(obs_obs,
@@ -1391,7 +1410,7 @@ terrestrial_protein_quant <- bind_rows(obs_obs,
 # Join and compute quadrant proportions per region
 quad_df <- aquatic_protein_quant %>%
   full_join(terrestrial_protein_quant, by = "iso3c") %>%
-  # full_join(aquatic_protein_reliance,  by = "iso3c") %>%
+  # full_join(aquatic_protein_dominance,  by = "iso3c") %>%
   add_region(col = "iso3c", region.col.name = "region") %>%
   mutate(
     quad_raw = case_when(
@@ -1430,9 +1449,9 @@ half_width <- 0.20   # angular half-width of each spike in radians
 # Q4 (aquatic up, terr down) = blue: aquatic gaining share
 quad_colors <- c(
   "Aquatic \u2191 / Terrestrial \u2191" = "#7BAEC4",   # mid blue - ambiguous
-  "Aquatic \u2193 / Terrestrial \u2191" = "#B2182B",   # strong red - reliance clearly ↓
+  "Aquatic \u2193 / Terrestrial \u2191" = "#B2182B",   # strong red - dominance clearly ↓
   "Aquatic \u2193 / Terrestrial \u2193" = "#D4956A",   # warm sand - ambiguous
-  "Aquatic \u2191 / Terrestrial \u2193" = "#2166AC"    # strong blue - reliance clearly ↑
+  "Aquatic \u2191 / Terrestrial \u2193" = "#2166AC"    # strong blue - dominance clearly ↑
 )
 # Build spike polygons - each spike is a triangle from the origin
 # r = prop * max_val * sqrt(2) scales so that prop = 1 fills to the axis limit
@@ -1597,11 +1616,11 @@ ggsave(
 ```
 
 
-# RQ 2: What biophysical and socioeconomic factors are associated with reliance on farmed and wild aquatic animals for protein and overall consumption?
+# RQ 2: What biophysical and socioeconomic factors are associated with dominance on farmed and wild aquatic animals for protein and overall consumption?
 
 ## SI figure: Directed Acylcic Diagram (DAG). The DAG was not created in R, but in LucidChart.
 
-## SI figure: Extra posterior distributions that show the partial slopes for models that use disaggregated reliance as the response.
+## SI figure: Extra posterior distributions that show the partial slopes for models that use disaggregated dominance as the response.
 
 Posterior distributions are displayed with 90%, 80%, and 50% credibility intervals, represented by the lightest, darker, and darkest colors respectively. The point represents the posterior median.
 
@@ -1656,15 +1675,15 @@ var_labels <- c(
   eez_total                  = "Log EEZ area km²"
 )
 
-# Model colours - harmonized palette, reliance models only
+# Model colours - harmonized palette, dominance models only
 model_colors <- c(
-  "Aquatic animal protein reliance"      = "#1A7A6E",
-  "Aquaculture animal protein reliance"  = "#E8B000",
-  "Capture animal protein reliance"      = "#D4601A",
-  "Domestic animal protein reliance"     = "#7BAEC4",
-  "Foreign animal protein reliance"      = "#C45C3A",
-  "Marine animal protein reliance"       = "#9B6DC5",
-  "Inland animal protein reliance"       = "#D4956A"
+  "Aquatic animal protein dominance"      = "#1A7A6E",
+  "Aquaculture animal protein dominance"  = "#E8B000",
+  "Capture animal protein dominance"      = "#D4601A",
+  "Domestic animal protein dominance"     = "#7BAEC4",
+  "Foreign animal protein dominance"      = "#C45C3A",
+  "Marine animal protein dominance"       = "#9B6DC5",
+  "Inland animal protein dominance"       = "#D4956A"
 )
 
 # Interval colours - three lightness steps per model colour
@@ -1681,17 +1700,17 @@ df_plot <- slopes_df %>%
     suffix_num = suppressWarnings(as.numeric(suffix))
   ) %>%
   filter(
-    str_detect(clean_name, "reliance"),
+    str_detect(clean_name, "dominance"),
     model != "animal_cons_cap",
   ) %>%
   mutate(
     clean_name = case_when(
-      clean_name == "Capture protein reliance" ~ "Capture animal protein reliance",
-      clean_name == "Aquaculture protein reliance" ~ "Aquaculture animal protein reliance",
-      clean_name == "Domestic protein reliance" ~ "Domestic animal protein reliance",
-      clean_name == "Foreign protein reliance" ~ "Foreign animal protein reliance",
-      clean_name == "Marine protein reliance" ~ "Marine animal protein reliance",
-      clean_name == "Inland protein reliance" ~ "Inland animal protein reliance",
+      clean_name == "Capture protein dominance" ~ "Capture animal protein dominance",
+      clean_name == "Aquaculture protein dominance" ~ "Aquaculture animal protein dominance",
+      clean_name == "Domestic protein dominance" ~ "Domestic animal protein dominance",
+      clean_name == "Foreign protein dominance" ~ "Foreign animal protein dominance",
+      clean_name == "Marine protein dominance" ~ "Marine animal protein dominance",
+      clean_name == "Inland protein dominance" ~ "Inland animal protein dominance",
       TRUE ~ clean_name
       )) %>%
   arrange(suffix_num, suffix) %>%
@@ -2133,8 +2152,8 @@ summary(rhat_df$rhat)
     filter(
     model != "animal_cons_cap",
     str_detect(clean_name, "capita")         |
-      str_detect(clean_name, "Aquatic reliance") |
-      str_detect(clean_name, "reliance")
+      str_detect(clean_name, "Aquatic dominance") |
+      str_detect(clean_name, "dominance")
   ) %>%
     mutate(model = clean_model_name(model)) %>%
   ggplot(aes(x = rhat)) +
@@ -2192,8 +2211,8 @@ plot_df <- divergent_transitions %>%
     filter(
     model != "animal_cons_cap",
     str_detect(clean_name, "capita")         |
-      str_detect(clean_name, "Aquatic reliance") |
-      str_detect(clean_name, "reliance"))
+      str_detect(clean_name, "Aquatic dominance") |
+      str_detect(clean_name, "dominance"))
 
 # compute the order of model names by suffix
 ordered_names <- plot_df %>%
@@ -2354,8 +2373,8 @@ df_plot <- ppd_all_models %>%
   filter(
     model != "animal_cons_cap",
     str_detect(clean_name, "capita")         |
-      str_detect(clean_name, "Aquatic reliance") |
-      str_detect(clean_name, "reliance")
+      str_detect(clean_name, "Aquatic dominance") |
+      str_detect(clean_name, "dominance")
   ) %>%
   filter(draw %in% draw_sample) %>%
   mutate(
@@ -2741,7 +2760,7 @@ ggsave(
 )
 ```
 
-> Result: Terrestrial animal conusmption performs substantially better in model performance than all the aquatic animal consumption & reliance models.
+> Result: Terrestrial animal conusmption performs substantially better in model performance than all the aquatic animal consumption & dominance models.
 
 ## Sensitivity Testing
 
@@ -2805,7 +2824,7 @@ var_labels <- c(
 model_colors <- c(
   "Terrestrial animal consumption per capita" = "#8C1A11",
   "Aquatic animal consumption per capita"     = "#2B6AA8",
-  "Aquatic reliance"                          = "#1A7A6E",
+  "Aquatic dominance"                          = "#1A7A6E",
   "Capture consumption per capita"            = "#D4601A",
   "Aquaculture consumption per capita"        = "#E8B000",
   "Domestic consumption per capita"           = "#7BAEC4",
@@ -2828,7 +2847,7 @@ df_plot <- slopes_df %>%
     suffix_num = suppressWarnings(as.numeric(suffix))
   ) %>%
   filter(
-    str_detect(clean_name, "capita") | str_detect(clean_name, "Aquatic animal reliance"),
+    str_detect(clean_name, "capita") | str_detect(clean_name, "Aquatic animal dominance"),
     !model == "animal_cons_cap"
   ) %>%
   arrange(suffix_num, suffix) %>%
@@ -3037,33 +3056,4 @@ loo_separated <- loo(log_lik_separated, cores = 2)
 loo_compare(loo_combined, loo_separated)
 ```
 
-> Result: Models are indistinguishable in performance looking at the LOO ELPD CV scores. And given the partial slopes do not differ substantially across models when using removing one variable, the collinearity between the coastline length and EEZ area is not 
-
-```{r}
-
-
-# Statistical test: terrestrial consumption rate of change > aquatic
-wilcox.test(plot_df$terrestrial_estimate, plot_df$aquatic_estimate,
-            paired = FALSE, alternative = "greater")
-
-# Coefficient of variation for terrestrial consumption rate of change
-cv_terr <- sd(plot_df$terrestrial_estimate, na.rm = TRUE) /
-           mean(plot_df$terrestrial_estimate, na.rm = TRUE)
-
-# Coefficient of variation for aquatic reliance rate of change
-cv_aquatic <- sd(plot_df$aquatic_estimate, na.rm = TRUE) /
-              mean(plot_df$aquatic_reliance_estimate, na.rm = TRUE)
-
-# Coefficient of variation for aquatic reliance rate of change
-cv_reliance <- sd(plot_df$aquatic_reliance_estimate, na.rm = TRUE) /
-              mean(plot_df$aquatic_reliance_estimate, na.rm = TRUE)
-
-# Coefficient of variation for aquatic reliance rate of change
-cv_animal <- sd(animal_protein_quant$animal_protein_estimate, na.rm = TRUE) /
-              mean(animal_protein_quant$animal_protein_estimate, na.rm = TRUE)
-```
-
-```{r}
-
-```
-
+> Result: Models are indistinguishable in performance looking at the LOO ELPD CV scores. And given the partial slopes do not differ substantially across models when using removing one variable, the collinearity between the coastline length and EEZ area is not
