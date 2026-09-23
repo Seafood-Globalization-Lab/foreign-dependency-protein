@@ -197,13 +197,13 @@ base_path <- file.path(
 
 The first row of the figure has 2 panels, and the following two rows have 1 panel, making a 4 panel plot. The regions include Africa, Asia, South America, North America, Europe, and Oceania.
 
-The top left panel highlights the number of countries with increasing / decreasing *aggregate* aquatic animal dominance
+The top left panel highlights the number of countries with increasing / decreasing *aggregate* aquatic animal protein dominance
 
-The top right panel highlights the number of countries with increasing / decreasing *disaggregate* aquatic animal dominance. Where the y-axis represents the disaggregated production sources for aquatic foods.
+The top right panel highlights the number of countries with increasing / decreasing *disaggregate* aquatic animal protein dominance. Where the y-axis represents the disaggregated production sources for aquatic foods.
 
-The middle panel measures the 2020 aggregate aquatic animal dominance for each country.
+The middle panel measures the 2020 aggregate aquatic animal protein dominance for each country.
 
-The bottom panel visualizes for each country in each region the average annual change in their aggregate aquatic animal dominance, with separate colors as stacked bars representing the disaggregate dominance.
+The bottom panel visualizes for each country in each region the average annual change in their aggregate aquatic animal protein dominance, with separate colors as stacked bars representing the disaggregate dominance.
 
 ```{r individual region production contribution}
 # shared color palettes
@@ -319,7 +319,7 @@ agg_point <- function() {
 # 4. back cast - forward cast
 
 # We will take the maximum and minimum values of these as the ranges for
-# rate of change in aquatic animal dominance, and will plot the midpoint of these
+# rate of change in aquatic animal protein dominance, and will plot the midpoint of these
 # ranges.
 
 # Define year ranges for projections (add this before the existing
@@ -1140,7 +1140,7 @@ final_plot <- plot_grid(p_agg_rel,bottom_half, nrow = 2, rel_heights = c(0.5,1))
 ```
 
 
-# RQ 1b: How does aquatic animal dominance change with the relative contribution of aquatic versus terrestrial animal consumption
+# RQ 1b: How does aquatic animal protein dominance change with the relative contribution of aquatic versus terrestrial animal consumption
 
 ## SI Figure: Proportion of countries in each quadrant by region
 
@@ -1173,7 +1173,7 @@ observed_ranges <- tibble(
 # 3. back cast - obs
 # 4. back cast - forward cast
 
-# We will take the maximum and minimum values of these as the ranges for rate of change in aquatic animal dominance, and will plot the midpoint of these
+# We will take the maximum and minimum values of these as the ranges for rate of change in aquatic animal protein dominance, and will plot the midpoint of these
 # ranges.
 
 ######### AQUATIC ANIMAL PROTEIN CONSUMPTION RATE OF CHANGE (1996-2023)

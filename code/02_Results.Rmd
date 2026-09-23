@@ -191,7 +191,7 @@ consumption (i.e., capture, aquaculture)
 Panel C: trends in global aquatic animal protein dominance disaggregated by
 method (i.e. capture vs aquaculture, inland vs marine, domestic vs foreign)
 
-Note. Because aquatic animal dominance values (1996-2023) are separated between
+Note. Because aquatic animal protein dominance values (1996-2023) are separated between
 two data sources, with old-FBS methods covering 1996-2013 and new-FBS methods
 covering the 2010-2023 of these datasets, we include projections to visualize
 differences between the datasets. This involves:
@@ -223,7 +223,7 @@ observed_ranges <- tibble(
 ##############
 ### PLOT A ###
 ##############
-# Calculate aggregate global aquatic animal dominance
+# Calculate aggregate global aquatic animal protein dominance
 ####################################################
 
 # To calculate dominance across production sources, whether by disaggregated
@@ -316,7 +316,7 @@ aa_dominance_mean_global_trends <- ggplot() +
     linewidth = 0.3,
     alpha = 0.7
     ) +
-  labs(x = "", y = "Global aquatic animal dominance (%)") +
+  labs(x = "", y = "Global aquatic animal protein dominance (%)") +
   scale_y_continuous(expand = c(0,0)) +
   scale_x_continuous(expand = c(0.01,0)) +
   theme(
@@ -341,7 +341,7 @@ aa_dominance_mean_global_trends <- ggplot() +
 ##############
 ### PLOT B ###
 ##############
-# Calculate global aquatic animal dominance by production method
+# Calculate global aquatic animal protein dominance by production method
 ##############################################################
 
 # For each year, calculate the share of global animal proteins
@@ -484,7 +484,7 @@ aa_dominance_aq_cap <- aa_dominance_method_trends %>%
     alpha = 0.7
     ) +
   scale_fill_manual(values = c("#337D81","#D3983E")) +
-  labs(x = "", y = "Aquatic animal dominance (%)\n(by method)") +
+  labs(x = "", y = "aquatic animal protein dominance (%)\n(by method)") +
   # theme_minimal(base_size = 8) +
     facet_grid(~ factor(method, levels=c("Capture", "Aquaculture"))) +
   guides(fill = "none") +
@@ -823,7 +823,7 @@ aa_dominance_disaggregate <- ggplot() +
   labs(
     fill = "Consumption source",
     x = "",
-    y = "Aquatic animal dominance (%)\n(by habitat/method/consumption source)"
+    y = "aquatic animal protein dominance (%)\n(by habitat/method/consumption source)"
     ) +
   guides(linewidth = "none") +
   # theme_minimal(base_size = 8) +
@@ -894,7 +894,7 @@ ggsave(
 
 ```
 
-### What percent has global aquatic animal dominance stayed between during 1996-2023?
+### What percent has global aquatic animal protein dominance stayed between during 1996-2023?
 
 ```{r how much has aggregate dominance shifted since 1996?}
 # To get a conservative estimate values of the range for global aquatic animal
@@ -968,13 +968,13 @@ combined_global <- bind_rows(
   projections_global
 )
 
-# Across all three measures, calculate the *minimum* global aquatic animal dominance has been from 1996-2023
+# Across all three measures, calculate the *minimum* global aquatic animal protein dominance has been from 1996-2023
 max_global_dominance <- combined_global %>%
   pull(perc_animal_protein) %>%
   max() %>%
   ceiling()
 
-# Across all three measures, calculate the *maximum* global aquatic animal dominance has been from 1996-2023
+# Across all three measures, calculate the *maximum* global aquatic animal protein dominance has been from 1996-2023
 min_global_dominance <- combined_global %>%
   pull(perc_animal_protein) %>%
   min() %>%
@@ -1774,7 +1774,7 @@ in animal protein dominance on inland aquaculture of `r roi_inaq`%
 ---
 
 ## Figure 3: Look at contributing production sources to a country's rate of
-change in their aggregate and disaggregate aquatic animal dominance between
+change in their aggregate and disaggregate aquatic animal protein dominance between
 1996 and 2023.
 
 The following plot will have two panels, A at the top and B at the bottom.
@@ -1885,7 +1885,7 @@ bar_layers <- list(
 # 4. back cast - forward cast
 
 # We will take the maximum and minimum values of these as the ranges for
-# rate of change in aquatic animal dominance, and will plot the midpoint of these
+# rate of change in aquatic animal protein dominance, and will plot the midpoint of these
 # ranges.
 
 # Define year ranges for projections (add this before the existing
@@ -2292,7 +2292,7 @@ ggsave(
 )
 ```
 
-### How many countries have increased / decreased aggregate aquatic animal dominance?
+### How many countries have increased / decreased aggregate aquatic animal protein dominance?
 
 ```{r}
 # Calculate the total number of countries in our analysis
@@ -2360,7 +2360,7 @@ In contrast, substantial growth in animal protein dominance on aquaculture has b
 We find nations throughout much of Asia, Africa, South America, and Oceania decreased their dominance on capture fisheries, whereas North American nations widely increased their dominance on aquaculture (SI Figures 10-15).
 Uniquely, nearly every nation in Europe, 38 out of 40, increased their dominance on marine aquaculture, underscoring the widely varying aquatic animal protein dominance (SI Figures 10-15).
 
-# RQ 1b: How does aquatic animal dominance change with the relative contribution of aquatic versus terrestrial animal consumption
+# RQ 1b: How does aquatic animal protein dominance change with the relative contribution of aquatic versus terrestrial animal consumption
 
 ## Figure 4: Scatterplot (terrestrial consumption ~ aquatic consumption; colored by: aquatic dominance) + bar chart overlay 
 
@@ -2418,7 +2418,7 @@ theme_scatter <- function(base_size = 8) {
 # 4. back cast - forward cast
 
 # We will take the maximum and minimum values of these as the ranges for
-# rate of change in aquatic animal dominance, and will plot the midpoint of these
+# rate of change in aquatic animal protein dominance, and will plot the midpoint of these
 # ranges.
 
 # Define year ranges for projections
@@ -3343,7 +3343,7 @@ if (all_outputs_exist) {
 
 ## Figure 5: Posterior distributions for the partial slope across models
 
-Here, we map the posterior distributions for models of terrestrial animal consumption per capita, aquatic animal consumption per capita, capture consumption per capita, aquaculture consumption per capita, domestic consumption per capita, foreign consumption per capita, marine consumption per capita, inland consumption per capita, and aggregate aquatic animal dominance. Posterior distributions are displayed with 90%, 80%, and 50% credibility intervals, represented by the lightest, darker, and darkest colors respectively. The point represents the posterior median.
+Here, we map the posterior distributions for models of terrestrial animal consumption per capita, aquatic animal consumption per capita, capture consumption per capita, aquaculture consumption per capita, domestic consumption per capita, foreign consumption per capita, marine consumption per capita, inland consumption per capita, and aggregate aquatic animal protein dominance. Posterior distributions are displayed with 90%, 80%, and 50% credibility intervals, represented by the lightest, darker, and darkest colors respectively. The point represents the posterior median.
 
 ```{r hierarcical partial slope posteriors}
 model_type = "realm"
