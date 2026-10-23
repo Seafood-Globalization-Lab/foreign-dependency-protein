@@ -33,7 +33,7 @@ standardize_country_data <- function(){
                                               "NLD","NZL","NZL","NZL","AUS",
                                               "AUS","AUS","DNK","DNK")) %>%
     group_by(across()) %>%
-    expand(year = 1996:2020)
+    expand(year = 1996:2023)
   
   # standardize_baci function special cases
   standardize_baci_special_cases <- tibble(
@@ -92,7 +92,7 @@ standardize_country_data <- function(){
                                               "NLD","NZL","NZL","NZL","AUS",
                                               "AUS","AUS","DNK","DNK","TZA")) %>%
     group_by(input_iso3c, output_iso3c) %>%
-    expand(year = 1996:2020)
+    expand(year = 1996:2023)
   
   iso_name_pairs <- tibble::tibble(
     input_iso3c     = c("TLS", "SRB", "MNE", "SSD", "BWA", "LSO", "NAM", "SWZ", "NEI", "SCG", "SDN", "ZAF"),
@@ -122,7 +122,7 @@ standardize_country_data <- function(){
         "Other nei","Serbia and Montenegro","Sudan","South Africa"
       )
     ),
-    year = 1996:2020
+    year = 1996:2023
   ) %>%
     mutate(
       output_iso3c = case_when(
@@ -176,7 +176,7 @@ standardize_country_data <- function(){
                                                  "AUS","AUS","AUS","AUS","DNK",
                                                  "DNK","TZA","NOR","NOR")) %>%
     group_by(across()) %>%
-    expand(year = 1996:2020)
+    expand(year = 1996:2023)
   
   # dwf special cases
   sau_eez_special_cases <- tibble(
@@ -218,7 +218,7 @@ standardize_country_data <- function(){
     )
   ) %>%
     group_by(across()) %>%
-    expand(year = 1996:2020)
+    expand(year = 1996:2023)
   
   # FUNCTION 4
   # SAU production data additional cleaning cases
@@ -281,7 +281,7 @@ standardize_country_data <- function(){
     )
   ) %>%
     group_by(across()) %>%
-    expand(year = 1996:2020)
+    expand(year = 1996:2023)
   
   # Combine dataframes
   # 1. functions with their easy cases and special cases
@@ -311,7 +311,7 @@ standardize_country_data <- function(){
   input_countries <- tibble(input_country_name = c("Other nei"), input_iso3c = c(NA_character_),
                             output_iso3c = c("NEI"), output_country_name = c(NA_character_)) %>%
     group_by(across()) %>%
-    expand(year = 1996:2020)
+    expand(year = 1996:2023)
   
   # Bind rows
   output_data <- bind_rows(standardize_country_data, input_countries) %>%
