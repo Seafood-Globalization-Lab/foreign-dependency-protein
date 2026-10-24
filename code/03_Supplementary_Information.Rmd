@@ -42,7 +42,7 @@ source("../utils/create_map.R")
 # Register a specific static weight from the variable font file
 font_add(family = "Bahnschrift", regular = "/path/to/bahnschrift.ttf")
 showtext_auto()
-showtext_opts(dpi = 96)  # match whatever dpi your ggsave/rsvg pipeline uses
+showtext_opts(dpi = 96)
 
 # font_import()
 family = "Bahnschrift"
@@ -531,7 +531,7 @@ make_bar_panel <- function(legend_show  = FALSE,
           )))) +
     facet_wrap(~ `Income group`, nrow = 1, scales = "free_y") +
     labs(
-      x    = "Average annual change in aquatic animal protein dominance (1996–2023)",
+      x    = "Average annual change in aquatic animal protein dominance\nby consumption source (1996–2023)",
       fill = "Source",
       color = ""
     ) +
@@ -604,7 +604,7 @@ top_panel <- agg_estimate %>%
   geom_col(position = "stack", width = 0.65) +
   scale_fill_manual(
     values = c("#8FACB4", "#b4c461"),
-    name   = "Change in aggregate aquatic animal protein dominance (1996-2023)",
+    name   = "Average annual change in aquatic animal protein dominance (1996-2023)",
     labels = c("Decrease in dominance", "Increase in dominance"),
     guide = guide_legend(override.aes = list(
                         fill = list(
@@ -717,10 +717,10 @@ theme_si <- function(base_size = 8,
         ),
       legend.position       = if (show_legend) "bottom" else "none",
       legend.title          = element_text(
-        size = base_size - 1.5, face = "bold", family = family
+        size = base_size - 3.65, face = "bold", family = family
         ),
       legend.text           = element_text(
-        size = base_size - 3, family = family),
+        size = base_size - 4, family = family),
       legend.key.size       = unit(0.25, "cm"),
       legend.box            = "vertical",
       legend.spacing        = unit(0.05, "cm"),
@@ -746,11 +746,11 @@ theme_si_hbar <- function(base_size = 8, show_legend = TRUE) {
       axis.title.y       = element_blank(),
       axis.title.x       = element_text(size = base_size, family = family),
       legend.title       = element_text(
-        size = base_size - 2.65,
+        size = base_size - 3.65,
         hjust = 0.5,
         family = family
         ),
-      legend.text        = element_text(size = base_size - 3, family = family)
+      legend.text        = element_text(size = base_size - 4, family = family)
     )
 }
 
@@ -1016,38 +1016,44 @@ regions <- c("Asia", "Africa", "Europe", "North America", "South America", "Ocea
 for (i in regions) {
 
   # Panel 1: aggregate + disaggregated rate-of-change bars
+    group_levels <- c("unknown unknown",     # #A8A8A8
+                    "inland capture",      # #5DA49A
+                    "marine capture",      # #114F59
+                    "inland aquaculture",  # #D3AF55
+                    "marine aquaculture")  # #C87534     
+
   p_bars <- disagg %>%
     add_region("iso3c", "region") %>%
     filter(region == i) %>%
     left_join(agg_estimate, by = "iso3c") %>%
-    ggplot(aes(x = estimate, y = fct_reorder(iso3c, -agg_estimate), fill = group_label)) +
-    geom_col() +
-    geom_vline(xintercept = 0, linewidth = 0.4, color = "black") +
-    agg_point() +
+    mutate(group_label = factor(group_label, levels = group_levels)) %>%
+    ggplot(
+      aes(
+        x = estimate,
+        y = fct_reorder(iso3c, -agg_estimate),
+        fill = group_label
+      )) +
+    bar_layers +
     scale_fill_manual(
-      values = c(
-        "inland aquaculture"    = "#D3AF55",
-        "marine aquaculture"    = "#C87534",
-        "inland capture"        = "#5DA49A",
-        "marine capture"        = "#114F59",
-        "unknown unknown"       = "#A8A8A8"
-        ),
-      labels = c("Marine capture", "Inland capture",
-                 "Marine aquaculture", "Inland aquaculture",
-                 "Unknown"),
-      name = "Source",
-      guide = guide_legend(
-        nrow = 2,
-        order = 1,
-        override.aes = list(
-          fill = list(
-            "#114F59",
-            "#5DA49A",
-            "#C87534",
-            "#D3AF55",
-            "#A8A8A8"
-          )))) +
-    labs(x = "Average annual change in aquatic animal protein dominance (1996–2023)",
+  values = c(
+    "marine capture"     = "#114F59",
+    "inland capture"     = "#5DA49A",
+    "marine aquaculture" = "#C87534",
+    "inland aquaculture" = "#D3AF55",
+    "unknown unknown"    = "#A8A8A8"
+  ),
+  breaks = c("marine capture", "inland capture",
+             "marine aquaculture", "inland aquaculture",
+             "unknown unknown"),
+  labels = c("marine capture"     = "Marine capture",
+             "inland capture"     = "Inland capture",
+             "marine aquaculture" = "Marine aquaculture",
+             "inland aquaculture" = "Inland aquaculture",
+             "unknown unknown"    = "Unknown"),
+  name = "Source",
+  drop = FALSE
+) +
+    labs(x = "Average annual change in aquatic animal protein dominance\nby consumption source (1996–2023)",
          color = "") +
     theme_si(show_y_title = FALSE, show_legend = TRUE) +
     # Manually add black and white dot "aggregate dominance" onto legend
@@ -1072,7 +1078,18 @@ for (i in regions) {
                          color = "grey20",
                          linewidth = 0.2,
                          size = 3.5
-                         )))
+                         ))) +
+  guides(
+    fill = guide_legend(
+      order = 1,
+      nrow  = 2,
+      byrow = FALSE
+    )
+  ) +
+  theme(
+    legend.direction = "horizontal",
+    legend.byrow     = FALSE
+  )
 
   # Count the number of countries in each region
   num_regional_countries <- disagg %>%
@@ -1095,7 +1112,7 @@ for (i in regions) {
       "decreasing" = "#b8cb5b",
       "increasing" = "#8FACB4"
       ),
-    name   = "Change in aggregate\naquatic animal protein\ndominance (1996-2023)",
+    name   = "Average annual change\nin aquatic animal protein\ndominance (1996-2023)",
     labels = c("Decrease in dominance", "Increase in dominance"),
     guide = guide_legend(
       nrow = 2,
@@ -1109,10 +1126,11 @@ for (i in regions) {
         ))) +
     labs(
       x = paste0(
-        "No. countries (", num_regional_countries, " total; aggregate)"
+        "No. countries (", num_regional_countries, " total; aggregated)"
         )
     ) +
-    theme_si_hbar(show_legend = TRUE)
+    theme_si_hbar(show_legend = TRUE) +
+    theme()
 
   # Panel 3: disaggregated direction counts
 
@@ -1151,7 +1169,7 @@ for (i in regions) {
     ) +
     labs(
       x = paste0(
-        "No. countries (", num_regional_countries, " total; disaggregate)"
+        "No. countries (", num_regional_countries, " total; disaggregated)"
         )
     ) +
     theme_si(show_y_title = FALSE, show_legend = FALSE) +
@@ -1265,7 +1283,7 @@ final_plot <- cowplot::plot_grid(
 ```{r aquatic_dominance_maps}
 # Single small addition: tightens the vertical gap between the two
 # stacked (domestic/foreign) maps by shrinking legend box spacing and
-# panel margins. Nothing else about your layout is changed.
+# panel margins.
 dominance_scale <- function(limit = disagg_max, show_title = TRUE) {
   scale_fill_gradientn(
     colors  = c("#F7FCF0", "#7BCCC4", "#2B8CBE", "#08306B"),
@@ -1451,7 +1469,7 @@ agg_rel <- aquatic_dominance_pct %>%
 p_agg_rel <- agg_rel %>%
   create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
   dominance_scale(limit = agg_rel$perc_animal_protein %>% max()) +
-  labs(fill = "Aquatic animal protein dominance (%)") +
+  labs(fill = "Aquatic animal protein dominance (2023)") +
   theme(plot.title   = element_text(family = family),
         legend.title = element_text(family = family),
         legend.text  = element_text(family = family))
@@ -1641,6 +1659,25 @@ observed_ranges <- tibble(
 
 ######### AQUATIC ANIMAL PROTEIN CONSUMPTION RATE OF CHANGE (1996-2023)
 
+calc_roc_agg <- function(data, type = type, var_name = "prop_animal_protein") {
+  
+  data %>%
+  group_by(iso3c) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(!!sym(var_name) ~ year, data = .x)),
+    tidy  = map(model, broom::tidy)
+  ) %>%
+  unnest(tidy) %>%
+  filter(term == "year") %>%
+  mutate(group_label = "aggregate") %>%
+  drop_na(estimate) %>%
+  group_by(group_label) %>%
+  ungroup() %>%
+    mutate(type = type)
+  
+}
+
 # Calculate country aggregate aquatic animal protein dominance
 aquatic_protein_quant <-  aquatic_dominance %>%
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"), food_group == "aquatic") %>%
@@ -1804,25 +1841,6 @@ obs_terr_cons <- terrestrial_protein_quant %>%
 # back_forward - back casted to forward casted
 
 # Calculate four different types of rate of change for disaggregate:
-
-calc_roc_agg <- function(data, type = type, var_name = "prop_animal_protein") {
-  
-  data %>%
-  group_by(iso3c) %>%
-  nest() %>%
-  mutate(
-    model = map(data, ~ lm(!!sym(var_name) ~ year, data = .x)),
-    tidy  = map(model, broom::tidy)
-  ) %>%
-  unnest(tidy) %>%
-  filter(term == "year") %>%
-  mutate(group_label = "aggregate") %>%
-  drop_na(estimate) %>%
-  group_by(group_label) %>%
-  ungroup() %>%
-    mutate(type = type)
-  
-}
 
 # 1. observed - observed
 obs_obs <- bind_rows(
@@ -2841,7 +2859,6 @@ ggsave(
   height   = 5,
   units    = "in"
 )
-
 ```
 
 > Result: All parameters have overlap on the Markov Chain, indicating model convergence
@@ -2883,9 +2900,6 @@ for (i in seq_along(response_vars)) {
   # Append to main data frame
   rhat_df <- bind_rows(rhat_df, new_data)
 }
-
-# Rhat summary
-summary(rhat_df$rhat)
 
 # Create rhat plot
 (p_rhat <- rhat_df %>%
@@ -2993,13 +3007,6 @@ ordered_names <- plot_df %>%
       legend.box.background   = element_rect(fill = "transparent", color = NA)
   )
     )
-
-# Print the number of divergent transitions across each model
-plot_df %>%
-  group_by(model) %>%
-  mutate(model = clean_model_name(model)) %>%
-  summarize(num_divergent_transitions = sum(divergent)) %>% 
-  print()
 ``` 
 
 > Result: Out of 3000 samples, the highest number of divergent transitions was 102 - divergence is not an issue. 
@@ -3008,7 +3015,10 @@ plot_df %>%
 
 ```{r}
 # Create plot
-final <- plot_grid(p_rhat, p_divergent_transitions, ncol = 2, labels = c("A", "B"))
+final <- plot_grid(p_rhat, p_divergent_transitions, ncol = 2, labels = c("A", "B")) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+    suppressWarnings()
 
 # Save plot
 ggsave(
@@ -3130,182 +3140,57 @@ panel_names <- levels(df_plot$clean_name)
 # tag      = uppercase letter (A–O)
 # left_col = TRUE nudges tag right and shows y-axis title
 # bot_row  = TRUE shows x-axis title
-make_ppd_panel <- function(df, title = "", tag = "",
-                           left_col = FALSE, bot_row = FALSE) {
+make_ppd_panel <- function(df, title = "", tag = "") {
 
-  tag_pos <- if (left_col) c(0.18, 1) else c(0.01, 1)
-
-  p <- ggplot(df, aes(x = ppd, group = draw)) +
-
-    # Posterior predictive envelope - faint coloured lines show spread
-    geom_density(
-      colour    = "#7BAEC4",
-      linewidth = 0.25
-    ) +
-
-    # Observed data density - drawn on top, clearly distinct
-    geom_density(
-      aes(x = y_obs, group = NULL),
-      colour    = "grey20",
-      linewidth = 0.7
-    ) +
-
-    labs(title = title, tag = tag) +
+  ggplot(df, aes(x = ppd, group = draw)) +
+    geom_density(colour = "#7BAEC4", linewidth = 0.25) +
+    geom_density(aes(x = y_obs, group = NULL),
+                 colour = "grey20", linewidth = 0.7) +
+    labs(title = title, tag = tag, x = NULL, y = NULL) +
     theme_minimal(base_size = 8) +
     theme(
-      text              = element_text(color = "black", family = family),
-      plot.background   = element_rect(fill = "transparent", color = NA),
-      panel.background  = element_rect(fill = "transparent", color = NA),
-      panel.grid.minor  = element_blank(),
+      text               = element_text(color = "black", family = family),
+      plot.background    = element_rect(fill = "transparent", color = NA),
+      panel.background   = element_rect(fill = "transparent", color = NA),
+      panel.grid.minor   = element_blank(),
       panel.grid.major.x = element_blank(),
-      panel.grid.major.y = element_line(
-        color = scales::alpha("black", 0.12), linewidth = 0.3
-      ),
-      plot.title        = element_text(size = 4, face = "bold", hjust = 0.5,
+      panel.grid.major.y = element_line(color = scales::alpha("black", 0.12),
+                                        linewidth = 0.3),
+      plot.title         = element_text(size = 2, face = "bold", hjust = 0.5,
                                         margin = margin(b = 2), family = family),
-      axis.text         = element_text(size = 5.5, color = "black", family = family),
-      axis.title.x      = element_blank(),
-      axis.title.y      = element_blank(),
-      plot.margin       = margin(3, 4, 3, 4)
+      axis.text          = element_text(size = 5.5, color = "black", family = family),
+      plot.margin        = margin(3, 4, 3, 4)
     )
-
-  if (left_col) p <- p +
-    labs(y = "Density") +
-    theme(axis.title.y = element_text(size = 6.5, face = "bold",
-                                       margin = margin(r = 3)))
-
-  if (bot_row) p <- p +
-    labs(x = "Response value (standardised)") +
-    theme(axis.title.x = element_text(size = 5, face = "bold",
-                                       margin = margin(t = 3)))
-  p
 }
 
-# Build all 15 panels in sequential order (A–O)
 panels <- lapply(seq_along(panel_names), function(i) {
-  nm     <- panel_names[i]
-  df_sub <- df_plot %>% filter(clean_name == nm)
-  make_ppd_panel(
-    df_sub,
-    title    = nm,
-    left_col = i %in% c(1, 5, 9, 13),
-    bot_row  = i %in% c(13, 14, 15)
-  )
+  nm <- panel_names[i]
+  make_ppd_panel(df_plot %>% filter(clean_name == nm), title = nm)
 })
 
-# Assemble 4×4 grid - bottom row centered with half-column empty spacers
-empty <- ggplot() + theme_void()
+grid_plot <- wrap_plots(panels, ncol = 6, nrow = 4)
 
-row1 <- panels[[15]]  | panels[[9]]  | panels[[13]]  | panels[[3]]
-row2 <- panels[[7]]  | panels[[5]]  | panels[[14]]  | panels[[6]]
-row3 <- panels[[1]]  | panels[[8]] | panels[[4]] | panels[[10]]
-row4 <- (empty | panels[[12]] | panels[[11]] | panels[[2]] | empty) +
-  plot_layout(widths = c(0.5, 1, 1, 1, 0.5))
+# Shared axis labels as text-only plots
+x_lab <- ggplot() +
+  annotate("text", x = 0, y = 0, label = "Response value (standardised)",
+           size = 5 / .pt * 1.0, fontface = "bold", family = family) +
+  theme_void()
 
-ppd_plot <- wrap_plots(row1, row2, row3, row4, ncol = 1) +
-  plot_layout(heights = c(1, 1, 1, 1)) &
-  theme(plot.margin = margin(2, 3, 2, 3))
+y_lab <- ggplot() +
+  annotate("text", x = 0, y = 0, label = "Density", angle = 90,
+           size = 6.5 / .pt * 1.0, fontface = "bold", family = family) +
+  theme_void()
+
+ppd_plot <- (y_lab | grid_plot) +
+  plot_layout(widths = c(0.02, 1))
+
+# Create final ppd plot
+ppd_plot <- (ppd_plot / x_lab) +
+  plot_layout(heights = c(1, 0.03)) &
+  theme(plot.background = element_rect(fill = "transparent", color = NA))
 ```
 
-### PSIS-LOO model performance
-
-To see how well each model performs on unseen data, we can run a cross validation on each model. Additionally, we can calculate the Pareto k values to see if there are influential points that may have an impact on the LOO values.
-
-```{r PSIS-LOO plot}
-# Paths and model info
-combined_model_path <- base_path
-n_models <- length(response_vars)
-
-# Extract log-likelihood matrices for all models
-log_lik_list <- vector("list", n_models)
-
-for (i in seq_along(response_vars)) {
-  fit <- readRDS(file.path(combined_model_path, paste0("fit_", response_vars[i], ".rds")))
-  # fit <- readRDS(paste0("../bayesian output backup/var_all/fit_",response_vars[i],".rds"))
-  
-  # Extract log-likelihood matrix; make sure your Stan model has 'log_lik' in generated quantities
-  log_lik_list[[i]] <- rstan::extract(fit, permuted = TRUE)$log_lik
-}
-
-names(log_lik_list) <- response_vars
-
-# Compute LOO for each model
-loo_list <- vector("list", n_models)
-
-for (i in seq_along(log_lik_list)) {
-  loo_list[[i]] <- loo(log_lik_list[[i]], cores = 2)
-}
-
-names(loo_list) <- response_vars
-
-
-# Compare models using ELPD
-loo_compare_matrix <- loo_compare(loo_list)
-
-model_data <- as.data.frame(loo_compare_matrix) %>%
-  mutate(model = rownames(loo_compare_matrix)) %>%
-  mutate(clean_name = clean_model_name(model)) %>%
-  select(clean_name, elpd_diff, se_diff) %>%
-  mutate(
-    lo95 = elpd_diff - 2 * se_diff,
-    hi95 = elpd_diff + 2 * se_diff,
-    # Flag models whose CI excludes zero (significantly worse than best)
-    nonzero = (lo95 < 0 & hi95 < 0) | (lo95 > 0 & hi95 > 0),
-    # Best model (elpd_diff == 0) gets a distinct fill
-    is_best = elpd_diff == 0
-  ) %>%
-  arrange(elpd_diff) %>%
-  mutate(clean_name = factor(clean_name, levels = clean_name))
-
-# create plot
-psis_plot <- ggplot(model_data,
-                    aes(y = clean_name, x = elpd_diff)) +
-
-  # +- 2 SE error bars
-  geom_errorbarh(
-    aes(xmin = lo95, xmax = hi95),
-    height    = 0.35,
-    linewidth = 0.55
-  ) +
-
-  # Point estimates
-  geom_point(fill = "black",
-             shape  = 21,
-    size   = 2.2,
-    stroke = 0.55
-  ) +
-
-  # Reference line at zero (best model)
-  geom_vline(xintercept = 0, linetype = "dashed",
-             linewidth = 0.35, color = "grey40") +
-
-  scale_color_identity() +
-  scale_fill_identity() +
-
-  labs(
-    x   = "ELPD difference (higher = better)",
-    y   = "Model"
-  ) +
-
-  theme_minimal(base_size = 8) +
-  theme(
-    plot.tag           = element_blank(),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor   = element_blank(),
-    panel.grid.major.x = element_line(
-      color     = scales::alpha("black", 0.12),
-      linewidth = 0.3
-    ),
-    axis.text.x  = element_text(size = 5.5, color = "black", family = family),
-    axis.text.y  = element_text(size = 5.5, color = "black", hjust = 1, family = family),
-    axis.title.x = element_text(size = 6, face = "bold",
-                                margin = margin(t = 4), family = family),
-    axis.ticks.y = element_blank(),
-    plot.margin  = margin(6, 8, 4, 6)
-  )
-```
-
-### SI Figure: PPD / LOO / Pareto K
+### SI Figure: PPD / LOO / Pareto K FIXIT improve commenting
 
 Pareto k is used to assess the validity of PSIS-LOO values. We ideally want these values to all be below 0.7.
 
@@ -3332,18 +3217,14 @@ pareto_k_df <- bind_rows(
     )
   )
 
-# Load country labels
-model_countries <- readRDS("../data/model_countries")
-
-
 # pareto_k_df with country labels
 pareto_k_df <- bind_rows(
   lapply(seq_along(loo_list), function(i) {
     data.frame(
       model    = names(loo_list)[i],
       point    = seq_along(loo_list[[i]]$diagnostics$pareto_k),
-      pareto_k = loo_list[[i]]$diagnostics$pareto_k,
-      country  = model_countries   # ISO3 label per observation
+      pareto_k = loo_list[[i]]$diagnostics$pareto_k
+      # country  = model_countries   # ISO3 label per observation
     )
   }),
   .id = "model_index"
@@ -3353,33 +3234,8 @@ pareto_k_df <- bind_rows(
     flag       = pareto_k > 0.7
   )
 
-# Facet order matches ELPD ranking
-facet_order <- levels(model_data$clean_name)
-pareto_k_df <- pareto_k_df %>%
-  mutate(clean_name = factor(clean_name,
-                             levels = if (length(facet_order) > 0) rev(facet_order)
-                                      else unique(clean_name)))
-
 pt_ok  <- "grey60"
 pt_bad <- "#C45C3A"
-
-# Build facet tag data — one row per facet, letters assigned in horizontal order
-# facet_wrap with ncol = 3 fills left-to-right, top-to-bottom
-facet_levels <- levels(pareto_k_df$clean_name)  # already in your desired order
-n_facets     <- length(facet_levels)
-
-facet_tags <- pareto_k_df %>%
-  group_by(clean_name) %>%
-  summarize(
-    x_max    = max(point),
-    x_min    = min(point),
-    y_max    = max(pareto_k),
-    .groups  = "drop"
-  ) %>%
-  # Match factor order so letters align with panel positions
-  mutate(
-    clean_name = factor(clean_name, levels = facet_levels)
-  )
 
 pareto_plot <- ggplot(pareto_k_df,
                       aes(x = point, y = pareto_k)) +
@@ -3393,38 +3249,7 @@ pareto_plot <- ggplot(pareto_k_df,
              color = pt_ok, size = 0.7, alpha = 0.55, shape = 16) +
   geom_point(data = filter(pareto_k_df,  flag),
              color = pt_bad, size = 1.1, alpha = 0.85, shape = 16) +
-
-  ggrepel::geom_text_repel(
-    data             = filter(pareto_k_df, flag),
-    aes(label        = country),
-    color            = pt_bad,
-    size             = 1.8,
-    fontface         = "bold",
-    family           = family,
-    segment.color    = pt_bad,
-    segment.size     = 0.25,
-    segment.alpha    = 0.6,
-    box.padding      = 0.25,
-    point.padding    = 0.15,
-    min.segment.length = 0.2,
-    max.overlaps     = Inf,
-    force            = 2
-  ) +
-
-  facet_wrap(~ clean_name, scales = "free_x", ncol = 3) +
-
-  # k = 0.7 annotation — top-right, anchored to each panel's x_max
-  geom_text(
-    data        = facet_tags,
-    aes(x = Inf, y = 1, label = "k = 0.7"),
-    inherit.aes = FALSE,
-    hjust       = 1.1,
-    vjust       = 0,
-    size        = 1.8,
-    color       = "grey30",
-    fontface    = "italic",
-    family = family
-  ) +
+  facet_wrap(~ clean_name, scales = "free_x", ncol = 6) +
 
   scale_y_continuous(
     breaks = c(0, 0.5, 0.7, 1),
@@ -3439,7 +3264,7 @@ pareto_plot <- ggplot(pareto_k_df,
   theme_minimal(base_size = 8) +
   theme(
     plot.tag            = element_blank(),
-    strip.text          = element_text(size = 5.5, face = "bold", hjust = 0.5,
+    strip.text          = element_text(size = 3.5, face = "bold", hjust = 0.5,
                                        margin = margin(b = 2), family = family),
     panel.grid.major.y  = element_line(color = scales::alpha("black", 0.10),
                                        linewidth = 0.25),
@@ -3454,29 +3279,10 @@ pareto_plot <- ggplot(pareto_k_df,
     plot.margin         = margin(6, 8, 4, 6)
   )
 
-# Combine PSIS and Pareto k as panels A and B
-
-# Add panel tags directly in each plot's labs()
-psis_plot   <- psis_plot   + labs(tag = "A")
-pareto_plot <- pareto_plot + labs(tag = "B") +
-  theme(plot.tag.position = c(0.01, 1))  # consistent with psis_plot
-
-# Stack side by side with patchwork
-combined_plot <- plot_grid(
-  psis_plot,
-  pareto_plot,
-  rel_widths = c(1,1.5),
-  labels = c("B", "C")
-  ) %>%
-  # Supress warning - this warning only has to do with fonts, no data
-  # or visualization is harmed via this warning
-  suppressWarnings()
-
-
-
+# Combine PPD and Pareto K plots
 final_plot <- plot_grid(
   ppd_plot,
-  combined_plot,
+  pareto_plot,
   nrow = 1,
   labels = "A",
   rel_widths = c(1,1.6)
