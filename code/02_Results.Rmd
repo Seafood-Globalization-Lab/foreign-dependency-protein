@@ -47,7 +47,7 @@ library(showtext)
 # Register a specific static weight from the variable font file
 font_add(family = "Bahnschrift", regular = "/path/to/bahnschrift.ttf")
 showtext_auto()
-showtext_opts(dpi = 96)  # match whatever dpi your ggsave/rsvg pipeline uses
+showtext_opts(dpi = 96)
 
 # font_import()
 family = "Bahnschrift"
@@ -750,7 +750,7 @@ names(disagg_colors) <-
 
 # Set the linewidth of inland capture to be lower so that the striped foreign
 # lines are more visible on the plot
-disagg_linewidth <- c(0.3,0.03,0.3,0.3)
+disagg_linewidth <- c(0.3,0.3,0.3,0.3)
 
 # Assign line widths their respective names
 names(disagg_linewidth) <- c("Marine capture",
@@ -891,10 +891,9 @@ ggsave(
   height   = 3.2,
   units    = "in"
 )
-
 ```
 
-### What percent has global aquatic animal protein dominance stayed between during 1996-2023?
+### What is the range of global aquatic animal protein dominance between 1996 and 2023?
 
 ```{r how much has aggregate dominance shifted since 1996?}
 # To get a conservative estimate values of the range for global aquatic animal
@@ -1771,6 +1770,27 @@ on marine capture of `r rod_maca`% (`r rod_maca_lb`-`r rod_maca_ub`%) and growth
 in animal protein dominance on inland aquaculture of `r roi_inaq`%
 (`r roi_inaq_lb`-`r roi_inaq_ub`%; Figure 2C).
 
+```{r}
+dom_2023_mcap <- global_dominance_disagg_hab_met %>%
+  filter(year == 2023) %>%
+  filter(food_group == "aquatic",
+         habitat == "marine",
+         method == "capture") %>%
+  pull(perc_animal_protein)
+
+foreign_dom_2023_mcap <- lines %>%
+  drop_na(foreign_val) %>%
+  filter(year == 2023) %>%
+  filter(food_group == "aquatic",
+         habitat == "Marine",
+         method == "capture") %>%
+  pull(perc_animal_protein)
+
+
+pct_for_mcap_2023 <- ((foreign_dom_2023_mcap /  dom_2023_mcap ) * 100) %>% round(0)
+```
+Marine capture is also the source where the highest amount of foreign sourced aquatic animal proteins are consumed, representing `r pct_for_mcap_2023` of globally consumed marine capture animal proteins, and the share that is foreign has increased in recent decades.
+
 ---
 
 ## Figure 3: Look at contributing production sources to a country's rate of
@@ -1895,7 +1915,7 @@ year_ranges <- tibble(
   start_year  = c(1996, 1996),
   end_year    = c(2023, 2023)
 )
-artis_palette(10)
+
 # Define year ranges for observed data
 observed_ranges <- tibble(
   data_source = c("old FBS", "new FBS"),
@@ -1904,22 +1924,22 @@ observed_ranges <- tibble(
 )
 
 ############ RUN THIS ANALYSIS ON DISAGGREGATE dominance
-
-# First we will exclude any countries that have short time series - these short
-# time series may have exaggerated rates of change in the aquatic animal protein
-# dominance
-iso3c_with_at_least_5_yrs <- aquatic_dominance %>%
-  # Remove overlapping FBS years
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+# Grab countries that have a majority of their time series covered between
+# 1996 and 2023. These will go in the main paper figures
+iso3c_maj_ts <- aquatic_dominance %>%
+  filter(!(year %in% 2010:2013 & data_source == "old FBS"),
          food_group == "aquatic") %>%
-  group_by(iso3c, year) %>%
-  summarize(prop_animal_protein = sum(prop_animal_protein)) %>%
-  # Calculate the number of years for each country
+  group_by(iso3c, year, data_source, habitat, method) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
+  group_by(iso3c, habitat, method) %>%
+  summarize(n_years = n_distinct(year), .groups = "drop") %>%
+  mutate(max_years = max(n_years)) %>%
+  mutate(prop_ts_coverage = n_years / max_years) %>%
   group_by(iso3c) %>%
-  summarize(n_years = n()) %>%
-  filter(n_years > 5) %>%
-  # Only get countries with over five years of data
+  filter(all(prop_ts_coverage > 0.6)) %>%
+  distinct(iso3c) %>%
   pull(iso3c)
+  
 
 # Calculate country aquatic animal protein dominance by habitat and method
 disagg_hab_met <- aquatic_dominance %>%
@@ -1927,7 +1947,7 @@ disagg_hab_met <- aquatic_dominance %>%
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
          food_group == "aquatic") %>%
   # Filter to only countries with greater than 5 year time series
-  filter(iso3c %in% iso3c_with_at_least_5_yrs) %>%
+  filter(iso3c %in% iso3c_maj_ts) %>%
   group_by(year, iso3c, habitat, method, data_source) %>%
   summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop")
 
@@ -2092,6 +2112,14 @@ agg_estimate <- disagg %>%
   group_by(iso3c) %>%
   summarize(agg_estimate = sum(estimate))
 
+# all_scen <- bind_rows(obs_obs, back_obs, obs_forward, back_forward)
+
+# agg_estimate <- all_scen %>%
+#   group_by(iso3c, type) %>%
+#   summarize(slope = sum(estimate), .groups = "drop") %>%
+#   group_by(iso3c) %>%
+#   summarize(agg_estimate = 100 * (min(slope) + max(slope)) / 2)
+
 
 # Helper to build a bar panel
 make_bar_panel <- function(regions,
@@ -2099,45 +2127,49 @@ make_bar_panel <- function(regions,
                            legend_show  = FALSE,
                            text_size    = 4.75) {
   
+  group_levels <- c("unknown unknown",     # #A8A8A8
+                    "inland capture",      # #5DA49A
+                    "marine capture",      # #114F59
+                    "inland aquaculture",  # #D3AF55
+                    "marine aquaculture")  # #C87534
+
   disagg %>%
     add_region("iso3c", "region") %>%
     filter(region %in% regions) %>%
     left_join(agg_estimate, by = "iso3c") %>%
-    
-    
-    
+    mutate(group_label = factor(group_label, levels = group_levels)) %>%
     ggplot(
       aes(
         x = estimate,
         y = fct_reorder(iso3c, -agg_estimate),
         fill = group_label
-        )) +
+      )) +
     bar_layers +
     scale_fill_manual(
-      values = c(
-        "inland aquaculture"    = "#D3AF55",
-        "marine aquaculture"    = "#C87534",
-        "inland capture"        = "#5DA49A",
-        "marine capture"        = "#114F59",
-        "unknown unknown"       = "#A8A8A8"
-        ),
-      labels = c("Marine capture", "Inland capture",
-                 "Marine aquaculture", "Inland aquaculture",
-                 "Unknown"),
-      name = "Source",
-      guide = guide_legend(
-        order = 1,
-        override.aes = list(
-          fill = list(
-            "#114F59",
-            "#5DA49A",
-            "#C87534",
-            "#D3AF55",
-            "#A8A8A8"
-          )))) +
+  values = c(
+    "marine capture"       = "#114F59",
+    "inland capture"       = "#5DA49A",
+    "marine aquaculture"   = "#C87534",
+    "inland aquaculture"   = "#D3AF55",
+    "unknown unknown"      = "#A8A8A8"
+  ),
+  breaks = c("marine capture",
+             "inland capture",
+             "marine aquaculture",
+             "inland aquaculture",
+             "unknown unknown"),
+  labels = c("marine capture"       = "Marine capture",
+             "inland capture"       = "Inland capture",
+             "marine aquaculture"   = "Marine aquaculture",
+             "inland aquaculture"   = "Inland aquaculture",
+             "unknown unknown"      = "Unknown"),
+  drop = FALSE,
+  name = "Source",
+  guide = guide_legend(order = 1)
+) +
     facet_wrap(~ region, scales = "free", nrow = 1) +
     labs(
-      x    = "Average annual change in aquatic animal protein dominance (1996–2023)",
+      x    = "Annual rate of change in aquatic animal protein dominance\n by consumption source",
       fill = "Source",
       color = ""
     ) +
@@ -2242,7 +2274,7 @@ top_panel <- agg_estimate %>%
   geom_col(position = "stack", width = 0.65) +
   scale_fill_manual(
     values = c("#8FACB4", "#b4c461"),
-    name   = "Change in aggregate aquatic animal protein dominance (1996-2023)",
+    name   = "Annual rate of change in aquatic animal protein dominance",
     labels = c("Decrease in dominance", "Increase in dominance"),
     guide = guide_legend(override.aes = list(
                         fill = list(
@@ -2314,15 +2346,15 @@ In aggregate, aquatic animal protein dominance declined in `r num_decreasing_glo
 ### What is the percent contribution of inland and marine capture to countries' declining aggregate dominance?
 
 ```{r}
-# How many countries with decreases in aggregate aquatic animal protein dominance
-# have over 80% of their declines attributed to capture?
+# How many countries with declining aquatic animal protein dominance had a
+# majority of their declines represented by capture fisheries?
 num_countries_cap <- disagg %>%
   select(
     -group_label,
     -term
     ) %>%
   rename(disagg_estimate = estimate) %>%
-  group_by(iso3c, method) %>%
+  group_by(iso3c, method, habitat) %>%
   summarize(disagg_estimate = sum(disagg_estimate)) %>%
   left_join(agg_estimate) %>%
   mutate(rel_is_neg = disagg_estimate < 0) %>%
@@ -2330,31 +2362,45 @@ num_countries_cap <- disagg %>%
   group_by(iso3c) %>%
   mutate(pct_contribution = 100 *( disagg_estimate / sum(disagg_estimate))) %>%
   filter(method == "capture") %>%
-  filter(pct_contribution > 80) %>%
-  filter(agg_estimate < -0.15) %>%
+  filter(pct_contribution >= 51) %>%
   nrow()
-  
-# How many countries with moderate to steep increases in aggregate aquatic
-# animal protein dominance have over 60% of their growth attributed to
-# aquaculture?
-num_countries_aq <- disagg %>%
+
+
+# Number of countries that increased in marine aquaculture dominance with an
+# increasing aquatic animal protein dominance
+num_increasing_maq <- disagg %>%
   select(
     -group_label,
     -term
     ) %>%
   rename(disagg_estimate = estimate) %>%
-  group_by(iso3c, method) %>%
+  group_by(iso3c, method, habitat) %>%
+  summarize(disagg_estimate = sum(disagg_estimate), .groups = "drop") %>%
+  left_join(agg_estimate) %>%
+  mutate(rel_is_pos = disagg_estimate > 0) %>%
+   filter(agg_estimate > 0) %>%
+  filter(method == "aquaculture", habitat == "marine") %>%
+   count(disagg_estimate > 0)
+
+
+
+mmr_khm_ex <- disagg %>%
+  select(
+    -group_label,
+    -term
+    ) %>%
+  rename(disagg_estimate = estimate) %>%
+  group_by(iso3c, method, habitat) %>%
   summarize(disagg_estimate = sum(disagg_estimate), .groups = "drop") %>%
   left_join(agg_estimate) %>%
   mutate(rel_is_pos = disagg_estimate > 0) %>%
   filter(agg_estimate > 0, rel_is_pos == TRUE) %>%
   group_by(iso3c) %>%
   mutate(pct_contribution = 100 *( disagg_estimate / sum(disagg_estimate))) %>%
-  filter(method == "aquaculture") %>%
-  filter(pct_contribution > 60) %>%
-  arrange(-agg_estimate) %>%
-  filter(agg_estimate > 0.15) %>%
-  nrow()
+  filter(method == "aquaculture", habitat == "inland") %>%
+  filter(iso3c %in% c("MMR", "KHM")) %>%
+  mutate(disagg_estimate = round(disagg_estimate, 2))
+
 ```
 
 With the disaggregate dominance, we expose a major attributor for the shift away from aquatic animal proteins: widespread declines in animal protein dominance on capture fisheries have contributed over 80% towards negative shifts in the aggregate aquatic animal protein dominance for `r num_countries_cap` countries.
@@ -2367,7 +2413,7 @@ Uniquely, nearly every nation in Europe, 38 out of 40, increased their dominance
 
 ## Figure 4: Scatterplot (terrestrial consumption ~ aquatic consumption; colored by: aquatic dominance) + bar chart overlay 
 
-Scatterplot of average annual change in daily terrestrial animal protein consumption (kg/capita/day) 2010–2023 (y-axis) with respect to the average annual change in daily aquatic animal protein consumption (kg/capita/day) 2010–2023 colored by the annual change in daily aquatic animal protein dominance(%) 2010-2023, overlaid by a 1:1 line. The bar plots represent the number of countries in each quadrant, with the highest count of countries in any quadrant being 21. The two right hand y-axes represent these number of countries.
+Scatterplot of Annual rate of change in daily terrestrial animal protein consumption (kg/capita/day) 2010–2023 (y-axis) with respect to the Annual rate of change in daily aquatic animal protein consumption (kg/capita/day) 2010–2023 colored by the annual change in daily aquatic animal protein dominance(%) 2010-2023, overlaid by a 1:1 line. The bar plots represent the number of countries in each quadrant, with the highest count of countries in any quadrant being 21. The two right hand y-axes represent these number of countries.
 
 ```{r}
 # Region palette — desaturated analogues of the RdBu diverging scale
@@ -2438,22 +2484,19 @@ observed_ranges <- tibble(
   max_year = c(2009, 2023)
 )
 
-# First we will exclude any countries that have short time series - these short
-# time series may have exaggerated rates of change in the aquatic animal protein
-# dominance
-iso3c_with_at_least_5_yrs <- aquatic_dominance %>%
-  # Remove overlapping FBS years
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+# For this analysis, only include countries with complete time series
+iso3c_maj_ts <- aquatic_dominance %>%
+  filter(!(year %in% 2010:2013 & data_source == "old FBS"),
          food_group == "aquatic") %>%
-  group_by(iso3c, year) %>%
-  summarize(
-    prop_animal_protein = sum(prop_animal_protein), .groups = "drop"
-    ) %>%
-  # Calculate the number of years for each country
+  group_by(iso3c, year, data_source, habitat, method) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
+  group_by(iso3c, habitat, method) %>%
+  summarize(n_years = n_distinct(year), .groups = "drop") %>%
+  mutate(max_years = max(n_years)) %>%
+  mutate(prop_ts_coverage = n_years / max_years) %>%
   group_by(iso3c) %>%
-  summarize(n_years = n()) %>%
-  filter(n_years > 5) %>%
-  # Only get countries with over five years of data
+  filter(all(prop_ts_coverage > 0.6)) %>%
+  distinct(iso3c) %>%
   pull(iso3c)
 
 ######### AQUATIC ANIMAL PROTEIN CONSUMPTION RATE OF CHANGE (1996-2023)
@@ -2462,14 +2505,13 @@ iso3c_with_at_least_5_yrs <- aquatic_dominance %>%
 aquatic_protein_quant <-  aquatic_dominance %>%
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
          food_group == "aquatic") %>%
+  filter(iso3c %in% iso3c_maj_ts) %>%
   group_by(data_source, iso3c, year) %>%
   summarize(
     protein_consumed_kg_percap_peryr =
       sum(protein_consumed_kg_percap_peryr, na.rm = TRUE),
     .groups = "drop"
-    ) %>%
-  # Filter to only countries with greater than 5 year time series
-  filter(iso3c %in% iso3c_with_at_least_5_yrs)
+    )
   
 # Obtain linear model intercept and slope estimates to create forward / backcasted projections
 coefs_aq_cons <- aquatic_protein_quant %>%
@@ -2587,14 +2629,13 @@ aquatic_protein_quant <- bind_rows(
 # Calculate country aggregate aquatic animal protein dominance
 terrestrial_protein_quant <-  aquatic_dominance %>%
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"), food_group == "terrestrial") %>%
+  filter(iso3c %in% iso3c_maj_ts) %>%
   group_by(data_source, iso3c, year) %>%
   summarize(
     protein_consumed_kg_percap_peryr =
       sum(protein_consumed_kg_percap_peryr, na.rm = TRUE),
     .groups = "drop"
-    ) %>%
-  # Filter to only countries with greater than 5 year time series
-  filter(iso3c %in% iso3c_with_at_least_5_yrs)
+    )
 
 # Obtain linear model intercept and slope estimates to create forward / backcasted projections
 coefs_terr_cons <- terrestrial_protein_quant %>%
@@ -2747,11 +2788,16 @@ p_scatter_base <- plot_df %>%
   ggplot(aes(
     x     = aquatic_estimate,
     y     = terrestrial_estimate,
-    fill  = aquatic_outpaces_terrestrial,
-    label = iso3c
+    label = iso3c,
+    fill = aquatic_outpaces_terrestrial
   )) +
-  scale_fill_manual(labels = c("Terr. outpaces aq. animal protein cons.", "Aq. outpaces terr animal protein cons."), values = c("#b4c461", "#8FACB4")) +
-  # scale_fill_manual(values = artis_palette(6)) +
+#   scale_fill_gradient2(
+#   low      = "#B2182B",   # muted brick red
+#   mid      = "#F7F7F7",   # near-white (pure white can vanish against the panel)
+#   high     = "#2166AC",   # muted steel blue
+#   midpoint = 0
+# ) +
+  scale_fill_manual(labels = c("Change in terr. animal protein cons. exceeds change in aq.", "Change in aq animal protein cons. exceeds change in terr."), values = c("#b4c461", "#8FACB4")) +
   geom_hline(yintercept = 0, linewidth = 0.4, color = "black") +
   geom_vline(xintercept = 0, linewidth = 0.4, color = "black") +
   geom_abline(intercept = 0, slope = 1,
@@ -2768,11 +2814,14 @@ p_scatter_base <- plot_df %>%
   ) +
   lims(x = c(-0.25, 0.25), y = c(-4.5, 4.5)) +
   labs(
-    x = "Average annual change in aquatic animal protein consumption (kg/capita/year) 1996–2023",
-    y = "Average annual change in terrestrial animal protein consumption\n(kg/capita/year) 1996–2023") +
+    x = "Annual rate of change in aquatic animal protein consumption (kg/capita/year) 1996–2023",
+    y = "Annual rate of change in terrestrial animal protein consumption\n(kg/capita/year) 1996–2023") +
   theme_scatter() +
   guides(fill=guide_legend(nrow=2)) +
   theme(legend.title = element_blank())
+
+# Top panel: # of all countries with increasing / decreasing dominance
+
 
 
 # Extract colorbar legend from scatter before stripping it
@@ -2872,6 +2921,7 @@ ggsave(
   height   = 3.5,
   units    = "in"
 )
+
 ```
 
 ### How many countries increased their animal protein consumption between 1996 and 2023?
@@ -2881,7 +2931,8 @@ ggsave(
 
 # Calculate country aggregate aquatic animal protein dominance
 animal_protein_quant <-  aquatic_dominance %>%
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS")) %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         iso3c %in% iso3c_maj_ts) %>%
   group_by(data_source, iso3c, year) %>%
   summarize(
     protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr,
@@ -2990,7 +3041,7 @@ animal_protein_quant <- bind_rows(
   back_forward
   ) %>%
   group_by(iso3c) %>%
-  summarize(animal_protein_estimate = min(estimate) + max(estimate) / 2)
+  summarize(animal_protein_estimate =(min(estimate) + max(estimate)) / 2)
 
 # Get the number of countries that increased their animal protein consumption
 num_increasing_animal <- animal_protein_quant %>%
@@ -2998,12 +3049,17 @@ num_increasing_animal <- animal_protein_quant %>%
   filter(roc_is_pos == TRUE) %>%
   pull(n)
 
-
+# Calculate the mean increase in animal protein consumption for countries
+# that increased their animal protein consumption
 mean_increase <- animal_protein_quant %>%
   mutate(roc_is_pos = animal_protein_estimate > 0) %>%
   filter(roc_is_pos == TRUE) %>%
-  summarize(mean_increase = mean(animal_protein_estimate))
+  summarize(mean_increase = mean(animal_protein_estimate)) %>%
+  pull(mean_increase) %>%
+  round(2)
 ```
+
+Collectively, animal protein intake has widely increased between 1996 and 2023, with 117 out of 175 nations increasing their animal protein consumption on average `r mean_inrease` kg cap$^{-1}$yr$^{-1}$
 
 ### How many countries' animal protein consumption outpaced aquatic animal protein consumption?
 
@@ -3020,54 +3076,66 @@ However, terrestrial food consumption often outpaces aquatic food consumption, o
 ### What are example cases for when outpacing occurs?
 
 ```{r outpacing analysis}
+plot_df %>%
+  mutate(quadrant = case_when(
+    aquatic_estimate > 0 & terrestrial_estimate > 0 ~ "Q1",
+    aquatic_estimate < 0 & terrestrial_estimate > 0 ~ "Q2",
+    aquatic_estimate < 0 & terrestrial_estimate < 0 ~ "Q3",
+    aquatic_estimate > 0 & terrestrial_estimate < 0 ~ "Q4"
+  )) %>%
+  mutate(aquatic_outpaces_terrestrial = aquatic_estimate > terrestrial_estimate) %>%
+  filter(quadrant == "Q4")
+
+
 # Quadrant 1 examples
 # increasing aquatic & terrestrial animal protein consumption
-cri_vals <- plot_df %>%
-  filter(iso3c == "CRI")
-
 ltu_vals <- plot_df %>%
-  filter(iso3c == "LTU")
+  filter(iso3c == "LTU") %>%
+  mutate(aquatic_estimate = round(aquatic_estimate, 2),
+         terrestrial_estimate = round(terrestrial_estimate, 2))
+
+usa_vals <- plot_df %>%
+  filter(iso3c == "USA") %>%
+  mutate(aquatic_estimate = round(aquatic_estimate, 2),
+         terrestrial_estimate = round(terrestrial_estimate, 2))
 
 
 # Quadrant 2 examples
 # decreasing aquatic & increasing terrestrial animal protein consumption
-syc_vals <- plot_df %>%
-  filter(iso3c == "SYC")
-
-guy_vals <- plot_df %>%
-  filter(iso3c == "GUY")
+ven_vals <- plot_df %>%
+  filter(iso3c == "VEN") %>%
+  mutate(aquatic_estimate = round(aquatic_estimate, 2),
+         terrestrial_estimate = round(terrestrial_estimate, 2))
 
 mdg_vals <- plot_df %>%
-  filter(iso3c == "MDG")
+  filter(iso3c == "MDG") %>%
+  mutate(aquatic_estimate = round(aquatic_estimate, 2),
+         terrestrial_estimate = round(terrestrial_estimate, 2))
 
 # Quadrant 3 examples
 # decreasing aquatic & terrestrial animal protein consumption
-ken_vals <- plot_df %>%
-  filter(iso3c == "KEN")
+ven_vals <- plot_df %>%
+  filter(iso3c == "VEN") %>%
+  mutate(aquatic_estimate = round(aquatic_estimate, 2),
+         terrestrial_estimate = round(terrestrial_estimate, 2))
+
+gnb_vals <- plot_df %>%
+  filter(iso3c == "GNB") %>%
+  mutate(aquatic_estimate = round(aquatic_estimate, 2),
+         terrestrial_estimate = round(terrestrial_estimate, 2))
 
 # Quadrant 4 examples
 # increasing aquatic & decreasing terrestrial animal protein consumption
-idn_vals <- plot_df %>%
-  filter(iso3c == "IDN")
-
 aut_vals <- plot_df %>%
-  filter(iso3c == "AUT")
+  filter(iso3c == "AUT") %>%
+  mutate(aquatic_estimate = round(aquatic_estimate, 2),
+         terrestrial_estimate = round(terrestrial_estimate, 2))
+
+ita_vals <- plot_df %>%
+  filter(iso3c == "ITA") %>%
+  mutate(aquatic_estimate = round(aquatic_estimate, 2),
+         terrestrial_estimate = round(terrestrial_estimate, 2))
 ```
-
-Outpacing occurs when a country’s rate of change in consumption for either aquatic or terrestrial foods is greater than the
-rate of change for their other food source. That is, we find four scenarios for where terrestrial and aquatic food consumption
-per capita outpace each other: (1) dual increases in terrestrial and aquatic foods; (2) increases in terrestrial and decreases in
-aquatic foods; (3) dual declines in terrestrial and aquatic foods; (4) increases in aquatic and decreases in terrestrial foods.
-For scenario 1, North America and Europe widely increased both terrestrial and aquatic food consumption, but their terrestrial
-foods often outpaced their aquatic foods (SI Figure 26).
-For example, Costa Rica and Lithuania increased their aquatic food consumption on average by `r cri_vals$aquatic_estimate %>% round(2)$` and `r ltu_vals$aquatic_estimate %>% round(2)$` kg cap-1 yr-1 respectively while increasing their terrestrial foods on average by `r cri_vals$terrestrial_estimate %>% round(2)$` and `r ltu_vals$terrestrial_estimate %>% round(2)$` kg cap-1 yr-1 (Figure 4).
-For scenario 2, Africa and South America’s terrestrial foods often outpaced their aquatic food consumption, similar to scenario 1, however here they reduced their aquatic food consumption (SI Figure 26).
-For example, nations such as Seychelles and Guyana decreased aquatic food consumption on average by `r -syc_vals$aquatic_estimate %>% round(2)$` and `r -guy_vals$aquatic_estimate %>% round(2)$` kg cap-1
-yr-1 respectively while increasing terrestrial foods on average by `r syc_vals$terrestrial_estimate %>% round(2)$` and `r guy_vals$terrestrial_estimate %>% round(2)$` kg cap-1 yr-1 (Figure 4).
-For scenario 3, we find many African nations also reduced their consumption of both terrestrial and aquatic foods, but in these cases, their aquatic foods mostly outpace terrestrial foods.
-For Madagascar and Kenya, they reduced aquatic food consumption on average `r -mdg_vals$aquatic_estimate %>% round(2)$` and `r -ken_vals$aquatic_estimate %>% round(2)$` kg cap-1 yr-1 respectively while decreasing terrestrial foods on average `r mdg_vals$terrestrial_estimate %>% round(2)$` and `r ken_vals$terrestrial_estimate %>% round(2)$` kg cap-1 yr-1 respectively (SI Figure 26).
-For scenario 4, few countries increased aquatic food consumption while reducing terrestrial foods, however Indonesia and Austria’s consumption are noteworthy, increasing their aquatic foods on average `r idn_vals$aquatic_estimate %>% round(2)$` and `r aut_vals$aquatic_estimate %>% round(2)$` kg cap-1 yr-1 while substantially declining terrestrial food consumption on average `r -idn_vals$terrestrial_estimate %>% round(2)$` and `r -aut_vals$terrestrial_estimate %>% round(2)$` kg cap-1 yr-1 (Figure 4).
-
 
 # RQ 2: What biophysical and socioeconomic factors are associated with dominance on farmed and wild aquatic animals for protein and overall consumption?
 
@@ -3616,9 +3684,32 @@ if (all_outputs_exist) {
     
     # Don't run otherwise as setting the adapt_delta to 0.99 makes the sampling
     # slower
-    if (i == 17) {
-      
-      fit <- stan(
+    # if (i == 17) {
+    #   
+    #   fit <- stan(
+    #   file   = "../utils/social_bayesian_model_hierarchical.stan",
+    #   data   = stan_data,
+    #   init   = inits,
+    #   chains = 3,
+    #   iter   = 10000,
+    #   warmup = 5000,
+    #   control = list(adapt_delta = 0.99)
+    # )
+    #   
+    # } else {
+    #   
+    #   fit <- stan(
+    #   file   = "../utils/social_bayesian_model_hierarchical.stan",
+    #   data   = stan_data,
+    #   init   = inits,
+    #   chains = 3,
+    #   iter   = 10000,
+    #   warmup = 5000
+    # )
+    #   
+    # }
+    
+    fit <- stan(
       file   = "../utils/social_bayesian_model_hierarchical.stan",
       data   = stan_data,
       init   = inits,
@@ -3627,19 +3718,6 @@ if (all_outputs_exist) {
       warmup = 5000,
       control = list(adapt_delta = 0.99)
     )
-      
-    } else {
-      
-      fit <- stan(
-      file   = "../utils/social_bayesian_model_hierarchical.stan",
-      data   = stan_data,
-      init   = inits,
-      chains = 3,
-      iter   = 10000,
-      warmup = 5000
-    )
-      
-    }
     
 
     # Save fitted model
