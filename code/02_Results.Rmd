@@ -2112,15 +2112,6 @@ agg_estimate <- disagg %>%
   group_by(iso3c) %>%
   summarize(agg_estimate = sum(estimate))
 
-# all_scen <- bind_rows(obs_obs, back_obs, obs_forward, back_forward)
-
-# agg_estimate <- all_scen %>%
-#   group_by(iso3c, type) %>%
-#   summarize(slope = sum(estimate), .groups = "drop") %>%
-#   group_by(iso3c) %>%
-#   summarize(agg_estimate = 100 * (min(slope) + max(slope)) / 2)
-
-
 # Helper to build a bar panel
 make_bar_panel <- function(regions,
                            axis_x_label = FALSE,
