@@ -2805,8 +2805,8 @@ p_scatter_base <- plot_df %>%
   ) +
   lims(x = c(-0.25, 0.25), y = c(-4.5, 4.5)) +
   labs(
-    x = "Annual rate of change in aquatic animal protein consumption (kg/capita/year) 1996–2023",
-    y = "Annual rate of change in terrestrial animal protein consumption\n(kg/capita/year) 1996–2023") +
+    x = "Annual rate of change in aquatic animal protein consumption (kg/capita/year)",
+    y = "Annual rate of change in terrestrial animal protein consumption\n(kg/capita/year)") +
   theme_scatter() +
   guides(fill=guide_legend(nrow=2)) +
   theme(legend.title = element_blank())

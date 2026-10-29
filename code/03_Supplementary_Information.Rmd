@@ -48,6 +48,10 @@ showtext_opts(dpi = 96)
 family = "Bahnschrift"
 ```
 
+Note: the order that the figures are labeled in the document outline are the
+order that our paper cites each figure. But for ease of navigation, we organized
+figures under their respective research questions
+
 # Read in data
 
 ### Read in aquatic dominance data & FAO population data
@@ -194,7 +198,566 @@ base_path <- file.path(
 
 # RQ 1a: How do aquatic food dominance trends disaggregated by source differ from aggregate aquatic food dominance?
 
-## SI figure: Plot the rate of change in aquatic food production sourcing protein reliance by economic status
+## SI Figure 7: Recreation of figure 3, but with countries that do not have 60% data coverage
+
+```{r aggregate vs disaggregate change in dominance}
+# Shared base theme (mirrors theme_realm_panel style)
+theme_dominance <- function(base_size = 8,
+                           axis_title_x = TRUE,
+                           axis_title_y = FALSE,
+                           legend       = TRUE) {
+  base <- theme_minimal(base_size = base_size) +
+    theme(
+      text                    = element_text(family = family),
+      plot.background         = element_rect(fill = "transparent", color = NA),
+      panel.background        = element_rect(fill = "transparent", color = NA),
+      panel.grid.minor        = element_blank(),
+      panel.grid.major.x = element_line(
+        color = scales::alpha("black", 0.3), linewidth = 0.15
+      ),
+      panel.grid.major.y = element_line(
+        color = scales::alpha("black", 0.06), linewidth = 0.15
+      ),
+      axis.text               = element_text(
+        size = base_size - 3, family = family
+        ),
+      axis.title.x            = element_text(
+        size  = base_size,
+        face  = "bold",
+        vjust = -0.5,
+        margin = margin(t = 4),
+        family = family
+      ),
+      axis.title.y            = element_blank(),
+      strip.text              = element_text(
+        size = base_size - 1, face = "bold", family = family, color = "black"
+        ),
+      legend.position         = if (legend) "bottom" else "none",
+      legend.title            = element_text(
+        size = base_size - 1, face = "bold", family = family
+        ),
+      legend.text             = element_text(
+        size = base_size - 2, family = family
+        ),
+      legend.key.size         = unit(0.3, "cm"),
+      legend.box              = "vertical",
+      legend.spacing          = unit(0.1, "cm"),
+      legend.margin           = margin(t = 1, b = 0),
+      legend.box.margin       = margin(t = -2, b = -2),
+      legend.background       = element_rect(fill = "transparent", color = NA),
+      legend.box.background   = element_rect(fill = "transparent", color = NA),
+      plot.margin             = margin(3, 3, 3, 3)
+    )
+
+  if (!axis_title_x) {
+    base <- base + theme(axis.title.x = element_blank())
+  }
+
+  base
+}
+
+
+bar_layers <- list(
+  geom_col(),
+  geom_vline(xintercept = 0, linewidth = 0.4, color = "black"),
+  geom_point(aes(x = agg_estimate, y = iso3c, color = term), shape = 21,
+             fill = "grey20", size = 1.2, stroke = 0.3)
+)
+
+##### -------------------------------- PROBLEM:
+
+# FAOSTAT Food balance Sheets are divided into old methodology (-2013)
+# and new methodology (2010-). This creates a jump in the data sources in
+# aquatic animal protein dominance. To account for this, we will forward cast
+# old FAO dominance values to new years and back cast new FAO dominance
+# values to old years. Then, we will calculate the rate of change across:
+
+# 1. obs - obs
+# 2. obs - forwardcast
+# 3. back cast - obs
+# 4. back cast - forward cast
+
+# We will take the maximum and minimum values of these as the ranges for
+# rate of change in aquatic animal protein dominance, and will plot the midpoint of these
+# ranges.
+
+############ RUN THIS ANALYSIS ON DISAGGREGATE dominance
+# Grab countries that have a majority of their time series covered between
+# 1996 and 2023. These will go in the main paper figures
+iso3c_maj_ts <- aquatic_dominance %>%
+  filter(!(year %in% 2010:2013 & data_source == "old FBS"),
+         food_group == "aquatic") %>%
+  group_by(iso3c, year, data_source, habitat, method) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
+  group_by(iso3c, habitat, method) %>%
+  summarize(n_years = n_distinct(year), .groups = "drop") %>%
+  mutate(max_years = max(n_years)) %>%
+  mutate(prop_ts_coverage = n_years / max_years) %>%
+  group_by(iso3c) %>%
+  filter(all(prop_ts_coverage > 0.6)) %>%
+  distinct(iso3c) %>%
+  pull(iso3c)
+  
+
+# Calculate country aquatic animal protein dominance by habitat and method
+disagg_hab_met <- aquatic_dominance %>%
+   # Remove overlapping years prioritizing new years
+  filter(food_group == "aquatic",
+         !iso3c %in% iso3c_maj_ts) %>%
+  group_by(year, iso3c, habitat, method, data_source) %>%
+  summarize(perc_animal_protein = sum(prop_animal_protein * 100), .groups = "drop")
+
+
+# Obtain linear model intercept and slope estimates to
+# create forward / backcasted projections
+disagg <- disagg_hab_met %>%
+  group_by(iso3c, habitat, method, data_source) %>%
+  nest() %>%
+  mutate(model = map(data, ~ lm(perc_animal_protein ~ year, data = .x)),
+         tidy  = map(model, broom::tidy)) %>%
+  unnest(tidy) %>%
+  select(data_source, iso3c, habitat, method, term, estimate) %>%
+  pivot_wider(values_from = estimate, names_from = term) %>%
+  rename(year_coef = year) %>%
+  mutate(group_label = paste0(habitat, " ", method),
+         term = "year") %>%
+  ungroup() %>%
+  select(iso3c, group_label, estimate = year_coef, term)
+
+############ AGGREGATE dominance
+agg_estimate <- aquatic_dominance %>%
+  filter(!(year %in% 2010:2013 & data_source == "old FBS"),
+         food_group == "aquatic",
+         !iso3c %in% iso3c_maj_ts) %>%
+  group_by(iso3c, data_source, year) %>%
+  summarize(perc_animal_protein = sum(prop_animal_protein * 100)) %>%
+  group_by(iso3c) %>%
+  nest() %>%
+  mutate(model = map(data, ~ lm(perc_animal_protein ~ year, data = .x)),
+         tidy  = map(model, broom::tidy)) %>%
+  unnest(tidy) %>%
+  select(iso3c, term, estimate) %>%
+  pivot_wider(values_from = estimate, names_from = term) %>%
+  rename(agg_estimate = year) %>%
+  select(-`(Intercept)`)
+
+# Helper to build a bar panel
+make_bar_panel <- function(regions,
+                           axis_x_label = FALSE,
+                           legend_show  = FALSE,
+                           text_size    = 4.75) {
+  
+  group_levels <- c("unknown unknown",     # #A8A8A8
+                    "inland capture",      # #5DA49A
+                    "marine capture",      # #114F59
+                    "inland aquaculture",  # #D3AF55
+                    "marine aquaculture")  # #C87534
+
+  disagg %>%
+    add_region("iso3c", "region") %>%
+    filter(region %in% regions) %>%
+    left_join(agg_estimate, by = "iso3c") %>%
+    mutate(group_label = factor(group_label, levels = group_levels)) %>%
+    ggplot(
+      aes(
+        x = estimate,
+        y = fct_reorder(iso3c, -agg_estimate),
+        fill = group_label
+      )) +
+    bar_layers +
+    scale_fill_manual(
+  values = c(
+    "marine capture"       = "#114F59",
+    "inland capture"       = "#5DA49A",
+    "marine aquaculture"   = "#C87534",
+    "inland aquaculture"   = "#D3AF55",
+    "unknown unknown"      = "#A8A8A8"
+  ),
+  breaks = c("marine capture",
+             "inland capture",
+             "marine aquaculture",
+             "inland aquaculture",
+             "unknown unknown"),
+  labels = c("marine capture"       = "Marine capture",
+             "inland capture"       = "Inland capture",
+             "marine aquaculture"   = "Marine aquaculture",
+             "inland aquaculture"   = "Inland aquaculture",
+             "unknown unknown"      = "Unknown"),
+  drop = FALSE,
+  name = "Source",
+  guide = guide_legend(order = 1)
+) +
+    facet_wrap(~ region, scales = "free", nrow = 1) +
+    labs(
+      x    = "Annual rate of change in aquatic animal protein dominance\n by consumption source",
+      fill = "Source",
+      color = ""
+    ) +
+    theme_dominance(
+      axis_title_x = axis_x_label,
+      legend       = legend_show
+    ) +
+    theme(axis.text = element_text(size = text_size, family = family),
+          strip.text = element_text(family = family)) +
+    scale_color_manual(
+      values = "white",
+      label = "aggregate dominance",
+      guide = guide_legend(
+        order = 2,
+        override.aes = list(
+        fill = list(
+          pattern(
+            grobTree(
+              circleGrob(
+                x = 0.5, 
+                y = 0.5, 
+                r = 0.3,
+                gp = gpar(fill = "grey20")
+                )),
+            extend = "repeat",
+            gp = gpar(col = "grey20", fill = "white", lwd = 0.25)
+            )),
+        color = "grey20",
+        linewidth = 0.2,
+        size = 3.5
+        )))
+}
+
+
+# Build panels - they are separated into two rows because including all in one
+# would make the countries too small to see
+all_regions   <- unique(add_region(disagg, "iso3c", "region")$region)
+top_regions   <- all_regions[!all_regions %in% c("Oceania", "South America")]
+bot_regions   <- c("Oceania", "South America")
+
+# Top row of bars (i.e.. North America, Asia, Africa, Europe)
+top_row <- make_bar_panel(
+  top_regions,
+  axis_x_label = FALSE,
+  legend_show = FALSE,
+  text_size = 4.75) +
+  theme(plot.margin = margin(t = 0,  # Top margin
+                             r = 5,  # Right margin
+                             b = 0,  # Bottom margin
+                             l = 5))
+
+# Top row of bars (i.e.. Africa and Oceania)
+bottom_row <- make_bar_panel(
+  bot_regions,
+  axis_x_label = TRUE,
+  legend_show = TRUE,
+  text_size = 5.15)
+
+# Since there are less plots in the bottom row, add spacers in to make
+# the aspect ratio of the bottom plots look similar in size to the top plots
+bottom_row_narrowed <- cowplot::plot_grid(
+  NULL, bottom_row, NULL,
+  ncol       = 3,
+  rel_widths = c(0.1, 0.3, 0.1)
+) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+  suppressWarnings()
+
+# combine the bottom and top bar plots (this will make up the bottom panel of
+# the plot)
+bottom_panel <- cowplot::plot_grid(
+  top_row,
+  bottom_row_narrowed,
+  nrow        = 2,
+  rel_heights = c(2, 1.25)
+) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+  suppressWarnings()
+
+
+# Calculate the number of countries used in analysis
+num_countries <- agg_estimate %>%
+  ungroup() %>%
+  distinct(iso3c) %>%
+  nrow()
+
+# Top panel: # of all countries with increasing / decreasing dominance
+top_panel <- agg_estimate %>%
+  mutate(direction = case_when(
+    agg_estimate < 0 ~ "Decreasing dominance",
+    agg_estimate > 0 ~ "Increasing dominance"
+  )) %>%
+  count(direction) %>%
+  mutate(direction = factor(
+    direction,
+    levels = c("Increasing dominance", "Decreasing dominance")
+    )) %>%
+  ggplot(aes(x = 1, y = n, fill = direction)) +
+  coord_flip() +
+  geom_col(position = "stack", width = 0.65) +
+  scale_fill_manual(
+    values = c("#8FACB4", "#b4c461"),
+    name   = "Annual rate of change in aquatic animal protein dominance",
+    labels = c("Decrease in dominance", "Increase in dominance"),
+    guide = guide_legend(override.aes = list(
+                        fill = list(
+                          "#b4c461",
+                          "#8FACB4"
+                          ),
+                        linewidth = 0.15,
+                        size = 3.5
+                        
+                      ))) +
+  labs(y = paste0("Number of countries (", num_countries, " total)")) +
+  theme_dominance(axis_title_x = TRUE, legend = TRUE) +
+  theme(
+    axis.text.y  = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.x = element_text(size = 8, face = "bold", family = family),
+    axis.text.x = element_text(family = family),
+    legend.title = element_text(family = family, size = 7, hjust = 1.25),
+    legend.text = element_text(family = family, size = 6),
+
+    panel.grid.major.y = element_blank(),
+    aspect.ratio = 0.05
+  )
+
+
+# Combine panels
+final_plot <- cowplot::plot_grid(
+  top_panel,
+  bottom_panel,
+  nrow          = 2,
+  rel_heights   = c(0.35, 2),
+  labels        = c("A", "B"),
+  label_size    = 9.5
+) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+  suppressWarnings()
+
+# Print final plot
+print(final_plot)
+
+
+# Save plot
+ggsave(
+  filename = "../images/SI/figure_3_low_ts_coverage.pdf",
+  plot     = final_plot,
+  device   = cairo_pdf,
+  width    = 8,
+  height   = 6
+)
+```
+
+## SI figure 12: Maps in aggregate by source
+
+```{r aquatic_dominance_maps}
+# Single small addition: tightens the vertical gap between the two
+# stacked (domestic/foreign) maps by shrinking legend box spacing and
+# panel margins.
+dominance_scale <- function(limit = disagg_max, show_title = TRUE) {
+  scale_fill_gradientn(
+    colors  = c("#F7FCF0", "#7BCCC4", "#2B8CBE", "#08306B"),
+    limits  = c(0, limit),
+    oob     = scales::squish,
+    breaks  = scales::pretty_breaks(n = 3),
+    guide   = guide_colorbar(
+      title           = if (show_title) waiver() else NULL,
+      title.position  = "top",
+      title.hjust     = 0.5,
+      barwidth        = unit(3.2, "cm"),
+      barheight       = unit(0.25, "cm"),
+      frame.colour    = NA,
+      ticks.colour    = "grey40",
+      ticks.linewidth = 0.3,
+      nbin            = 100
+    ),
+    na.value = "#f2f2f2"
+  )
+}
+
+# set up aquatic dominance dataframe so everything is in percents
+aquatic_dominance_pct <- aquatic_dominance %>%
+  mutate(perc_animal_protein = prop_animal_protein * 100)
+
+# Set up plot themes
+theme_map_middle_bottom_rows <- theme(
+  plot.title         = element_text(size = 7.5, hjust = 0.5, family = family),
+  legend.title       = element_blank(),
+  legend.text        = element_text(size = 6, family = family),
+  legend.margin      = margin(0, 0, 0, 0),
+  legend.box.spacing = unit(0, "pt"),
+  legend.box.margin  = margin(0, 0, 0, 0),
+  legend.spacing.y   = unit(0, "pt")
+)
+
+tight_spacing <- theme(
+  plot.margin        = margin(2, 2, 2, 2)
+)
+################################### Inland aquaculture
+
+######### Domestic
+dia <- aquatic_dominance_pct %>%
+  filter(consumption_source == "domestic",
+         habitat == "inland",
+         method == "aquaculture") %>%
+  filter(year == 2023)
+
+p_dia <- dia %>%
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  dominance_scale(limit = max(dia$perc_animal_protein), show_title = FALSE) +
+  labs(fill = "", title = "Domestic inland aquaculture") +
+  tight_spacing +
+  theme_map_middle_bottom_rows
+######### Foreign
+# Gather data
+fia <- aquatic_dominance_pct %>%
+  filter(consumption_source == "foreign",
+         habitat == "inland",
+         method == "aquaculture") %>%
+  filter(year == 2023)
+
+# Plot data
+p_fia <- fia %>%
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  dominance_scale(limit = max(fia$perc_animal_protein), show_title = FALSE) +
+  labs(fill = "", title = "Foreign inland aquaculture") +
+  tight_spacing +
+  theme_map_middle_bottom_rows
+
+inaq <- plot_grid(p_dia, p_fia, nrow = 2) # Inland aquaculture plot (D + F)
+
+################################### Inland capture
+
+######### Domestic
+# Gather data
+dic <- aquatic_dominance_pct %>%
+  filter(consumption_source == "domestic",
+         habitat == "inland",
+         method == "capture") %>%
+  filter(year == 2023)
+
+# Plot data
+p_dic <- dic %>%
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  dominance_scale(limit = max(dic$perc_animal_protein), show_title = FALSE) +
+  labs(fill = "", title = "Domestic inland capture") +
+  tight_spacing +
+  theme_map_middle_bottom_rows
+
+######### Foreign
+# Gather data
+fic <- aquatic_dominance_pct %>%
+  filter(consumption_source == "foreign",
+         habitat == "inland",
+         method == "capture") %>%
+  filter(year == 2023)
+
+# Plot data
+p_fic <- fic %>%
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  dominance_scale(limit = max(fic$perc_animal_protein), show_title = FALSE) +
+  labs(fill = "", title = "Foreign inland capture") +
+  tight_spacing + theme_map_middle_bottom_rows
+
+incap <- plot_grid(p_dic, p_fic, nrow = 2) # Inland capture plot (D + F)
+
+################################### Marine aquaculture
+
+######### Domestic
+# Gather data
+dma <- aquatic_dominance_pct %>%
+  filter(consumption_source == "domestic",
+         habitat == "marine",
+         method == "aquaculture") %>%
+  filter(year == 2023)
+# Plot data
+p_dma <- dma %>%
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  dominance_scale(limit = max(dma$perc_animal_protein), show_title = FALSE) +
+  labs(fill = "", title = "Domestic marine aquaculture") +
+  tight_spacing + theme_map_middle_bottom_rows
+
+######### Foreign
+# Gather data
+fma <- aquatic_dominance_pct %>%
+  filter(consumption_source == "foreign",
+         habitat == "marine",
+         method == "aquaculture") %>%
+  filter(year == 2023) 
+
+# Plot data
+p_fma <- fma %>%
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  dominance_scale(limit = max(fma$perc_animal_protein), show_title = FALSE) +
+  labs(fill = "", title = "Foreign marine aquaculture") +
+  tight_spacing +
+  theme_map_middle_bottom_rows
+
+maaq <- plot_grid(p_dma, p_fma, nrow = 2) # Marine aquaculture plot (D + F)
+
+################################### Marine capture
+
+######### Domestic
+# Gather data
+dmc <- aquatic_dominance_pct %>%
+  filter(consumption_source == "domestic",
+         habitat == "marine",
+         method == "capture") %>%
+  filter(year == 2023)
+
+# Plot data
+p_dmc <- dmc %>%
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  dominance_scale(limit = dmc$perc_animal_protein %>% max(), show_title = FALSE) +
+  labs(fill = "", title = "Domestic marine capture") +
+  tight_spacing +
+  theme_map_middle_bottom_rows
+
+######### Foreign
+# Gather data
+fmc <- aquatic_dominance_pct %>%
+  filter(consumption_source == "foreign",
+         habitat == "marine",
+         method == "capture") %>%
+  filter(year == 2023)
+
+# Plot data
+p_fmc <- fmc %>%
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  dominance_scale(limit = fmc$perc_animal_protein %>% max(), show_title = FALSE) +
+  labs(fill = " ", title = "Foreign marine capture") +
+  tight_spacing + theme_map_middle_bottom_rows
+
+macap <- plot_grid(p_dmc, p_fmc, nrow = 2) # Marine capture plot (F + D)
+
+agg_rel <- aquatic_dominance_pct %>%
+  filter(year == 2023,
+         food_group == "aquatic") %>%
+  group_by(iso3c) %>%
+  summarize(perc_animal_protein = sum(perc_animal_protein))
+# Aggregate dominance plot
+p_agg_rel <- agg_rel %>%
+  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
+  dominance_scale(limit = agg_rel$perc_animal_protein %>% max()) +
+  labs(fill = "Aquatic animal protein dominance (2023)") +
+  theme(plot.title   = element_text(family = family),
+        legend.title = element_text(family = family),
+        legend.text  = element_text(family = family))
+
+# Plot layout:
+bottom_half <- plot_grid(macap, incap, maaq, inaq, ncol = 4)
+final_plot <- plot_grid(p_agg_rel, bottom_half, nrow = 2, rel_heights = c(0.5, 1))
+
+ggsave(
+  filename = "../images/SI/aquatic_animal_protein_dominance_maps.pdf",
+  plot     = final_plot,
+  device   = cairo_pdf,
+  width    = 7.5,
+  height   = 5,
+  units    = "in"
+)
+```
+
+## SI figure 13: Plot the rate of change in aquatic food production sourcing protein reliance by economic status
 
 ```{r aggregate vs disaggregate change in dominance}
 # Shared base theme (mirrors theme_realm_panel style)
@@ -297,17 +860,18 @@ observed_ranges <- tibble(
 # First we will exclude any countries that have short time series - these short
 # time series may have exaggerated rates of change in the aquatic animal protein
 # dominance
-iso3c_with_at_least_5_yrs <- aquatic_dominance %>%
-  # Remove overlapping FBS years
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+iso3c_maj_ts <- aquatic_dominance %>%
+  filter(!(year %in% 2010:2013 & data_source == "old FBS"),
          food_group == "aquatic") %>%
-  group_by(iso3c, year) %>%
-  summarize(prop_animal_protein = sum(prop_animal_protein)) %>%
-  # Calculate the number of years for each country
+  group_by(iso3c, year, data_source, habitat, method) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
+  group_by(iso3c, habitat, method) %>%
+  summarize(n_years = n_distinct(year), .groups = "drop") %>%
+  mutate(max_years = max(n_years)) %>%
+  mutate(prop_ts_coverage = n_years / max_years) %>%
   group_by(iso3c) %>%
-  summarize(n_years = n()) %>%
-  filter(n_years > 5) %>%
-  # Only get countries with over five years of data
+  filter(all(prop_ts_coverage > 0.6)) %>%
+  distinct(iso3c) %>%
   pull(iso3c)
 
 # Calculate country aquatic animal protein dominance by habitat and method
@@ -316,7 +880,7 @@ disagg_hab_met <- aquatic_dominance %>%
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
          food_group == "aquatic") %>%
   # Filter to only countries with greater than 5 year time series
-  filter(iso3c %in% iso3c_with_at_least_5_yrs) %>%
+  filter(iso3c %in% iso3c_maj_ts) %>%
   group_by(year, iso3c, habitat, method, data_source) %>%
   summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop")
 
@@ -531,7 +1095,7 @@ make_bar_panel <- function(legend_show  = FALSE,
           )))) +
     facet_wrap(~ `Income group`, nrow = 1, scales = "free_y") +
     labs(
-      x    = "Average annual change in aquatic animal protein dominance\nby consumption source (1996–2023)",
+      x    = "Annual rate of change in aquatic animal protein dominance\nby consumption source",
       fill = "Source",
       color = ""
     ) +
@@ -604,7 +1168,7 @@ top_panel <- agg_estimate %>%
   geom_col(position = "stack", width = 0.65) +
   scale_fill_manual(
     values = c("#8FACB4", "#b4c461"),
-    name   = "Average annual change in aquatic animal protein dominance (1996-2023)",
+    name   = "Annual rate of change in aquatic animal protein dominance",
     labels = c("Decrease in dominance", "Increase in dominance"),
     guide = guide_legend(override.aes = list(
                         fill = list(
@@ -658,7 +1222,7 @@ ggsave(
 
 
 
-## SI figure: Multi metric plot with 4 panels created for each individual region
+## SI figures 14-19: Multi metric plot with 4 panels created for each individual region
 
 The first row of the figure has 2 panels, and the following two rows have 1 panel, making a 4 panel plot. The regions include Africa, Asia, South America, North America, Europe, and Oceania.
 
@@ -668,7 +1232,7 @@ The top right panel highlights the number of countries with increasing / decreas
 
 The middle panel measures the 2020 aggregate aquatic animal protein dominance for each country.
 
-The bottom panel visualizes for each country in each region the average annual change in their aggregate aquatic animal protein dominance, with separate colors as stacked bars representing the disaggregate dominance.
+The bottom panel visualizes for each country in each region the annual rate of change in their aggregate aquatic animal protein dominance, with separate colors as stacked bars representing the disaggregate dominance.
 
 ```{r individual region production contribution}
 # Diverging palette for direction-of-change panels
@@ -803,17 +1367,18 @@ observed_ranges <- tibble(
 # First we will exclude any countries that have short time series - these short
 # time series may have exaggerated rates of change in the aquatic animal protein
 # dominance
-iso3c_with_at_least_5_yrs <- aquatic_dominance %>%
-  # Remove overlapping FBS years
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+iso3c_maj_ts <- aquatic_dominance %>%
+  filter(!(year %in% 2010:2013 & data_source == "old FBS"),
          food_group == "aquatic") %>%
-  group_by(iso3c, year) %>%
-  summarize(prop_animal_protein = sum(prop_animal_protein)) %>%
-  # Calculate the number of years for each country
+  group_by(iso3c, year, data_source, habitat, method) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
+  group_by(iso3c, habitat, method) %>%
+  summarize(n_years = n_distinct(year), .groups = "drop") %>%
+  mutate(max_years = max(n_years)) %>%
+  mutate(prop_ts_coverage = n_years / max_years) %>%
   group_by(iso3c) %>%
-  summarize(n_years = n()) %>%
-  filter(n_years > 5) %>%
-  # Only get countries with over five years of data
+  filter(all(prop_ts_coverage > 0.6)) %>%
+  distinct(iso3c) %>%
   pull(iso3c)
 
 ############ RUN THIS ANALYSIS ON DISAGGREGATE dominance
@@ -824,7 +1389,7 @@ disagg_hab_met <- aquatic_dominance %>%
   filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
          food_group == "aquatic") %>%
     # Filter to only countries with greater than 5 year time series
-  filter(iso3c %in% iso3c_with_at_least_5_yrs) %>%
+  filter(iso3c %in% iso3c_maj_ts) %>%
   group_by(year, iso3c, habitat, method, data_source) %>%
   summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") 
 
@@ -1053,7 +1618,7 @@ for (i in regions) {
   name = "Source",
   drop = FALSE
 ) +
-    labs(x = "Average annual change in aquatic animal protein dominance\nby consumption source (1996–2023)",
+    labs(x = "Annual rate of change in aquatic animal protein dominance\nby consumption source",
          color = "") +
     theme_si(show_y_title = FALSE, show_legend = TRUE) +
     # Manually add black and white dot "aggregate dominance" onto legend
@@ -1112,7 +1677,7 @@ for (i in regions) {
       "decreasing" = "#b8cb5b",
       "increasing" = "#8FACB4"
       ),
-    name   = "Average annual change\nin aquatic animal protein\ndominance (1996-2023)",
+    name   = "Annual rate of change\nin aquatic animal protein\ndominance",
     labels = c("Decrease in dominance", "Increase in dominance"),
     guide = guide_legend(
       nrow = 2,
@@ -1278,216 +1843,6 @@ final_plot <- cowplot::plot_grid(
 }
 ```
 
-## SI figure: Maps in aggregate by source
-
-```{r aquatic_dominance_maps}
-# Single small addition: tightens the vertical gap between the two
-# stacked (domestic/foreign) maps by shrinking legend box spacing and
-# panel margins.
-dominance_scale <- function(limit = disagg_max, show_title = TRUE) {
-  scale_fill_gradientn(
-    colors  = c("#F7FCF0", "#7BCCC4", "#2B8CBE", "#08306B"),
-    limits  = c(0, limit),
-    oob     = scales::squish,
-    breaks  = scales::pretty_breaks(n = 3),
-    guide   = guide_colorbar(
-      title           = if (show_title) waiver() else NULL,
-      title.position  = "top",
-      title.hjust     = 0.5,
-      barwidth        = unit(3.2, "cm"),
-      barheight       = unit(0.25, "cm"),
-      frame.colour    = NA,
-      ticks.colour    = "grey40",
-      ticks.linewidth = 0.3,
-      nbin            = 100
-    ),
-    na.value = "#f2f2f2"
-  )
-}
-
-# set up aquatic dominance dataframe so everything is in percents
-aquatic_dominance_pct <- aquatic_dominance %>%
-  mutate(perc_animal_protein = prop_animal_protein * 100)
-
-# Set up plot themes
-theme_map_middle_bottom_rows <- theme(
-  plot.title         = element_text(size = 7.5, hjust = 0.5, family = family),
-  legend.title       = element_blank(),
-  legend.text        = element_text(size = 6, family = family),
-  legend.margin      = margin(0, 0, 0, 0),
-  legend.box.spacing = unit(0, "pt"),
-  legend.box.margin  = margin(0, 0, 0, 0),
-  legend.spacing.y   = unit(0, "pt")
-)
-
-tight_spacing <- theme(
-  plot.margin        = margin(2, 2, 2, 2)
-)
-################################### Inland aquaculture
-
-######### Domestic
-dia <- aquatic_dominance_pct %>%
-  filter(consumption_source == "domestic",
-         habitat == "inland",
-         method == "aquaculture") %>%
-  filter(year == 2023)
-
-p_dia <- dia %>%
-  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  dominance_scale(limit = max(dia$perc_animal_protein), show_title = FALSE) +
-  labs(fill = "", title = "Domestic inland aquaculture") +
-  tight_spacing +
-  theme_map_middle_bottom_rows
-######### Foreign
-# Gather data
-fia <- aquatic_dominance_pct %>%
-  filter(consumption_source == "foreign",
-         habitat == "inland",
-         method == "aquaculture") %>%
-  filter(year == 2023)
-
-# Plot data
-p_fia <- fia %>%
-  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  dominance_scale(limit = max(fia$perc_animal_protein), show_title = FALSE) +
-  labs(fill = "", title = "Foreign inland aquaculture") +
-  tight_spacing +
-  theme_map_middle_bottom_rows
-
-inaq <- plot_grid(p_dia, p_fia, nrow = 2) # Inland aquaculture plot (D + F)
-
-################################### Inland capture
-
-######### Domestic
-# Gather data
-dic <- aquatic_dominance_pct %>%
-  filter(consumption_source == "domestic",
-         habitat == "inland",
-         method == "capture") %>%
-  filter(year == 2023)
-
-# Plot data
-p_dic <- dic %>%
-  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  dominance_scale(limit = max(dic$perc_animal_protein), show_title = FALSE) +
-  labs(fill = "", title = "Domestic inland capture") +
-  tight_spacing +
-  theme_map_middle_bottom_rows
-
-######### Foreign
-# Gather data
-fic <- aquatic_dominance_pct %>%
-  filter(consumption_source == "foreign",
-         habitat == "inland",
-         method == "capture") %>%
-  filter(year == 2023)
-
-# Plot data
-p_fic <- fic %>%
-  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  dominance_scale(limit = max(fic$perc_animal_protein), show_title = FALSE) +
-  labs(fill = "", title = "Foreign inland capture") +
-  tight_spacing + theme_map_middle_bottom_rows
-
-incap <- plot_grid(p_dic, p_fic, nrow = 2) # Inland capture plot (D + F)
-
-################################### Marine aquaculture
-
-######### Domestic
-# Gather data
-dma <- aquatic_dominance_pct %>%
-  filter(consumption_source == "domestic",
-         habitat == "marine",
-         method == "aquaculture") %>%
-  filter(year == 2023)
-# Plot data
-p_dma <- dma %>%
-  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  dominance_scale(limit = max(dma$perc_animal_protein), show_title = FALSE) +
-  labs(fill = "", title = "Domestic marine aquaculture") +
-  tight_spacing + theme_map_middle_bottom_rows
-
-######### Foreign
-# Gather data
-fma <- aquatic_dominance_pct %>%
-  filter(consumption_source == "foreign",
-         habitat == "marine",
-         method == "aquaculture") %>%
-  filter(year == 2023) 
-
-# Plot data
-p_fma <- fma %>%
-  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  dominance_scale(limit = max(fma$perc_animal_protein), show_title = FALSE) +
-  labs(fill = "", title = "Foreign marine aquaculture") +
-  tight_spacing +
-  theme_map_middle_bottom_rows
-
-maaq <- plot_grid(p_dma, p_fma, nrow = 2) # Marine aquaculture plot (D + F)
-
-################################### Marine capture
-
-######### Domestic
-# Gather data
-dmc <- aquatic_dominance_pct %>%
-  filter(consumption_source == "domestic",
-         habitat == "marine",
-         method == "capture") %>%
-  filter(year == 2023)
-
-# Plot data
-p_dmc <- dmc %>%
-  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  dominance_scale(limit = dmc$perc_animal_protein %>% max(), show_title = FALSE) +
-  labs(fill = "", title = "Domestic marine capture") +
-  tight_spacing +
-  theme_map_middle_bottom_rows
-
-######### Foreign
-# Gather data
-fmc <- aquatic_dominance_pct %>%
-  filter(consumption_source == "foreign",
-         habitat == "marine",
-         method == "capture") %>%
-  filter(year == 2023)
-
-# Plot data
-p_fmc <- fmc %>%
-  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  dominance_scale(limit = fmc$perc_animal_protein %>% max(), show_title = FALSE) +
-  labs(fill = " ", title = "Foreign marine capture") +
-  tight_spacing + theme_map_middle_bottom_rows
-
-macap <- plot_grid(p_dmc, p_fmc, nrow = 2) # Marine capture plot (F + D)
-
-agg_rel <- aquatic_dominance_pct %>%
-  filter(year == 2023,
-         food_group == "aquatic") %>%
-  group_by(iso3c) %>%
-  summarize(perc_animal_protein = sum(perc_animal_protein))
-# Aggregate dominance plot
-p_agg_rel <- agg_rel %>%
-  create_map(fill = "perc_animal_protein", country.col.name = "iso3c") +
-  dominance_scale(limit = agg_rel$perc_animal_protein %>% max()) +
-  labs(fill = "Aquatic animal protein dominance (2023)") +
-  theme(plot.title   = element_text(family = family),
-        legend.title = element_text(family = family),
-        legend.text  = element_text(family = family))
-
-# Plot layout:
-bottom_half <- plot_grid(macap, incap, maaq, inaq, ncol = 4)
-final_plot <- plot_grid(p_agg_rel, bottom_half, nrow = 2, rel_heights = c(0.5, 1))
-
-ggsave(
-  filename = "../images/SI/aquatic_animal_protein_dominance_maps.pdf",
-  plot     = final_plot,
-  device   = cairo_pdf,
-  width    = 7.5,
-  height   = 5,
-  units    = "in"
-)
-```
-
 ```{r}
 dia <- aquatic_dominance_pct %>%
   filter(consumption_source == "domestic",
@@ -1623,7 +1978,306 @@ final_plot <- plot_grid(p_agg_rel,bottom_half, nrow = 2, rel_heights = c(0.5,1))
 
 # RQ 1b: How does aquatic animal protein dominance change with the relative contribution of aquatic versus terrestrial animal consumption
 
-## SI Figure: Proportion of countries in each quadrant by region
+## SI Figure 8: Recreation of figure 4, but with countries that do not have 60% data coverage
+
+```{r}
+# Region palette — desaturated analogues of the RdBu diverging scale
+region_colors <- c(
+  "Africa"        = "#6B2737",
+  "North America" = "#C45C3A",
+  "South America" = "#D4956A",
+  "Asia"          = "#4A7FA5",
+  "Europe"        = "#7BAEC4",
+  "Oceania"       = "#A8C8D8"
+)
+
+# Shared base theme
+theme_scatter <- function(base_size = 8) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      text                  = element_text(color = "black", family = family),
+      plot.background       = element_rect(fill = "transparent", color = NA),
+      panel.background      = element_rect(fill = "transparent", color = NA),
+      panel.grid.minor      = element_blank(),
+      panel.grid.major      = element_line(
+        color = scales::alpha("black", 0.12), linewidth = 0.3
+      ),
+      axis.text             = element_text(size = base_size - 2, color = "black", family = family),
+      axis.title            = element_text(size = base_size - 2, face = "bold", family = family),
+      legend.position       = "bottom",
+      legend.title          = element_text(size = base_size - 2, face = "bold", family = family),
+      legend.text           = element_text(size = base_size - 3, family = family),
+      legend.key.size       = unit(0.3, "cm"),
+      legend.box            = "horizontal",
+      legend.spacing.x      = unit(0.4, "cm"),
+      legend.margin         = margin(t = 0, b = 0),
+      legend.box.margin     = margin(t = -2, b = -2),
+      legend.background     = element_rect(fill = "transparent", color = NA),
+      legend.box.background = element_rect(fill = "transparent", color = NA),
+      plot.margin           = margin(3, 4, 3, 4)
+    )
+}
+
+# Grab countries that have a majority of their time series covered between
+# 1996 and 2023. These will go in the main paper figures
+iso3c_maj_ts <- aquatic_dominance %>%
+  filter(!(year %in% 2010:2013 & data_source == "old FBS"),
+         food_group == "aquatic") %>%
+  group_by(iso3c, year, data_source, habitat, method) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
+  group_by(iso3c, habitat, method) %>%
+  summarize(n_years = n_distinct(year), .groups = "drop") %>%
+  mutate(max_years = max(n_years)) %>%
+  mutate(prop_ts_coverage = n_years / max_years) %>%
+  group_by(iso3c) %>%
+  filter(all(prop_ts_coverage > 0.6)) %>%
+  distinct(iso3c) %>%
+  pull(iso3c)
+
+######### AQUATIC ANIMAL PROTEIN CONSUMPTION RATE OF CHANGE 
+
+# Calculate country aggregate aquatic animal protein dominance
+aquatic_protein_quant <-  aquatic_dominance %>%
+  filter(food_group == "aquatic") %>%
+  filter(!iso3c %in% iso3c_maj_ts) %>%
+  group_by(data_source, iso3c, year) %>%
+  summarize(
+    protein_consumed_kg_percap_peryr =
+      sum(protein_consumed_kg_percap_peryr, na.rm = TRUE),
+    .groups = "drop"
+    )
+  
+# Obtain linear model intercept and slope estimates to create forward / backcasted projections
+aquatic_protein_roc <- aquatic_protein_quant %>%
+  group_by(data_source, iso3c) %>%
+  nest() %>%
+  mutate(model = map(data, ~ lm(protein_consumed_kg_percap_peryr ~ year, data = .x)),
+         tidy  = map(model, broom::tidy)) %>%
+  unnest(tidy) %>%
+  select(data_source, iso3c, term, estimate) %>%
+  pivot_wider(values_from = estimate, names_from = term) %>%
+  ungroup() %>%
+  select(iso3c, aquatic_estimate = year)
+
+######### TERRESTRIAL ANIMAL PROTEIN CONSUMPTION RATE OF CHANGE 
+
+# Calculate country aggregate aquatic terrestrial protein dominance
+terretrial_protein_quant <-  aquatic_dominance %>%
+  filter(food_group == "terrestrial") %>%
+  filter(!iso3c %in% iso3c_maj_ts) %>%
+  group_by(data_source, iso3c, year) %>%
+  summarize(
+    protein_consumed_kg_percap_peryr =
+      sum(protein_consumed_kg_percap_peryr, na.rm = TRUE),
+    .groups = "drop"
+    )
+  
+# Obtain linear model intercept and slope estimates to create forward / backcasted projections
+terrestrial_protein_roc <- terretrial_protein_quant %>%
+  group_by(data_source, iso3c) %>%
+  nest() %>%
+  mutate(model = map(data, ~ lm(protein_consumed_kg_percap_peryr ~ year, data = .x)),
+         tidy  = map(model, broom::tidy)) %>%
+  unnest(tidy) %>%
+  select(data_source, iso3c, term, estimate) %>%
+  pivot_wider(values_from = estimate, names_from = term) %>%
+  ungroup() %>%
+  select(iso3c, terrestrial_estimate = year)
+
+
+######### PLOTTING
+
+# Join all three model outputs and add region
+plot_df <- full_join(
+  aquatic_protein_roc,
+  terrestrial_protein_roc,
+  by = "iso3c"
+  ) %>%
+  add_region("iso3c", "region")
+
+# Pre-compute quadrant membership for corner insets
+quad_counts <- plot_df %>%
+  mutate(quadrant = case_when(
+    aquatic_estimate > 0 & terrestrial_estimate > 0 ~ "Q1",
+    aquatic_estimate < 0 & terrestrial_estimate > 0 ~ "Q2",
+    aquatic_estimate < 0 & terrestrial_estimate < 0 ~ "Q3",
+    aquatic_estimate > 0 & terrestrial_estimate < 0 ~ "Q4"
+  )) %>%
+  group_by(quadrant, region) %>%
+  summarize(n = n_distinct(iso3c), .groups = "drop")
+
+max_count <- max(quad_counts$n)
+
+# Dummy bar plot used only to extract a square-keyed region legend
+# geom_col produces filled rect keys in the legend, which is cleaner
+# than the point/circle keys that come from geom_point
+p_region_legend_source <- plot_df %>%
+  group_by(region) %>%
+  summarize(n = n(), .groups = "drop") %>%
+  ggplot(aes(x = region, y = n, fill = region)) +
+  geom_col() +
+  scale_fill_manual(
+    values = artis_palette(6),
+    name   = "Region",
+    guide  = guide_legend(
+      title.position = "top",
+      title.hjust    = 0.5,
+      nrow           = 2
+    )
+  ) +
+  theme_scatter() +
+  theme(legend.key.size = unit(0.3, "cm"))
+
+legend_regions <- cowplot::get_plot_component(
+  p_region_legend_source, "guide-box", return_all = TRUE
+)
+legend_regions <- Filter(function(x) !inherits(x, "zeroGrob"), legend_regions)[[1]]
+
+# Main scatterplot — fill encodes dominance change, no region border encoding
+# on points (region is shown only in the inset bar charts and the square legend)
+p_scatter_base <- plot_df %>%
+  mutate(aquatic_outpaces_terrestrial = aquatic_estimate > terrestrial_estimate) %>%
+  # filter(iso3c != "MDV") %>%
+  ggplot(aes(
+    x     = aquatic_estimate,
+    y     = terrestrial_estimate,
+    label = iso3c,
+    fill = aquatic_outpaces_terrestrial
+  )) +
+#   scale_fill_gradient2(
+#   low      = "#B2182B",   # muted brick red
+#   mid      = "#F7F7F7",   # near-white (pure white can vanish against the panel)
+#   high     = "#2166AC",   # muted steel blue
+#   midpoint = 0
+# ) +
+  scale_fill_manual(labels = c("Change in terr. animal protein cons. exceeds change in aq.", "Change in aq animal protein cons. exceeds change in terr."), values = c("#b4c461", "#8FACB4")) +
+  geom_hline(yintercept = 0, linewidth = 0.4, color = "black") +
+  geom_vline(xintercept = 0, linewidth = 0.4, color = "black") +
+  geom_abline(intercept = 0, slope = 1,
+              linetype = "dashed", linewidth = 0.35, color = "black") +
+  geom_point(shape = 21, size = 1.8, stroke = 0.25, alpha = 0.7
+  ) +
+  geom_text_repel(
+    size               = 2.0,
+    min.segment.length = 0.2,
+    segment.size       = 0.25,
+    segment.color      = "grey60",
+    show.legend        = FALSE,
+    family = family
+  ) +
+  lims(x = c(-0.25, 0.25), y = c(-4.5, 4.5)) +
+  labs(
+    x = "Annual rate of change in aquatic animal protein consumption (kg/capita/year)",
+    y = "Annual rate of change in terrestrial animal protein consumption\n(kg/capita/year)") +
+  theme_scatter() +
+  guides(fill=guide_legend(nrow=2)) +
+  theme(legend.title = element_blank())
+
+# Top panel: # of all countries with increasing / decreasing dominance
+
+
+
+# Extract colorbar legend from scatter before stripping it
+legend_dominance <- cowplot::get_plot_component(
+  p_scatter_base, "guide-box", return_all = TRUE
+)
+legend_dominance <- Filter(function(x) !inherits(x, "zeroGrob"), legend_dominance)[[1]]
+
+# Remove legend from scatter for the main panel
+p_scatter <- p_scatter_base + theme(legend.position = "none")
+
+# Helper to build a single quadrant inset bar chart
+make_inset <- function(q) {
+  show_y <- q %in% c("Q1", "Q4")
+
+  quad_counts %>%
+    filter(quadrant == q) %>%
+    ggplot(aes(x = region, y = n, fill = region)) +
+    geom_col(width = 0.7) +
+    scale_fill_manual(values = artis_palette(6)) +
+    scale_y_continuous(
+      limits   = c(0, max_count),
+      breaks   = c(0, max_count),
+      position = "right"
+    ) +
+    labs(y = if (show_y) "No. countries" else NULL) +
+    theme_minimal(base_size = 6) +
+    theme(
+      axis.title.x    = element_blank(),
+      axis.title.y    = if (show_y)
+        element_text(size = 4.5, color = "black", family = family)
+      else element_blank(),
+      axis.text.x     = element_blank(),
+      axis.text.y     = if (show_y)
+        element_text(size = 4.5, color = "black", family = family)
+      else element_blank(),
+      axis.ticks.y    = if (show_y)
+        element_line(linewidth = 0.2, color = "black") else
+          element_blank(),
+      panel.grid      = element_blank(),
+      plot.background = element_rect(
+        fill = scales::alpha("white", 0.75), color = NA
+        ),
+      legend.position = "none",
+      plot.margin     = margin(0, 0, 0, 0)
+    )
+}
+
+# Build all four corner insets
+p_q1 <- make_inset("Q1")
+p_q2 <- make_inset("Q2")
+p_q3 <- make_inset("Q3")
+p_q4 <- make_inset("Q4")
+
+# Position insets in scatterplot corners using patchwork::inset_element
+shrink_x <- 0.18
+shrink_y <- 0.18
+
+p_with_insets <- p_scatter +
+  inset_element(
+    p_q1, left = 1 - shrink_x, right = 1, bottom = 1 - shrink_y, top = 1) +
+  inset_element(
+    p_q2, left = 0, right = shrink_x, bottom = 1 - shrink_y, top = 1) +
+  inset_element(
+    p_q3, left = 0, right = shrink_x, bottom = 0, top = shrink_y) +
+  inset_element(
+    p_q4, left = 1 - shrink_x, right = 1, bottom = 0, top = shrink_y)
+
+# Place colorbar and region legend side by side below the main panel
+legend_row <- cowplot::plot_grid(
+  legend_dominance, legend_regions
+) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+  suppressWarnings()
+
+# Stack main panel above legend row
+final_plot <- cowplot::plot_grid(
+  p_with_insets,
+  legend_row,
+  ncol        = 1,
+  rel_heights = c(1, 0.16)
+) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+  suppressWarnings()
+
+# Print final plot
+print(final_plot)
+
+# Save plot
+ggsave(
+  filename = "../images/SI/figure_4_low_ts_coverage.pdf",
+  plot     = final_plot,
+  device   = cairo_pdf,
+  width    = 5,
+  height   = 3.5,
+  units    = "in"
+)
+
+```
+
+## SI Figure 20: Proportion of countries in each quadrant by region
 
 This plot identifies the proportion of countries that reside in each quadrant by region. The top right quadrant indicates an increasing terrestrial animal & aquatic animal consumption. The top left quadrant indicates an increasing terrestrial animal & decreasing aquatic animal consumption. The bottom left indicates both decreasing terrestrial & aquatic animal consumption. The bottom right quadrant indicates a decreasing terrestrial & increasing aquatic animal consumption.
 
@@ -1643,6 +2297,22 @@ observed_ranges <- tibble(
   max_year = c(2009, 2023)
 )
 
+# Grab countries that have a majority of their time series covered between
+# 1996 and 2023. These will go in the main paper figures
+iso3c_maj_ts <- aquatic_dominance %>%
+  filter(!(year %in% 2010:2013 & data_source == "old FBS"),
+         food_group == "aquatic") %>%
+  group_by(iso3c, year, data_source, habitat, method) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
+  group_by(iso3c, habitat, method) %>%
+  summarize(n_years = n_distinct(year), .groups = "drop") %>%
+  mutate(max_years = max(n_years)) %>%
+  mutate(prop_ts_coverage = n_years / max_years) %>%
+  group_by(iso3c) %>%
+  filter(all(prop_ts_coverage > 0.6)) %>%
+  distinct(iso3c) %>%
+  pull(iso3c)
+
 ##### -------------------------------- PROBLEM:
 
 # FAOSTAT Food balance Sheets are divided into old methodology (-2013) and new methodology (2010-). This creates a jump in the data sources in
@@ -1657,7 +2327,7 @@ observed_ranges <- tibble(
 # We will take the maximum and minimum values of these as the ranges for rate of change in aquatic animal protein dominance, and will plot the midpoint of these
 # ranges.
 
-######### AQUATIC ANIMAL PROTEIN CONSUMPTION RATE OF CHANGE (1996-2023)
+######### AQUATIC ANIMAL PROTEIN CONSUMPTION RATE OF CHANGE
 
 calc_roc_agg <- function(data, type = type, var_name = "prop_animal_protein") {
   
@@ -1680,7 +2350,8 @@ calc_roc_agg <- function(data, type = type, var_name = "prop_animal_protein") {
 
 # Calculate country aggregate aquatic animal protein dominance
 aquatic_protein_quant <-  aquatic_dominance %>%
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"), food_group == "aquatic") %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"), food_group == "aquatic",
+         iso3c %in% iso3c_maj_ts) %>%
   group_by(data_source, iso3c, year) %>%
   summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr, na.rm = TRUE),
             .groups = "drop") %>%
@@ -1782,11 +2453,12 @@ aquatic_protein_quant <- bind_rows(obs_obs,
   group_by(iso3c) %>%
   summarize(aquatic_estimate = (min(estimate) + max(estimate)) / 2)
 
-######### TERRESTRIAL ANIMAL PROTEIN CONSUMPTION RATE OF CHANGE (1996-2023)
+######### TERRESTRIAL ANIMAL PROTEIN CONSUMPTION RATE OF CHANGE
 
 # Calculate country aggregate aquatic animal protein dominance
 terrestrial_protein_quant <-  aquatic_dominance %>%
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"), food_group == "terrestrial") %>%
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"), food_group == "terrestrial",
+         iso3c %in% iso3c_maj_ts) %>%
   group_by(data_source, iso3c, year) %>%
   summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr, na.rm = TRUE),
             .groups = "drop") %>%
@@ -2096,298 +2768,11 @@ ggsave(
 )
 ```
 
-
 # RQ 2: What biophysical and socioeconomic factors are associated with dominance on farmed and wild aquatic animals for protein and overall consumption?
 
-## SI figure: Directed Acylcic Diagram (DAG). The DAG was not created in R, but in LucidChart.
+## SI Figure 6: Directed Acylcic Diagram (DAG). The DAG was not created in R, but in LucidChart.
 
-FIXIT: Add on to Bayesian extra posteriors, adding in rates of change for the disaggregate and aggregate dominance and consumption
-
-```{r}
-##### -------------------------------- PROBLEM:
-
-# FAOSTAT Food balance Sheets are divided into old methodology (-2013)
-# and new methodology (2010-). This creates a jump in the data sources in
-# aquatic animal protein dominance. To account for this, we will forward cast
-# old FAO dominance values to new years and back cast new FAO dominance
-# values to old years. Then, we will calculate the rate of change across:
-
-# 1. obs - obs
-# 2. obs - forwardcast
-# 3. back cast - obs
-# 4. back cast - forward cast
-
-# We will take the maximum and minimum values of these as the ranges for
-# rate of change in aquatic animal protein dominance, and will plot the midpoint of these
-# ranges.
-
-# Define year ranges for projections (add this before the existing
-# projections code)
-year_ranges <- tibble(
-  data_source = c("old FBS", "new FBS"),
-  start_year  = c(1996, 1996),
-  end_year    = c(2023, 2023)
-)
-
-# Define year ranges for observed data
-observed_ranges <- tibble(
-  data_source = c("old FBS", "new FBS"),
-  min_year = c(1996, 2010),
-  max_year = c(2009, 2023)
-)
-
-# Calculate for each country their (aggregate dominance, and dominance across
-# marine, inland, capture, aquaculture, foreign, and domestic dominance)
-
-## Get measures for types of habitat dominance
-habitat_dom <- aquatic_dominance %>%
-  # Remove overlapping years prioritizing new years
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
-         food_group == "aquatic") %>%
-  # Group by habitat
-  group_by(year, iso3c, habitat, data_source) %>%
-  summarize(value = sum(prop_animal_protein), .groups = "drop") %>%
-  filter(habitat != "unknown") %>%
-  rename(cons_source = habitat) %>%
-  mutate(cons_source = paste0(cons_source, "_dom_roc"))
-
-## Get measures for types of method dominance
-method_dom <- aquatic_dominance %>%
-  # Remove overlapping years prioritizing new years
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
-         food_group == "aquatic") %>%
-  # Group by production method
-  group_by(year, iso3c, method, data_source) %>%
-  summarize(value = sum(prop_animal_protein), .groups = "drop") %>%
-  filter(method != "unknown") %>%
-  rename(cons_source = method) %>%
-  mutate(cons_source = paste0(cons_source, "_dom_roc"))
-
-## Get measures for types of habitat dominance
-trade_dom <- aquatic_dominance %>%
-  # Remove overlapping years prioritizing new years
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
-         food_group == "aquatic") %>%
-  # Group by foreign / domestic consumption
-  group_by(year, iso3c, consumption_source, data_source) %>%
-  summarize(value = sum(prop_animal_protein), .groups = "drop") %>%
-  rename(cons_source = consumption_source) %>%
-  mutate(cons_source = paste0(cons_source, "_dom_roc"))
-
-## Get measures for the aggregate dominance
-agg_dom <- aquatic_dominance %>%
-  # Remove overlapping years prioritizing new years
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
-         food_group == "aquatic") %>%
-  group_by(year, iso3c, data_source) %>%
-  summarize(value = sum(prop_animal_protein), .groups = "drop") %>%
-  mutate(cons_source = "aquatic_dom_roc")
-
-## Get measures for aquatic animal protein consumption
-aq_cons <- aquatic_dominance %>%
-  # Remove overlapping years prioritizing new years
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
-         food_group == "aquatic") %>%
-  group_by(year, iso3c, data_source) %>%
-  summarize(value = sum(protein_consumed_kg_percap_peryr), .groups = "drop") %>%
-  mutate(cons_source = "aquatic_animal_cons_cap_roc")
-
-## Get measures for terrestrial animal protein consumption
-terr_cons <- aquatic_dominance %>%
-  # Remove overlapping years prioritizing new years
-  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
-         food_group == "terrestrial") %>%
-  group_by(year, iso3c, data_source) %>%
-  summarize(value = sum(protein_consumed_kg_percap_peryr), .groups = "drop") %>%
-  mutate(cons_source = "terr_animal_cons_cap_roc")
-  
-# Bind all the datasets together to run time series analyses on
-# For each country between 1996 and 2023, gather their: (see comments
-# within code)
-sourcing_dom <- bind_rows(
-  list(
-    habitat_dom, # dominance by marine and inland
-    method_dom, # dominance by aquaculture and capture
-    trade_dom, # dominance by foreign and domestic
-    agg_dom, # dominance of all aquatic foods
-    aq_cons, # consumption of aquatic foods
-    terr_cons # consumption of terrestrial foods
-    ))
-
-
-# Obtain linear model intercept and slope estimates to
-# create forward / backcasted projections
-coefs_sourcing <- sourcing_dom %>%
-  group_by(iso3c, cons_source, data_source) %>%
-  nest() %>%
-  mutate(model = map(data, ~ lm(value ~ year, data = .x)),
-         tidy  = map(model, broom::tidy)) %>%
-  unnest(tidy) %>%
-  select(data_source, iso3c, cons_source, term, estimate) %>%
-  pivot_wider(values_from = estimate, names_from = term) %>%
-  rename(year_coef = year)
-
-# Calculate estimates via forward and back cast from linear model's
-# intercept and slope estimates
-proj_sourcing <- coefs_sourcing %>%
-  left_join(year_ranges, by = "data_source") %>%
-  rowwise() %>%
-  mutate(year = list(start_year:end_year)) %>%
-  unnest(year) %>%
-  ungroup() %>%
-  mutate(value = `(Intercept)` + year_coef * year,
-         type = case_when(
-           
-           year < 2010 ~ "backcast",
-           year >= 2010 ~ "forwardcast"
-           
-         )) %>%
-  left_join(observed_ranges, by = "data_source") %>%
-  filter(year < min_year | year > max_year) %>%
-  select(
-    data_source,
-    iso3c,
-    cons_source,
-    year_coef,
-    year,
-    value,
-    type
-    )
-
-# Obtain observed disaggregate aquatic animal protein dominance data
-obs_sourcing <- sourcing_dom %>%
-  filter(data_source == "old FBS" & year <= 2009 |
-           data_source == "new FBS" & year >= 2010) %>%
-  mutate(type = "observed") %>%
-  group_by(iso3c, cons_source) %>%
-  mutate(n = n()) %>% # calculate the number of years of data are available
-  # for each countries' consumption sources
-  filter(n >= 5) %>% # Select only time series with 5+ years
-  select(-n)
-
-# Time series notations:
-# left side of the _ indicates old FBS years, whereas the right side of the 
-# _ indicates new FBS years
-
-# obs_obs - observed to observed
-# back_obs - back casted to observed
-# obs_forward - observed to forward casted 
-# back_forward - back casted to forward casted
-calc_roc_disagg <- function(data, type = type) {
-  
-  data %>%
-  {
-    if (type %in% c("obs_obs", "back_forward")) {
-      group_by(., iso3c, cons_source) %>%
-        mutate(n = n_distinct(data_source))
-    } else {
-      group_by(., iso3c, cons_source) %>%
-        mutate(n = n_distinct(type))
-    }
-  } %>%
-    # Ensure time series are done across full datasets
-    # (i.e., including both obs / obs, obs / proj, or proj / obs data)
-  filter(n == 2) %>%
-    group_by(year, iso3c, cons_source) %>%
-    summarize(value = sum(value), .groups = "drop") %>%
-    group_by(iso3c, cons_source) %>%
-    filter(!is.na(value)) %>%
-    nest() %>%
-    mutate(model = map(data, ~ lm(value ~ year, data = .x)),
-           tidy  = map(model, broom::tidy)) %>%
-    unnest(tidy) %>%
-    filter(term == "year") %>%
-    mutate(
-      group_label = cons_source
-      ) %>%
-    drop_na(estimate) %>%
-    ungroup() %>%
-    mutate(type = type)
-  
-}
-
-# Calculate four different types of rate of change for disaggregate:
-
-# 1. observed - observed
-obs_obs <- bind_rows(
-  obs_sourcing,
-  proj_sourcing
-  ) %>%
-  filter(type == "observed") %>%
-  calc_roc_disagg(type = "obs_obs")
-
-# 2. back casted to observed
-back_obs <- bind_rows(
-  obs_sourcing,
-  proj_sourcing
-  ) %>%
-  filter(type == "backcast" |
-           type == "observed" & data_source == "new FBS") %>%
-  calc_roc_disagg(type = "back_obs")
-  
-# 3. observed to forward casted
-obs_forward <- bind_rows(
-  obs_sourcing,
-  proj_sourcing
-  ) %>%
-  filter(type == "forwardcast" |
-           type == "observed" & data_source == "old FBS") %>%
-  calc_roc_disagg(type = "obs_forward")
-
-# 4. observed to forward casted
-back_forward <- bind_rows(
-  obs_sourcing,
-  proj_sourcing
-  ) %>%
-  filter(type == "forwardcast" |
-           type == "backcast") %>%
-  calc_roc_disagg(type = "back_forward")
-
-# For each countries' trend in aquatic animal protein dominance
-# across habitat and method, we will take the midpoint of the
-# min and max rate of change and use that in the plot.
-roc_sourcing <- bind_rows(
-  obs_obs,
-  back_obs,
-  obs_forward,
-  back_forward
-) %>%
-  group_by(iso3c, cons_source) %>%
-  summarize(
-    estimate = (min(estimate) + max(estimate)) / 2,
-    .groups = "drop"
-  ) %>%
-  mutate(
-    estimate = case_when(
-      str_detect(cons_source, "_cons") ~ estimate,
-      str_detect(cons_source, "_dom")  ~ 100 * estimate,
-      .default = estimate
-    )
-  )
-
-# Get the names of the different data sources we used to create time series
-sources <- roc_sourcing %>% distinct(cons_source) %>% pull()
-
-# Pull specific data sources to be processed through Bayesian model
-for (i in seq_along(sources)) {
-  
-  # Filter data to target response variable of interest
-  data <- roc_sourcing %>%
-  filter(cons_source == sources[i]) %>%
-  select(iso3c, estimate)
-  
-  # Save data to an environmental object to be called on in Bayesian model
-  assign(sources[i], data)
-  
-  # Add response variable to list to be run by Bayesian model
-  response_vars <- c(response_vars, sources[i])
-  
-}
-```
-
-
-
-## SI figure: Extra posterior distributions that show the partial slopes for models that use disaggregated dominance as the response.
+## SI Figure 21: Extra posterior distributions that show the partial slopes for models that use disaggregated dominance as the response.
 
 Posterior distributions are displayed with 90%, 80%, and 50% credibility intervals, represented by the lightest, darker, and darkest colors respectively. The point represents the posterior median.
 
@@ -2444,20 +2829,13 @@ var_labels <- c(
 
 # Model colours - harmonized palette, dominance models only
 model_colors <- c(
-  "Aquatic animal protein dominance"                  = "#1A7A6E",
-  "Aquatic animal protein dominance rate of change"   = "#5CC4B3",
-  "Aquaculture protein dominance"                     = "#E8B000",
-  "Aquaculture protein dominance rate of change"      = "#F5D366",
-  "Capture protein dominance"                         = "#D4601A",
-  "Capture protein dominance rate of change"          = "#EE9E6C",
-  "Domestic protein dominance"                        = "#7BAEC4",
-  "Domestic protein dominance rate of change"         = "#B5D3E0",
-  "Foreign protein dominance"                         = "#C45C3A",
-  "Foreign protein dominance rate of change"          = "#E09A82",
-  "Marine protein dominance"                          = "#9B6DC5",
-  "Marine protein dominance rate of change"           = "#C6A6E0",
-  "Inland protein dominance"                          = "#D4956A",
-  "Inland protein dominance rate of change"           = "#E8C0A0"
+  "Aquatic animal protein dominance"      = "#1A7A6E",
+  "Aquaculture animal protein dominance"  = "#E8B000",
+  "Capture animal protein dominance"      = "#D4601A",
+  "Domestic animal protein dominance"     = "#7BAEC4",
+  "Foreign animal protein dominance"      = "#C45C3A",
+  "Marine animal protein dominance"       = "#9B6DC5",
+  "Inland animal protein dominance"       = "#D4956A"
 )
 
 # Interval colours - three lightness steps per model colour
@@ -2468,11 +2846,26 @@ col_50 <- colorspace::lighten(model_colors, 0.05)
 # Build plotting data
 df_plot <- slopes_df %>%
   mutate(
-    clean_name = clean_model_name(model)
+    clean_name = clean_model_name(model),
+    nonzero    = (lo95 < 0 & hi95 < 0) | (lo95 > 0 & hi95 > 0),
+    suffix     = sub(".*_", "", model),
+    suffix_num = suppressWarnings(as.numeric(suffix))
   ) %>%
   filter(
-    str_detect(clean_name, "dominance")
+    str_detect(clean_name, "dominance"),
+    model != "animal_cons_cap",
   ) %>%
+  mutate(
+    clean_name = case_when(
+      clean_name == "Capture protein dominance" ~ "Capture animal protein dominance",
+      clean_name == "Aquaculture protein dominance" ~ "Aquaculture animal protein dominance",
+      clean_name == "Domestic protein dominance" ~ "Domestic animal protein dominance",
+      clean_name == "Foreign protein dominance" ~ "Foreign animal protein dominance",
+      clean_name == "Marine protein dominance" ~ "Marine animal protein dominance",
+      clean_name == "Inland protein dominance" ~ "Inland animal protein dominance",
+      TRUE ~ clean_name
+      )) %>%
+  arrange(suffix_num, suffix) %>%
   mutate(
     clean_name = factor(clean_name, levels = unique(clean_name)),
     col95      = coalesce(col_95[as.character(clean_name)], "grey80"),
@@ -2491,6 +2884,9 @@ panel_names <- levels(df_plot$clean_name)
 # left_col = TRUE shifts the tag inward to clear the y-axis label text
 make_panel <- function(df, show_yaxis = FALSE, title = "", tag = "",
                        left_col = FALSE) {
+
+  df_sig  <- df %>% filter(nonzero)
+  df_nsig <- df %>% filter(!nonzero)
 
   # Left-column panels have wide y-axis text; nudge the tag right so it
   # doesn't sit directly on top of the longest label
@@ -2538,8 +2934,8 @@ make_panel <- function(df, show_yaxis = FALSE, title = "", tag = "",
 panels <- lapply(seq_along(panel_names), function(i) {
   name     <- panel_names[i]
   df_sub   <- df_plot %>% filter(clean_name == name)
-  show_y   <- i %in% c(1, 3, 5, 7)
-  left_col <- i %in% c(1, 3, 5, 7)
+  show_y   <- i %in% c(1, 4, 7)
+  left_col <- i %in% c(1, 4, 7)
   make_panel(df_sub,
              show_yaxis = show_y,
              left_col   = left_col,
@@ -2600,7 +2996,7 @@ legend_bayesian_plot <- data.frame(group = c("ci50", "ci80", "ci95"), type = c("
       legend.background       = element_rect(fill = "transparent", color = NA),
       legend.box.background   = element_rect(fill = "transparent", color = NA)) +
   # labs(fill = "Credibility intervals") +
-  scale_fill_manual(labels = c("95%", "80%", "50%"),
+  scale_fill_manual(labels = c("50%", "80%", "95%"),
                     name = "Bayesian credibility intervals",
                     values = c(scales::alpha("black", 0.05),
                                     scales::alpha("black", 0.35),
@@ -2621,14 +3017,12 @@ legend_bayesian <- Filter(function(x) !inherits(x, "zeroGrob"), legend_bayesian)
 
 # Rows 1 and 2 are full 3-panel; row 3 has one centered panel flanked by
 # empty spacers - widths kept equal so the single panel aligns to column 2
-row1 <- panels[[1]] | panels[[9]]  | panels[[2]] | panels[[10]]
-row2 <- panels[[3]] | panels[[8]]  | panels[[4]] | panels[[11]]
-row3 <- panels[[5]] | panels[[12]] | panels[[6]] | panels[[14]]
-row4 <- (empty | panels[[7]] | panels[[13]] | empty) +
-  plot_layout(widths = c(.0002, 1, 1, 1.118))
+row1 <- panels[[1]] | panels[[2]] | panels[[3]]
+row2 <- panels[[4]] | panels[[5]] | panels[[6]]
+row3 <- (empty | panels[[7]] | empty) + plot_layout(widths = c(.0002, 1, 1.118))
 
-grid_plot <- wrap_plots(row1, row2, row3, row4, ncol = 1) +
-  plot_layout(heights = c(1, 1, 1, 1)) &
+grid_plot <- wrap_plots(row1, row2, row3, ncol = 1) +
+  plot_layout(heights = c(1, 1, 1)) &
   theme(plot.margin = margin(3, 4, 3, 4))
 
 # Stack grid above centered x-axis label
@@ -2637,8 +3031,7 @@ plot <- cowplot::plot_grid(
   xlab_plot,
   ncol        = 1,
   rel_heights = c(1, 0.07)
-) %>%
-  suppressWarnings()
+)
 
 # add on legend
 final_plot_w_legend <- cowplot::plot_grid(
@@ -2654,14 +3047,14 @@ ggsave(
   plot     = final_plot_w_legend,
   device   = cairo_pdf,
   width    = 5,
-  height   = 5,
+  height   = 4,
   units    = "in"
 )
 ```
 
 # Bayesian model assessment
 
-## SI figure: Collinearity check
+## SI figure 9: Collinearity check
 
 Create a correlation matrix for the explanatory variables to test for collinearity. On the plot, the upper triangle represents the shade of correlation on the color scale, while the bottom triangle displays the correlation between variables.
  
@@ -2848,8 +3241,10 @@ plot <- trace_df %>%
   scale_color_viridis_d(option = "plasma", end = 0.95) +
   facet_grid(model ~ parameter) +
   guides(color = "none") +
-  labs(x = "Parameter", y = "Parameter value") +
-  theme_pubclean()
+  labs(x = "Hamiltonian Monte Carlo iteration #", y = "Parameter value") +
+  theme_pubclean() +
+  theme(strip.text.y = element_text(size = 1),
+        axis.text.y = element_text(size = 1))
 
 ggsave(
   filename = paste0("../images/SI/trace.pdf"),
@@ -2859,7 +3254,11 @@ ggsave(
   height   = 5,
   units    = "in"
 )
+
 ```
+
+Note. In the rendered plot the vertical facets tags represent the model
+parameters and the horizontal facet tags represent the model names
 
 > Result: All parameters have overlap on the Markov Chain, indicating model convergence
 
@@ -2867,9 +3266,6 @@ ggsave(
 ### R hat
 
 ```{r r hat}
-library(dplyr)
-library(rstan)
-
 # Initialize empty data frame
 rhat_df <- data.frame()
 
@@ -2901,10 +3297,19 @@ for (i in seq_along(response_vars)) {
   rhat_df <- bind_rows(rhat_df, new_data)
 }
 
+# Optional: view summary
+summary(rhat_df$rhat)
+
 # Create rhat plot
 (p_rhat <- rhat_df %>%
     mutate(clean_name = clean_model_name(model)) %>%
-    # filter(!str_detect(model, "roc")) %>%
+    filter(
+    model != "animal_cons_cap",
+    str_detect(clean_name, "capita")         |
+      str_detect(clean_name, "Aquatic dominance") |
+      str_detect(clean_name, "dominance")
+  ) %>%
+    mutate(model = clean_model_name(model)) %>%
   ggplot(aes(x = rhat)) +
   geom_histogram(boundary = 0, color = "black") +
   facet_wrap(~ model) +
@@ -2976,7 +3381,7 @@ ordered_names <- plot_df %>%
   ggplot(aes(y = model, x = divergent, fill = chain)) +
   geom_col() +
   scale_fill_viridis_d(end = 0.8) +
-  labs(y = "Model", x = "Number of divergent transitions\n(3000 samples per chain)", fill = "Markov Chain") +
+  labs(y = "Model", x = "Number of divergent transitions\n(5000 samples per chain)", fill = "Markov Chain") +
   theme_light() +
   scale_fill_manual(values = c("#D3AF55","#5DA49A","#114F59")) +
     theme_minimal(base_size = 8) +
@@ -3007,18 +3412,22 @@ ordered_names <- plot_df %>%
       legend.box.background   = element_rect(fill = "transparent", color = NA)
   )
     )
+
+# Print the number of divergent transitions across each model
+plot_df %>%
+  group_by(model) %>%
+  mutate(model = clean_model_name(model)) %>%
+  summarize(num_divergent_transitions = sum(divergent)) %>% 
+  print()
 ``` 
 
-> Result: Out of 3000 samples, the highest number of divergent transitions was 102 - divergence is not an issue. 
+> Result: Out of 5000 samples, the highest number of divergent transitions acrpss models was 10 - divergence is not an issue. 
 
-### SI Figure: Rhat and # divergent transitions
+### SI Figure 10: Rhat and # divergent transitions
 
 ```{r}
 # Create plot
-final <- plot_grid(p_rhat, p_divergent_transitions, ncol = 2, labels = c("A", "B")) %>%
-  # Supress warning - this warning only has to do with fonts, no data
-  # or visualization is harmed via this warning
-    suppressWarnings()
+final <- plot_grid(p_rhat, p_divergent_transitions, ncol = 2, labels = c("A", "B"))
 
 # Save plot
 ggsave(
@@ -3140,57 +3549,204 @@ panel_names <- levels(df_plot$clean_name)
 # tag      = uppercase letter (A–O)
 # left_col = TRUE nudges tag right and shows y-axis title
 # bot_row  = TRUE shows x-axis title
-make_ppd_panel <- function(df, title = "", tag = "") {
+make_ppd_panel <- function(df, title = "", tag = "",
+                           left_col = FALSE, bot_row = FALSE) {
 
-  ggplot(df, aes(x = ppd, group = draw)) +
-    geom_density(colour = "#7BAEC4", linewidth = 0.25) +
-    geom_density(aes(x = y_obs, group = NULL),
-                 colour = "grey20", linewidth = 0.7) +
-    labs(title = title, tag = tag, x = NULL, y = NULL) +
+  tag_pos <- if (left_col) c(0.18, 1) else c(0.01, 1)
+
+  p <- ggplot(df, aes(x = ppd, group = draw)) +
+
+    # Posterior predictive envelope - faint coloured lines show spread
+    geom_density(
+      colour    = "#7BAEC4",
+      linewidth = 0.25
+    ) +
+
+    # Observed data density - drawn on top, clearly distinct
+    geom_density(
+      aes(x = y_obs, group = NULL),
+      colour    = "grey20",
+      linewidth = 0.7
+    ) +
+
+    labs(title = title, tag = tag) +
     theme_minimal(base_size = 8) +
     theme(
-      text               = element_text(color = "black", family = family),
-      plot.background    = element_rect(fill = "transparent", color = NA),
-      panel.background   = element_rect(fill = "transparent", color = NA),
-      panel.grid.minor   = element_blank(),
+      text              = element_text(color = "black", family = family),
+      plot.background   = element_rect(fill = "transparent", color = NA),
+      panel.background  = element_rect(fill = "transparent", color = NA),
+      panel.grid.minor  = element_blank(),
       panel.grid.major.x = element_blank(),
-      panel.grid.major.y = element_line(color = scales::alpha("black", 0.12),
-                                        linewidth = 0.3),
-      plot.title         = element_text(size = 2, face = "bold", hjust = 0.5,
+      panel.grid.major.y = element_line(
+        color = scales::alpha("black", 0.12), linewidth = 0.3
+      ),
+      plot.title        = element_text(size = 4, face = "bold", hjust = 0.5,
                                         margin = margin(b = 2), family = family),
-      axis.text          = element_text(size = 5.5, color = "black", family = family),
-      plot.margin        = margin(3, 4, 3, 4)
+      axis.text         = element_text(size = 5.5, color = "black", family = family),
+      axis.title.x      = element_blank(),
+      axis.title.y      = element_blank(),
+      plot.margin       = margin(3, 4, 3, 4)
     )
+
+  if (left_col) p <- p +
+    labs(y = "Density") +
+    theme(axis.title.y = element_text(size = 6.5, face = "bold",
+                                       margin = margin(r = 3)))
+
+  if (bot_row) p <- p +
+    labs(x = "Response value (standardised)") +
+    theme(axis.title.x = element_text(size = 5, face = "bold",
+                                       margin = margin(t = 3)))
+  p
 }
 
+# Build all 15 panels in sequential order (A–O)
 panels <- lapply(seq_along(panel_names), function(i) {
-  nm <- panel_names[i]
-  make_ppd_panel(df_plot %>% filter(clean_name == nm), title = nm)
+  nm     <- panel_names[i]
+  df_sub <- df_plot %>% filter(clean_name == nm)
+  make_ppd_panel(
+    df_sub,
+    title    = nm,
+    left_col = i %in% c(1, 5, 9, 13),
+    bot_row  = i %in% c(13, 14, 15)
+  )
 })
 
-grid_plot <- wrap_plots(panels, ncol = 6, nrow = 4)
+# Assemble 4×4 grid - bottom row centered with half-column empty spacers
+empty <- ggplot() + theme_void()
 
-# Shared axis labels as text-only plots
-x_lab <- ggplot() +
-  annotate("text", x = 0, y = 0, label = "Response value (standardised)",
-           size = 5 / .pt * 1.0, fontface = "bold", family = family) +
-  theme_void()
+row1 <- panels[[15]]  | panels[[9]]  | panels[[13]]  | panels[[3]]
+row2 <- panels[[7]]  | panels[[5]]  | panels[[14]]  | panels[[6]]
+row3 <- panels[[1]]  | panels[[8]] | panels[[4]] | panels[[10]]
+row4 <- (empty | panels[[12]] | panels[[11]] | panels[[2]] | empty) +
+  plot_layout(widths = c(0.5, 1, 1, 1, 0.5))
 
-y_lab <- ggplot() +
-  annotate("text", x = 0, y = 0, label = "Density", angle = 90,
-           size = 6.5 / .pt * 1.0, fontface = "bold", family = family) +
-  theme_void()
-
-ppd_plot <- (y_lab | grid_plot) +
-  plot_layout(widths = c(0.02, 1))
-
-# Create final ppd plot
-ppd_plot <- (ppd_plot / x_lab) +
-  plot_layout(heights = c(1, 0.03)) &
-  theme(plot.background = element_rect(fill = "transparent", color = NA))
+ppd_plot <- wrap_plots(row1, row2, row3, row4, ncol = 1) +
+  plot_layout(heights = c(1, 1, 1, 1)) &
+  theme(plot.margin = margin(2, 3, 2, 3))
 ```
 
-### SI Figure: PPD / LOO / Pareto K FIXIT improve commenting
+### PSIS-LOO model performance
+
+To see how well each model performs on unseen data, we can run a cross validation on each model. Additionally, we can calculate the Pareto k values to see if there are influential points that may have an impact on the LOO values.
+
+```{r PSIS-LOO plot}
+# Paths and model info
+combined_model_path <- base_path
+n_models <- length(response_vars)
+
+# Extract log-likelihood matrices for all models
+log_lik_list <- vector("list", n_models)
+
+# Extract log-likelihood matrix; make sure your Stan model has 'log_lik' in generated quantities
+for (i in seq_along(response_vars)) {
+  
+  fit <- readRDS(file.path(combined_model_path, paste0("fit_", response_vars[i], ".rds")))
+  log_lik_list[[i]] <- rstan::extract(fit, permuted = TRUE)$log_lik
+  
+}
+
+
+
+# Remove Montenegro from models in LOO / Pareto K analysis since one
+# of the models has no data for Montenegro and all the models must
+# have the same observations to analyze the fit using PSIS-LOOCV
+# Montenegro is the 88'th index in the mondels that contain Montenegro,
+# so we will remove them from those models
+
+# Find which model numbers are missing Montenegro
+missing_mne <- which(str_detect(response_vars, "domestic"))
+
+# Get the model numbers where Montenegro needs to be dropped
+models_for_dropping_mne <- seq_along(response_vars)[!seq_along(response_vars) %in% missing_mne]
+
+for (i in models_for_dropping_mne) {
+  
+  log_lik_list[[i]] <- log_lik_list[[i]][, -88, drop = FALSE]
+  
+}
+
+
+
+names(log_lik_list) <- response_vars
+
+# Compute LOO for each model
+loo_list <- vector("list", n_models)
+
+for (i in seq_along(log_lik_list)) {
+  loo_list[[i]] <- loo(log_lik_list[[i]], cores = 2)
+}
+
+names(loo_list) <- response_vars
+
+
+# Compare models using ELPD
+loo_compare_matrix <- loo_compare(loo_list)
+
+model_data <- as.data.frame(loo_compare_matrix) %>%
+  mutate(model = rownames(loo_compare_matrix)) %>%
+  mutate(clean_name = clean_model_name(model)) %>%
+  select(clean_name, elpd_diff, se_diff) %>%
+  mutate(
+    lo95 = elpd_diff - 2 * se_diff,
+    hi95 = elpd_diff + 2 * se_diff,
+    # Flag models whose CI excludes zero (significantly worse than best)
+    nonzero = (lo95 < 0 & hi95 < 0) | (lo95 > 0 & hi95 > 0),
+    # Best model (elpd_diff == 0) gets a distinct fill
+    is_best = elpd_diff == 0
+  ) %>%
+  arrange(elpd_diff) %>%
+  mutate(clean_name = factor(clean_name, levels = clean_name))
+
+# create plot
+psis_plot <- ggplot(model_data,
+                    aes(y = clean_name, x = elpd_diff)) +
+
+  # +- 2 SE error bars
+  geom_errorbarh(
+    aes(xmin = lo95, xmax = hi95),
+    height    = 0.35,
+    linewidth = 0.55
+  ) +
+
+  # Point estimates
+  geom_point(fill = "black",
+             shape  = 21,
+    size   = 2.2,
+    stroke = 0.55
+  ) +
+
+  # Reference line at zero (best model)
+  geom_vline(xintercept = 0, linetype = "dashed",
+             linewidth = 0.35, color = "grey40") +
+
+  scale_color_identity() +
+  scale_fill_identity() +
+
+  labs(
+    x   = "ELPD difference (higher = better)",
+    y   = "Model"
+  ) +
+
+  theme_minimal(base_size = 8) +
+  theme(
+    plot.tag           = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor   = element_blank(),
+    panel.grid.major.x = element_line(
+      color     = scales::alpha("black", 0.12),
+      linewidth = 0.3
+    ),
+    axis.text.x  = element_text(size = 5.5, color = "black", family = family),
+    axis.text.y  = element_text(size = 5.5, color = "black", hjust = 1, family = family),
+    axis.title.x = element_text(size = 6, face = "bold",
+                                margin = margin(t = 4), family = family),
+    axis.ticks.y = element_blank(),
+    plot.margin  = margin(6, 8, 4, 6)
+  )
+```
+
+### SI Figure 11: PPD / LOO / Pareto K
 
 Pareto k is used to assess the validity of PSIS-LOO values. We ideally want these values to all be below 0.7.
 
@@ -3217,14 +3773,20 @@ pareto_k_df <- bind_rows(
     )
   )
 
+# Load country labels
+model_countries <- readRDS("../data/model_countries.rds")
+
+# Remove Montenegro
+model_countries <- model_countries[model_countries != "MNE"]
+
 # pareto_k_df with country labels
 pareto_k_df <- bind_rows(
   lapply(seq_along(loo_list), function(i) {
     data.frame(
       model    = names(loo_list)[i],
       point    = seq_along(loo_list[[i]]$diagnostics$pareto_k),
-      pareto_k = loo_list[[i]]$diagnostics$pareto_k
-      # country  = model_countries   # ISO3 label per observation
+      pareto_k = loo_list[[i]]$diagnostics$pareto_k,
+      country  = model_countries   # ISO3 label per observation
     )
   }),
   .id = "model_index"
@@ -3234,8 +3796,33 @@ pareto_k_df <- bind_rows(
     flag       = pareto_k > 0.7
   )
 
+# Facet order matches ELPD ranking
+facet_order <- levels(model_data$clean_name)
+pareto_k_df <- pareto_k_df %>%
+  mutate(clean_name = factor(clean_name,
+                             levels = if (length(facet_order) > 0) rev(facet_order)
+                                      else unique(clean_name)))
+
 pt_ok  <- "grey60"
 pt_bad <- "#C45C3A"
+
+# Build facet tag data — one row per facet, letters assigned in horizontal order
+# facet_wrap with ncol = 3 fills left-to-right, top-to-bottom
+facet_levels <- levels(pareto_k_df$clean_name)  # already in your desired order
+n_facets     <- length(facet_levels)
+
+facet_tags <- pareto_k_df %>%
+  group_by(clean_name) %>%
+  summarize(
+    x_max    = max(point),
+    x_min    = min(point),
+    y_max    = max(pareto_k),
+    .groups  = "drop"
+  ) %>%
+  # Match factor order so letters align with panel positions
+  mutate(
+    clean_name = factor(clean_name, levels = facet_levels)
+  )
 
 pareto_plot <- ggplot(pareto_k_df,
                       aes(x = point, y = pareto_k)) +
@@ -3249,7 +3836,38 @@ pareto_plot <- ggplot(pareto_k_df,
              color = pt_ok, size = 0.7, alpha = 0.55, shape = 16) +
   geom_point(data = filter(pareto_k_df,  flag),
              color = pt_bad, size = 1.1, alpha = 0.85, shape = 16) +
-  facet_wrap(~ clean_name, scales = "free_x", ncol = 6) +
+
+  ggrepel::geom_text_repel(
+    data             = filter(pareto_k_df, flag),
+    aes(label        = country),
+    color            = pt_bad,
+    size             = 1.8,
+    fontface         = "bold",
+    family           = family,
+    segment.color    = pt_bad,
+    segment.size     = 0.25,
+    segment.alpha    = 0.6,
+    box.padding      = 0.25,
+    point.padding    = 0.15,
+    min.segment.length = 0.2,
+    max.overlaps     = Inf,
+    force            = 2
+  ) +
+
+  facet_wrap(~ clean_name, scales = "free_x", ncol = 3) +
+
+  # k = 0.7 annotation — top-right, anchored to each panel's x_max
+  geom_text(
+    data        = facet_tags,
+    aes(x = Inf, y = 1, label = "k = 0.7"),
+    inherit.aes = FALSE,
+    hjust       = 1.1,
+    vjust       = 0,
+    size        = 1.8,
+    color       = "grey30",
+    fontface    = "italic",
+    family = family
+  ) +
 
   scale_y_continuous(
     breaks = c(0, 0.5, 0.7, 1),
@@ -3264,7 +3882,7 @@ pareto_plot <- ggplot(pareto_k_df,
   theme_minimal(base_size = 8) +
   theme(
     plot.tag            = element_blank(),
-    strip.text          = element_text(size = 3.5, face = "bold", hjust = 0.5,
+    strip.text          = element_text(size = 5.5, face = "bold", hjust = 0.5,
                                        margin = margin(b = 2), family = family),
     panel.grid.major.y  = element_line(color = scales::alpha("black", 0.10),
                                        linewidth = 0.25),
@@ -3279,10 +3897,29 @@ pareto_plot <- ggplot(pareto_k_df,
     plot.margin         = margin(6, 8, 4, 6)
   )
 
-# Combine PPD and Pareto K plots
+# Combine PSIS and Pareto k as panels A and B
+
+# Add panel tags directly in each plot's labs()
+psis_plot   <- psis_plot   + labs(tag = "A")
+pareto_plot <- pareto_plot + labs(tag = "B") +
+  theme(plot.tag.position = c(0.01, 1))  # consistent with psis_plot
+
+# Stack side by side with patchwork
+combined_plot <- plot_grid(
+  psis_plot,
+  pareto_plot,
+  rel_widths = c(1,1.5),
+  labels = c("B", "C")
+  ) %>%
+  # Supress warning - this warning only has to do with fonts, no data
+  # or visualization is harmed via this warning
+  suppressWarnings()
+
+
+
 final_plot <- plot_grid(
   ppd_plot,
-  pareto_plot,
+  combined_plot,
   nrow = 1,
   labels = "A",
   rel_widths = c(1,1.6)
