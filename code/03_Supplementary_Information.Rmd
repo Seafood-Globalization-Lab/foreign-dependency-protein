@@ -326,8 +326,7 @@ disagg <- disagg_hab_met %>%
 
 ############ AGGREGATE dominance
 agg_estimate <- aquatic_dominance %>%
-  filter(!(year %in% 2010:2013 & data_source == "old FBS"),
-         food_group == "aquatic",
+  filter(food_group == "aquatic",
          !iso3c %in% iso3c_maj_ts) %>%
   group_by(iso3c, data_source, year) %>%
   summarize(perc_animal_protein = sum(prop_animal_protein * 100)) %>%
@@ -387,7 +386,7 @@ make_bar_panel <- function(regions,
   name = "Source",
   guide = guide_legend(order = 1)
 ) +
-    facet_wrap(~ region, scales = "free", nrow = 1) +
+    facet_wrap(~ region, scales = "free", nrow = 1, space = "free_y") +
     labs(
       x    = "Annual rate of change in aquatic animal protein dominance\n by consumption source",
       fill = "Source",
