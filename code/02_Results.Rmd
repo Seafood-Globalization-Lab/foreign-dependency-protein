@@ -201,7 +201,6 @@ differences between the datasets. This involves:
 new-FBS values back to historical years. These will be represented as dashed
 lines in Figure 2.
 
-
 These projections include forward casting
 old-FBS dominance values to 
 
@@ -484,7 +483,7 @@ aa_dominance_aq_cap <- aa_dominance_method_trends %>%
     alpha = 0.7
     ) +
   scale_fill_manual(values = c("#337D81","#D3983E")) +
-  labs(x = "", y = "aquatic animal protein dominance (%)\n(by method)") +
+  labs(x = "", y = "Global aquatic animal protein dominance\nby method (%)") +
   # theme_minimal(base_size = 8) +
     facet_grid(~ factor(method, levels=c("Capture", "Aquaculture"))) +
   guides(fill = "none") +
@@ -823,7 +822,7 @@ aa_dominance_disaggregate <- ggplot() +
   labs(
     fill = "Consumption source",
     x = "",
-    y = "aquatic animal protein dominance (%)\n(by habitat/method/consumption source)"
+    y = "Global aquatic animal protein dominance\nby habitat/method/consumption source (%)"
     ) +
   guides(linewidth = "none") +
   # theme_minimal(base_size = 8) +
@@ -2081,7 +2080,7 @@ back_forward <- bind_rows(
 # For each countries' trend in aquatic animal protein dominance
 # across habitat and method, we will take the midpoint of the
 # min and max rate of change and use that in the plot.
-disagg <- bind_rows(
+disagg_dom <- bind_rows(
   obs_obs,
   back_obs,
   obs_forward,
@@ -2108,7 +2107,7 @@ disagg <- bind_rows(
 # change in aquatic animal protein dominance
 
 # Calculate country aggregate aquatic animal protein dominance
-agg_estimate <- disagg %>%
+agg_estimate <- disagg_dom %>%
   group_by(iso3c) %>%
   summarize(agg_estimate = sum(estimate))
 
@@ -2124,7 +2123,7 @@ make_bar_panel <- function(regions,
                     "inland aquaculture",  # #D3AF55
                     "marine aquaculture")  # #C87534
 
-  disagg %>%
+  disagg_dom %>%
     add_region("iso3c", "region") %>%
     filter(region %in% regions) %>%
     left_join(agg_estimate, by = "iso3c") %>%
@@ -2197,7 +2196,7 @@ make_bar_panel <- function(regions,
 
 # Build panels - they are separated into two rows because including all in one
 # would make the countries too small to see
-all_regions   <- unique(add_region(disagg, "iso3c", "region")$region)
+all_regions   <- unique(add_region(disagg_dom, "iso3c", "region")$region)
 top_regions   <- all_regions[!all_regions %in% c("Oceania", "South America")]
 bot_regions   <- c("Oceania", "South America")
 
@@ -2309,14 +2308,16 @@ print(final_plot)
 
 
 # Save plot
-ggsave(
-  filename = "../images/pct_dominance_contribution_four_sources.pdf",
-  plot     = final_plot,
-  device   = cairo_pdf,
-  width    = 8,
-  height   = 6
-)
+  ggsave(
+    filename = "../images/pct_dominance_contribution_four_sources.pdf",
+    plot     = final_plot,
+    device   = cairo_pdf,
+    width    = 8,
+    height   = 6
+  )
 ```
+
+Disaggregating the aquatic animal protein dominance by production source also exposes major national- and regional- level shifts in dominance, illuminating a global mosaic in aquatic animal protein sourcing that varies across geographies and income levels (SI Figures  12-13).
 
 ### How many countries have increased / decreased aggregate aquatic animal protein dominance?
 
@@ -2324,22 +2325,538 @@ ggsave(
 # Calculate the total number of countries in our analysis
 num_countries <- agg_estimate %>% distinct(iso3c) %>% nrow()
 
-# Calculate the number of countries 
-num_decreasing_global <- agg_estimate %>%
-  count(is_neg = agg_estimate > 0) %>%
-  filter(is_neg == FALSE) %>%
+# Calculate the number of countries increasing in aquatic
+# animal protein dominance
+num_increasing_global <- agg_estimate %>%
+  count(agg_estimate > 0) %>%
+  filter(`agg_estimate > 0` == TRUE) %>%
   pull(n)
 ```
 
-Our disaggregation of aquatic animal protein dominance also exposes a mosaic of trends across countries and regions (Figure 3B, SI Figure 9).
-In aggregate, aquatic animal protein dominance declined in `r num_decreasing_global` out of `r num_countries` countries between 1996 and 2023.
+### How many countries increased their marine aquaculture dominance?
 
-### What is the percent contribution of inland and marine capture to countries' declining aggregate dominance?
+```{r}
+num_increasing_maaq <- disagg_dom %>%
+  filter(group_label == "marine aquaculture") %>%
+  ungroup() %>%
+  count(estimate > 0) %>%
+  filter(`estimate > 0` == TRUE) %>%
+  pull(n)
+```
+
+### Dominance vs consumption
+
+It is important to note that a change in aquatic animal protein dominance
+will not mirror changes in aquatic animal protein consumption. So, we will see
+for where dominance increases / decreases for key production sources how
+consumption thereby changes.
+
+There are two important calculations for this:
+1. Calculate the rate of change in dominance by aquatic food production source
+2. Calculate the rate of change in dominance by aquatic food production source
+
+#### Calculate change in consumption by production source
+
+```{r}
+##### -------------------------------- PROBLEM:
+
+# FAOSTAT Food balance Sheets are divided into old methodology (-2013)
+# and new methodology (2010-). This creates a jump in the data sources in
+# aquatic animal protein dominance. To account for this, we will forward cast
+# old FAO dominance values to new years and back cast new FAO dominance
+# values to old years. Then, we will calculate the rate of change across:
+
+# 1. obs - obs
+# 2. obs - forwardcast
+# 3. back cast - obs
+# 4. back cast - forward cast
+
+# We will take the maximum and minimum values of these as the ranges for
+# rate of change in aquatic animal protein dominance, and will plot the midpoint of these
+# ranges.
+
+# Define year ranges for projections (add this before the existing
+# projections code)
+year_ranges <- tibble(
+  data_source = c("old FBS", "new FBS"),
+  start_year  = c(1996, 1996),
+  end_year    = c(2023, 2023)
+)
+
+# Define year ranges for observed data
+observed_ranges <- tibble(
+  data_source = c("old FBS", "new FBS"),
+  min_year = c(1996, 2010),
+  max_year = c(2009, 2023)
+)
+
+############ RUN THIS ANALYSIS ON DISAGGREGATE dominance
+# Grab countries that have a majority of their time series covered between
+# 1996 and 2023. These will go in the main paper figures
+iso3c_maj_ts <- aquatic_dominance %>%
+  filter(!(year %in% 2010:2013 & data_source == "old FBS"),
+         food_group == "aquatic") %>%
+  group_by(iso3c, year, data_source, habitat, method) %>%
+  summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr), .groups = "drop") %>%
+  group_by(iso3c, habitat, method) %>%
+  summarize(n_years = n_distinct(year), .groups = "drop") %>%
+  mutate(max_years = max(n_years)) %>%
+  mutate(prop_ts_coverage = n_years / max_years) %>%
+  group_by(iso3c) %>%
+  filter(all(prop_ts_coverage > 0.6)) %>%
+  distinct(iso3c) %>%
+  pull(iso3c)
+  
+
+# Calculate country aquatic animal protein dominance by habitat and method
+disagg_hab_met <- aquatic_dominance %>%
+   # Remove overlapping years prioritizing new years
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         food_group == "aquatic") %>%
+  # Filter to only countries with greater than 5 year time series
+  filter(iso3c %in% iso3c_maj_ts) %>%
+  group_by(year, iso3c, habitat, method, data_source) %>%
+  summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr), .groups = "drop")
+
+
+# Obtain linear model intercept and slope estimates to
+# create forward / backcasted projections
+coefs_hab_met <- disagg_hab_met %>%
+  group_by(iso3c, habitat, method, data_source) %>%
+  nest() %>%
+  mutate(model = map(data, ~ lm(protein_consumed_kg_percap_peryr ~ year, data = .x)),
+         tidy  = map(model, broom::tidy)) %>%
+  unnest(tidy) %>%
+  select(data_source, iso3c, habitat, method, term, estimate) %>%
+  pivot_wider(values_from = estimate, names_from = term) %>%
+  rename(year_coef = year)
+
+# Calculate estimates via forward and back cast from linear model's
+# intercept and slope estimates
+proj_hab_met <- coefs_hab_met %>%
+  left_join(year_ranges, by = "data_source") %>%
+  rowwise() %>%
+  mutate(year = list(start_year:end_year)) %>%
+  unnest(year) %>%
+  ungroup() %>%
+  mutate(protein_consumed_kg_percap_peryr = `(Intercept)` + year_coef * year,
+         type = case_when(
+           
+           year < 2010 ~ "backcast",
+           year >= 2010 ~ "forwardcast"
+           
+         )) %>%
+  left_join(observed_ranges, by = "data_source") %>%
+  filter(year < min_year | year > max_year) %>%
+  select(
+    data_source,
+    iso3c,
+    habitat,
+    method,
+    year_coef,
+    year,
+    protein_consumed_kg_percap_peryr,
+    type
+    )
+
+# Obtain observed disaggregate aquatic animal protein dominance data
+obs_hab_met <- disagg_hab_met %>%
+  filter(data_source == "old FBS" & year <= 2009 |
+           data_source == "new FBS" & year >= 2010) %>%
+  mutate(type = "observed")
+
+# Time series notations:
+# left side of the _ indicates old FBS years, whereas the right side of the 
+# _ indicates new FBS years
+
+# obs_obs - observed to observed
+# back_obs - back casted to observed
+# obs_forward - observed to forward casted 
+# back_forward - back casted to forward casted
+calc_roc_disagg <- function(data, type = type) {
+  
+  data %>%
+    group_by(year, iso3c, habitat, method) %>%
+    summarize(protein_consumed_kg_percap_peryr = sum(protein_consumed_kg_percap_peryr),
+              .groups = "drop") %>%
+    group_by(iso3c, habitat, method) %>%
+    nest() %>%
+    mutate(model = map(data, ~ lm(protein_consumed_kg_percap_peryr ~ year, data = .x)),
+           tidy  = map(model, broom::tidy)) %>%
+    unnest(tidy) %>%
+    filter(term == "year") %>%
+    mutate(
+      group_label = paste(habitat, method),
+      group_label = case_when(
+        group_label == "unknown unknown" ~ "unknown",
+        TRUE ~ group_label
+      )) %>%
+    drop_na(estimate) %>%
+    group_by(group_label) %>%
+    ungroup() %>%
+    mutate(group_label = factor(
+      group_label,
+      levels = c(
+        "marine capture",
+        "inland capture",
+        "marine aquaculture",
+        "inland aquaculture",
+        "unknown"
+      )
+    ),
+    type = type)
+  
+}
+
+# Calculate four different types of rate of change for disaggregate:
+
+# 1. observed - observed
+obs_obs <- bind_rows(
+  obs_hab_met,
+  proj_hab_met
+  ) %>%
+  filter(type == "observed") %>%
+  calc_roc_disagg(type = "obs_obs")
+
+# 2. back casted to observed
+back_obs <- bind_rows(
+  obs_hab_met,
+  proj_hab_met
+  ) %>%
+  filter(type == "backcast" |
+           type == "observed" & data_source == "new FBS") %>%
+  calc_roc_disagg(type = "back_obs")
+  
+# 3. observed to forward casted
+obs_forward <- bind_rows(
+  obs_hab_met,
+  proj_hab_met
+  ) %>%
+  filter(type == "forwardcast" |
+           type == "observed" & data_source == "old FBS") %>%
+  calc_roc_disagg(type = "obs_forward")
+
+# 4. observed to forward casted
+back_forward <- bind_rows(
+  obs_hab_met,
+  proj_hab_met
+  ) %>%
+  filter(type == "forwardcast" |
+           type == "backcast") %>%
+  calc_roc_disagg(type = "back_forward")
+
+# For each countries' trend in aquatic animal protein dominance
+# across habitat and method, we will take the midpoint of the
+# min and max rate of change and use that in the plot.
+disagg_cons <- bind_rows(
+  obs_obs,
+  back_obs,
+  obs_forward,
+  back_forward
+  ) %>%
+  group_by(iso3c,
+           habitat,
+           method
+           ) %>%
+  filter(estimate == min(estimate) |
+         estimate == max(estimate)) %>%
+  summarize(
+    estimate = ((min(estimate) + max(estimate)) / 2),
+    .groups = "keep"
+    ) %>%
+  mutate(group_label = paste0(habitat, " ", method),
+         term = "year")
+```
+
+#### Calculate change in aquatic animal protein dominance by production source
+
+```{r}
+##### -------------------------------- PROBLEM:
+
+# FAOSTAT Food balance Sheets are divided into old methodology (-2013)
+# and new methodology (2010-). This creates a jump in the data sources in
+# aquatic animal protein dominance. To account for this, we will forward cast
+# old FAO dominance values to new years and back cast new FAO dominance
+# values to old years. Then, we will calculate the rate of change across:
+
+# 1. obs - obs
+# 2. obs - forwardcast
+# 3. back cast - obs
+# 4. back cast - forward cast
+
+# We will take the maximum and minimum values of these as the ranges for
+# rate of change in aquatic animal protein dominance, and will plot the midpoint of these
+# ranges.
+
+# Define year ranges for projections (add this before the existing
+# projections code)
+year_ranges <- tibble(
+  data_source = c("old FBS", "new FBS"),
+  start_year  = c(1996, 1996),
+  end_year    = c(2023, 2023)
+)
+
+# Define year ranges for observed data
+observed_ranges <- tibble(
+  data_source = c("old FBS", "new FBS"),
+  min_year = c(1996, 2010),
+  max_year = c(2009, 2023)
+)
+
+############ RUN THIS ANALYSIS ON DISAGGREGATE dominance
+# Grab countries that have a majority of their time series covered between
+# 1996 and 2023. These will go in the main paper figures
+iso3c_maj_ts <- aquatic_dominance %>%
+  filter(!(year %in% 2010:2013 & data_source == "old FBS"),
+         food_group == "aquatic") %>%
+  group_by(iso3c, year, data_source, habitat, method) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop") %>%
+  group_by(iso3c, habitat, method) %>%
+  summarize(n_years = n_distinct(year), .groups = "drop") %>%
+  mutate(max_years = max(n_years)) %>%
+  mutate(prop_ts_coverage = n_years / max_years) %>%
+  group_by(iso3c) %>%
+  filter(all(prop_ts_coverage > 0.6)) %>%
+  distinct(iso3c) %>%
+  pull(iso3c)
+  
+
+# Calculate country aquatic animal protein dominance by habitat and method
+disagg_hab_met <- aquatic_dominance %>%
+   # Remove overlapping years prioritizing new years
+  filter(!(year %in% c(2010, 2011, 2012, 2013) & data_source == "old FBS"),
+         food_group == "aquatic") %>%
+  # Filter to only countries with greater than 5 year time series
+  filter(iso3c %in% iso3c_maj_ts) %>%
+  group_by(year, iso3c, habitat, method, data_source) %>%
+  summarize(prop_animal_protein = sum(prop_animal_protein), .groups = "drop")
+
+
+# Obtain linear model intercept and slope estimates to
+# create forward / backcasted projections
+coefs_hab_met <- disagg_hab_met %>%
+  group_by(iso3c, habitat, method, data_source) %>%
+  nest() %>%
+  mutate(model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
+         tidy  = map(model, broom::tidy)) %>%
+  unnest(tidy) %>%
+  select(data_source, iso3c, habitat, method, term, estimate) %>%
+  pivot_wider(values_from = estimate, names_from = term) %>%
+  rename(year_coef = year)
+
+# Calculate estimates via forward and back cast from linear model's
+# intercept and slope estimates
+proj_hab_met <- coefs_hab_met %>%
+  left_join(year_ranges, by = "data_source") %>%
+  rowwise() %>%
+  mutate(year = list(start_year:end_year)) %>%
+  unnest(year) %>%
+  ungroup() %>%
+  mutate(prop_animal_protein = `(Intercept)` + year_coef * year,
+         type = case_when(
+           
+           year < 2010 ~ "backcast",
+           year >= 2010 ~ "forwardcast"
+           
+         )) %>%
+  left_join(observed_ranges, by = "data_source") %>%
+  filter(year < min_year | year > max_year) %>%
+  select(
+    data_source,
+    iso3c,
+    habitat,
+    method,
+    year_coef,
+    year,
+    prop_animal_protein,
+    type
+    )
+
+# Obtain observed disaggregate aquatic animal protein dominance data
+obs_hab_met <- disagg_hab_met %>%
+  filter(data_source == "old FBS" & year <= 2009 |
+           data_source == "new FBS" & year >= 2010) %>%
+  mutate(type = "observed")
+
+# Time series notations:
+# left side of the _ indicates old FBS years, whereas the right side of the 
+# _ indicates new FBS years
+
+# obs_obs - observed to observed
+# back_obs - back casted to observed
+# obs_forward - observed to forward casted 
+# back_forward - back casted to forward casted
+calc_roc_disagg <- function(data, type = type) {
+  
+  data %>%
+    group_by(year, iso3c, habitat, method) %>%
+    summarize(prop_animal_protein = sum(prop_animal_protein),
+              .groups = "drop") %>%
+    group_by(iso3c, habitat, method) %>%
+    nest() %>%
+    mutate(model = map(data, ~ lm(prop_animal_protein ~ year, data = .x)),
+           tidy  = map(model, broom::tidy)) %>%
+    unnest(tidy) %>%
+    filter(term == "year") %>%
+    mutate(
+      group_label = paste(habitat, method),
+      group_label = case_when(
+        group_label == "unknown unknown" ~ "unknown",
+        TRUE ~ group_label
+      )) %>%
+    drop_na(estimate) %>%
+    group_by(group_label) %>%
+    ungroup() %>%
+    mutate(group_label = factor(
+      group_label,
+      levels = c(
+        "marine capture",
+        "inland capture",
+        "marine aquaculture",
+        "inland aquaculture",
+        "unknown"
+      )
+    ),
+    type = type)
+  
+}
+
+# Calculate four different types of rate of change for disaggregate:
+
+# 1. observed - observed
+obs_obs <- bind_rows(
+  obs_hab_met,
+  proj_hab_met
+  ) %>%
+  filter(type == "observed") %>%
+  calc_roc_disagg(type = "obs_obs")
+
+# 2. back casted to observed
+back_obs <- bind_rows(
+  obs_hab_met,
+  proj_hab_met
+  ) %>%
+  filter(type == "backcast" |
+           type == "observed" & data_source == "new FBS") %>%
+  calc_roc_disagg(type = "back_obs")
+  
+# 3. observed to forward casted
+obs_forward <- bind_rows(
+  obs_hab_met,
+  proj_hab_met
+  ) %>%
+  filter(type == "forwardcast" |
+           type == "observed" & data_source == "old FBS") %>%
+  calc_roc_disagg(type = "obs_forward")
+
+# 4. observed to forward casted
+back_forward <- bind_rows(
+  obs_hab_met,
+  proj_hab_met
+  ) %>%
+  filter(type == "forwardcast" |
+           type == "backcast") %>%
+  calc_roc_disagg(type = "back_forward")
+
+# For each countries' trend in aquatic animal protein dominance
+# across habitat and method, we will take the midpoint of the
+# min and max rate of change and use that in the plot.
+disagg_dom <- bind_rows(
+  obs_obs,
+  back_obs,
+  obs_forward,
+  back_forward
+  ) %>%
+  group_by(iso3c,
+           habitat,
+           method
+           ) %>%
+  filter(estimate == min(estimate) |
+         estimate == max(estimate)) %>%
+  summarize(
+    estimate = 100 *((min(estimate) + max(estimate)) / 2),
+    .groups = "keep"
+    ) %>%
+  mutate(group_label = paste0(habitat, " ", method),
+         term = "year")
+```
+
+#### Compare countries' dominance to their consumption trends
+
+```{r}
+# Figure out which countries decreased marine capture protein dominance
+mc_decline_iso3cs <- disagg_dom %>%
+  filter(group_label == "marine capture") %>%
+  filter(estimate < 0) %>%
+  pull(iso3c)
+
+# Figure out which countries increased marine aquaculture protein dominance
+ma_increase_iso3cs <- disagg_dom %>%
+  filter(group_label == "marine aquaculture") %>%
+  filter(estimate > 0) %>%
+  pull(iso3c)
+
+# Of the countries that decreased their marine capture protein dominance,
+# figure out how many decreased their marine capture protein consumption
+dec_cons_maca <- disagg_cons %>%
+  filter(group_label == "marine capture") %>%
+  filter(iso3c %in% mc_decline_iso3cs) %>%
+  ungroup() %>% 
+  count(estimate < 0) %>%
+  filter(`estimate < 0` == TRUE) %>%
+  pull(n)
+
+# Result: 73 decreased, 21 countries increased their marine capture consumption
+
+# Of the countries that increased their marine aquaculture protein dominance,
+# figure out how many increased their marine aquaculture protein consumption
+inc_cons_maaq <- maaq <- disagg_cons %>%
+    filter(group_label == "marine aquaculture") %>%
+    filter(iso3c %in% ma_increase_iso3cs) %>%
+    ungroup() %>% 
+    count(estimate > 0) %>%
+  filter(`estimate > 0` == TRUE) %>%
+  pull(n)
+
+# Result: every one of the 132 countries also increased their marine aquaculture protein consumption.
+```
+
+For example, while aquatic animal protein dominance increased in a majority of countries, `r num_increasing_global` out of `r num_countries`, marine aquaculture experienced the most widespread increases in protein dominance, occurring in `r num_increasing_maaq` out of `r num_countries` countries (Figure 3); every one of the 132 countries also increased their marine aquaculture protein consumption.
+Marine aquaculture protein dominance increases were most common in Asia, Europe, North America, Africa, and high income countries (SI figures 13, 16-19).
+
+### Inland aquaculture protein dominance growth was concentrated. Find the largest increases
+
+```{r}
+# Find the largest increases in inland aquaculture protein dominance
+top_increases_inaq <- disagg_dom %>%
+  ungroup() %>%
+  filter(group_label == "inland aquaculture") %>%
+  arrange(-estimate) %>%
+  mutate(estimate = round(estimate, 2)) %>%
+  slice(c(1,2)) # get the top two  countries
+
+# Result: Cambodia and Myanmar had the largest increases. Next,
+# pull their rate of change in dominance to present as the result.
+
+# Get Cambodia's value
+khm_inc <- top_increases_inaq %>%
+  filter(iso3c == "KHM") %>%
+  pull(estimate)
+
+# Get Myanmar's value
+mmr_inc <- top_increases_inaq %>%
+  filter(iso3c == "MMR") %>%
+  pull(estimate)
+```
+
+Contrastingly, inland aquaculture protein dominance experienced the most concentrated growth, primarily from Southeast Asia and lower middle income countries, with the largest growth occurring in Cambodia and Myanmar, increasing `r khm_inc` and `r mmr_inc` per year (Figure 3; SI Figure 13).
+
+### Looking at the declines in aquatic animal protein dominance, what production source was the most responsible across nations?
 
 ```{r}
 # How many countries with declining aquatic animal protein dominance had a
 # majority of their declines represented by capture fisheries?
-num_countries_cap <- disagg %>%
+num_decreasing_maca <- disagg_dom %>%
   select(
     -group_label,
     -term
@@ -2355,50 +2872,44 @@ num_countries_cap <- disagg %>%
   filter(method == "capture") %>%
   filter(pct_contribution >= 51) %>%
   nrow()
+```
 
+On the other hand for the `r num_countries - num_increasing_global` countries that declined in dominance, marine capture sources accounted for a majority of these declines across `r num_decreasing_maca` of the 77 countries (Figure 3).
+Marine capture protein dominance declines were widespread across Oceania, South America, and Asia (SI Figures 14-16).
+However, not all nations that showed declined marine capture protein dominance showed declined marine capture protein consumption, where of the 94 nations that decreased their marine capture dominance, `r dec_cons_maca` decreased marine capture protein consumption while `r num_decreasing_maca - dec_cons_maca` increased their consumption.
 
-# Number of countries that increased in marine aquaculture dominance with an
-# increasing aquatic animal protein dominance
-num_increasing_maq <- disagg %>%
-  select(
-    -group_label,
-    -term
-    ) %>%
-  rename(disagg_estimate = estimate) %>%
-  group_by(iso3c, method, habitat) %>%
-  summarize(disagg_estimate = sum(disagg_estimate), .groups = "drop") %>%
-  left_join(agg_estimate) %>%
-  mutate(rel_is_pos = disagg_estimate > 0) %>%
-   filter(agg_estimate > 0) %>%
-  filter(method == "aquaculture", habitat == "marine") %>%
-   count(disagg_estimate > 0)
+### Find the largest reductions in marine capture protein dominance
 
+```{r}
+# Find the largest decreases in marine capture protein dominance
+top_decreases_maca <- disagg %>%
+  ungroup() %>%
+  filter(group_label == "marine capture") %>%
+  arrange(estimate) %>%
+  mutate(estimate = round(estimate, 2)) %>%
+  slice(1:3)
 
+# Result: Moldova, Guyana, and Sao Tome and Principe had the largest declines.
+# next, pull their rate of change in dominance to present as the result.
 
-mmr_khm_ex <- disagg %>%
-  select(
-    -group_label,
-    -term
-    ) %>%
-  rename(disagg_estimate = estimate) %>%
-  group_by(iso3c, method, habitat) %>%
-  summarize(disagg_estimate = sum(disagg_estimate), .groups = "drop") %>%
-  left_join(agg_estimate) %>%
-  mutate(rel_is_pos = disagg_estimate > 0) %>%
-  filter(agg_estimate > 0, rel_is_pos == TRUE) %>%
-  group_by(iso3c) %>%
-  mutate(pct_contribution = 100 *( disagg_estimate / sum(disagg_estimate))) %>%
-  filter(method == "aquaculture", habitat == "inland") %>%
-  filter(iso3c %in% c("MMR", "KHM")) %>%
-  mutate(disagg_estimate = round(disagg_estimate, 2))
+# Get Moldova's value
+mdv_dec <- top_decreases_maca %>%
+  filter(iso3c == "MDV") %>%
+  pull(estimate)
+
+# Get Guyana's value
+guy_dec <- top_decreases_maca %>%
+  filter(iso3c == "GUY") %>%
+  pull(estimate)
+
+# Get Sao Tome and Principe's value
+stp_dec <- top_decreases_maca %>%
+  filter(iso3c == "STP") %>%
+  pull(estimate)
 
 ```
 
-With the disaggregate dominance, we expose a major attributor for the shift away from aquatic animal proteins: widespread declines in animal protein dominance on capture fisheries have contributed over 80% towards negative shifts in the aggregate aquatic animal protein dominance for `r num_countries_cap` countries.
-In contrast, substantial growth in animal protein dominance on aquaculture has been concentrated, where only `r num_countries_aq` countries that moderately to sharply increased their aggregate aquatic animal protein dominance dominance attributed over 60\% of their growth to aquaculture.
-<!---data obtained from the following sentences through 03_Supplementary_Information.Rmd --->
-We find nations throughout much of Asia, Africa, South America, and Oceania decreased their dominance on capture fisheries, whereas North American nations widely increased their dominance on aquaculture (SI Figures 10-15).
-Uniquely, nearly every nation in Europe, 38 out of 40, increased their dominance on marine aquaculture, underscoring the widely varying aquatic animal protein dominance (SI Figures 10-15).
+In addition to the widespread declines of marine capture protein dominance, their reductions were also large, with the greatest exhibited in Moldova, Guyana, and Sao Tome Principe, declining `r mdv_dec`%, `r guy_dec`%, and `r stp_dec`% per year.
 
 # RQ 1b: How does aquatic animal protein dominance change with the relative contribution of aquatic versus terrestrial animal consumption
 
