@@ -2823,7 +2823,7 @@ quad_label_df <- tibble(
   hjust    = c(1, 0, 0, 1)
 ) %>%
   left_join(quad_totals, by = "quadrant") %>%
-  mutate(label = paste0("n = ", total))
+  mutate(label = paste0("Total = ", total))
 
 # Main scatterplot — fill encodes dominance change, no region border encoding
 # on points (region is shown only in the inset bar charts and the square legend)
@@ -2881,7 +2881,7 @@ legend_dominance <- Filter(function(x) !inherits(x, "zeroGrob"), legend_dominanc
 p_scatter <- p_scatter_base + theme(legend.position = "none")
 
 # Fixed region order shared by every inset
-region_levels <- names(region_colors)  # or sort(unique(plot_df$region))
+region_levels <- c("Africa", "Asia", "Europe", "North America", "Oceania", "South America")
 
 # Helper to build a single quadrant inset bar chart
 make_inset <- function(q) {
@@ -2966,15 +2966,15 @@ final_plot <- cowplot::plot_grid(
 # Print final plot
 print(final_plot)
 
-# Save plot
-ggsave(
-  filename = "../images/scatter_bar_overlay.pdf",
-  plot     = final_plot,
-  device   = cairo_pdf,
-  width    = 5,
-  height   = 3.5,
-  units    = "in"
-)
+  # Save plot
+  ggsave(
+    filename = "../images/scatter_bar_overlay.pdf",
+    plot     = final_plot,
+    device   = cairo_pdf,
+    width    = 5,
+    height   = 3.5,
+    units    = "in"
+  )
 
 ```
 
